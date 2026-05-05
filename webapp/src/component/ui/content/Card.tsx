@@ -711,7 +711,9 @@ const ComponentCard = ({
     return (
       <Box 
         sx={{ 
-          position: "relative", 
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
           width: "100%", 
           height: "100%"
           }}
@@ -735,6 +737,7 @@ const ComponentCard = ({
                   position: "relative",
                   width: "100%",
                   height: "100%",
+                  objectFit: "contain",
                 }
             ),
 
