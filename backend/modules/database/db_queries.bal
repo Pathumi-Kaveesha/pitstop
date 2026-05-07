@@ -1582,6 +1582,7 @@ isolated function searchContentsQuery(ContentFilter filter) returns sql:Paramete
             c.is_reused, 
             cl.status,
             c.content_sub_type
+        ORDER BY c.created_on DESC
     `;
 
     footer = sql:queryConcat(footer, ` LIMIT ${filter.'limit} OFFSET ${filter.'offset}`);
