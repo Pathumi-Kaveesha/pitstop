@@ -70,7 +70,7 @@ import { RouteResponse } from "@/types/types";
 import Sidebar from "../sidebar";
 
 const StyledAppBar = styled(MuiAppBar)<MuiAppBarProps>(({ theme }) => ({
-  position: "fixed",
+  position: "absolute",
   top: "16px",
   left: "16px",
   right: "16px",
