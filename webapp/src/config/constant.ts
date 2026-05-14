@@ -48,6 +48,8 @@ export const SALES_ADMIN_PRIVILEGE_ID = 537;
 
 export const SIDEBAR_WIDTH = 350;
 export const SECTION_LIMIT = 15;
+
+export const ADMIN_QUIZZES_PER_PAGE = 5;
 export const CONTENTS_PER_SECTION = 3;
 export const CONTENT_STATE_SUCCESS = "success";
 export const CONTENT_STATE_IDLE = "idle";
@@ -69,4 +71,5 @@ export const ROUTE_ID_MORE = -1;
 export const ROUTE_ID_ADMIN_PANEL = -2;
 export const ROUTE_ID_ADMIN_EDIT_MENU = -3;
 export const ROUTE_ID_ADMIN_REPORT = -4;
+export const ROUTE_ID_QUIZ_ADMIN = -6;
 export const INVALID_ROUTE_ID = -1;

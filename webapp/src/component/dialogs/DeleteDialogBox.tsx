@@ -18,6 +18,7 @@ import { RootState, useAppDispatch, useAppSelector } from "@slices/store";
 import { deleteContent } from "@slices/pageSlice/page";
 import { deleteSection } from "@slices/sectionSlice/section";
 import { deleteRoute } from "@slices/routeSlice/route";
+import { deleteQuiz } from "@slices/quizSlice/quiz";
 import { DeleteDialogBoxProps } from "@/types/types";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -35,6 +36,7 @@ const DeleteContentDialogBox = ({
   sectionId,
   routeId,
   testimonialId,
+  quizId,
   open,
   handleClose,
 }: DeleteDialogBoxProps) => {
@@ -54,6 +56,8 @@ const DeleteContentDialogBox = ({
         return "Delete Route Content";
       case "testimonial":
         return "Delete Testimonial";
+      case "quiz":
+        return "Delete Quiz";
       default:
         return "Delete";
     }
@@ -75,6 +79,8 @@ const DeleteContentDialogBox = ({
         return "If you delete this content, you won't be able to recover it. Do you want to proceed?";
       case "testimonial":
         return "If you delete this testimonial, you won't be able to recover it. Do you want to proceed?";
+      case "quiz":
+        return "If you delete this quiz, you won't be able to recover it. All questions, answers, and submissions linked to it will be permanently removed.";
       default:
         return "Are you sure you want to delete this item?";
     }
@@ -133,6 +139,11 @@ const DeleteContentDialogBox = ({
             id: testimonialId,
           }),
         );
+        break;
+      case "quiz":
+        if (quizId == null) return;
+        handleClose();
+        dispatch(deleteQuiz(quizId));
         break;
     }
   };
@@ -236,7 +247,9 @@ const DeleteContentDialogBox = ({
                 ? "Section"
                 : type === "page"
                   ? "Page"
-                  : "Testimonial"}
+                  : type === "quiz"
+                    ? "Quiz"
+                    : "Testimonial"}
           </Button>
         </DialogActions>
       </Dialog>

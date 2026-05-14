@@ -76,11 +76,12 @@ export interface ContentDialogBoxProps {
 }
 
 export interface DeleteDialogBoxProps {
-  type: "content" | "section" | "page" | "route_content" | "testimonial";
+  type: "content" | "section" | "page" | "route_content" | "testimonial" | "quiz";
   routeId?: number;
   contentId?: number;
   sectionId?: number;
   testimonialId?: number;
+  quizId?: number;
   open: boolean;
   handleClose: () => void;
   onConfirm?: () => void;
@@ -319,6 +320,10 @@ export interface MentionedUser {
   name: string;
   email: string;
   thumbnail?: string;
+}
+
+export interface QuizAssignableEmployee extends EmployeeSuggestion {
+  userId: number;
 }
 
 //For Creating New Nav Item
@@ -647,4 +652,141 @@ export interface CustomerTestimonialCardProps {
   isAdmin: boolean;
   onEdit: () => void;
   onDelete: () => void;
+}
+
+export interface Quiz {
+  quizId: number;
+  title: string;
+  description?: string;
+  thumbnail?: string;
+  passingScore: number;
+  dueDate?: string;
+  assignedUserIds: number[];
+  totalQuestions: number;
+  status: "DRAFTED" | "PUBLISHED" | QuizStatus;
+  createdAt: string;
+}
+
+export interface QuizQuestion {
+  questionId: number;
+  questionNumber: number;
+  quizId: number;
+  questionText: string;
+  questionType: "mcq_single" | "mcq_multiple" | "rating" | "feedback";
+  marks: number;
+  answers?: Array<{
+    text: string;
+    isCorrect: boolean;
+  }>;
+  refLinks?: string[];
+}
+
+export interface QuizAnswerOption {
+  answerId: number;
+  questionId: number;
+  answerText: string;
+}
+
+export interface UserAnswerPayload {
+  questionId: number;
+  questionType: string;
+  selectedAnswerIds: number[];
+  feedbackText?: string;
+}
+
+export interface SubmittedAnswer {
+  questionId: number;
+  questionNumber: number;
+  questionText: string;
+  questionType: string;
+  marks: number;
+  refLinks?: string[];
+  selectedAnswerId: number;
+  selectedAnswerText: string;
+  selectedOptionText?: string;
+  correctAnswerText?: string;
+  isCorrect: boolean;
+  submittedAt: string;
+}
+
+export interface QuizResult {
+  totalQuestions: number;
+  correctAnswers: number;
+  scorePercentage: number;
+  totalMarks: number;
+  marksObtained: number;
+  passed: boolean;
+  completed: boolean;
+  answers: SubmittedAnswer[];
+  feedback?: {
+    feedbackId: number;
+    feedbackText: string;
+    createdAt: string;
+  };
+}
+
+export type QuizStatus = "not_started" | "passed" | "failed";
+
+export interface QuizWithStatus extends Quiz {
+  status: QuizStatus;
+  scorePercentage?: number;
+}
+
+// Admin types
+export interface QuizAdmin extends Quiz {
+  totalQuestions: number;
+}
+
+export interface UserQuizAnalytics {
+  userId: number;
+  userEmail: string;
+  userName: string;
+  totalQuestions: number;
+  answered: number;
+  correctAnswers: number;
+  scorePercentage: number;
+  totalMarks: number;
+  marksObtained: number;
+  completed: number;
+  passed: number;
+  submittedAt?: string;
+}
+
+export interface QuizPayload {
+  title: string;
+  description?: string;
+  thumbnail?: string;
+  passingScore: number;
+  dueDate?: string;
+  assignedUserIds: number[];
+  questions?: Array<{
+    text: string;
+    type: string;
+    refLinks?: string[];
+    answers: Array<{ text: string; isCorrect: boolean }>;
+  }>;
+}
+
+// Quiz form types
+export type QuestionType = "mcq_single" | "mcq_multiple" | "rating" | "feedback";
+
+export interface AnswerOption {
+  text: string;
+  isCorrect: boolean;
+}
+
+export interface QuestionFormData {
+  text: string;
+  type: QuestionType;
+  answers: AnswerOption[];
+  refLinks: string[];
+}
+
+export interface AssignedQuizUser {
+  userId: number;
+  firstName: string;
+  lastName: string;
+  workEmail: string;
+  employeeThumbnail?: string;
+  department?: string;
 }

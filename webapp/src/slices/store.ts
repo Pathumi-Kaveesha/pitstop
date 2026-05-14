@@ -26,6 +26,7 @@ import customerTestimonialsReducer from "@slices/customerTestimonialSlice/custom
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 import { enableMapSet } from "immer";
+import quizReducer from "@slices/quizSlice/quiz";
 
 enableMapSet();
 
@@ -39,6 +40,7 @@ export const store = configureStore({
     common: commonReducer,
     customButton: customButtonReducer,
     customerTestimonials: customerTestimonialsReducer,
+    quiz: quizReducer,
   },
 });
 

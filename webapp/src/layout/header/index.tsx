@@ -58,6 +58,7 @@ import {
   ROUTE_ID_HOME,
   ROUTE_ID_MORE,
   ROUTE_ID_MY_BOARD,
+  ROUTE_ID_QUIZ_ADMIN,
 } from "@config/constant";
 import { useAppAuthContext } from "@context/AuthContext";
 import { selectUserInfo } from "@slices/authSlice";
@@ -201,6 +202,14 @@ const Header = (props: HeaderProps) => {
             children: [],
             isRouteVisible: true,
           },
+          {
+            menuItem: "Quiz Admin Dashboard",
+            path: "/quiz-admin",
+            routeId:ROUTE_ID_QUIZ_ADMIN,
+            routeOrder: 3,
+            children: [],
+            isRouteVisible: true,
+          }
         ],
         isRouteVisible: true,
       };

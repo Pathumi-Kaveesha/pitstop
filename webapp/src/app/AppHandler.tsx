@@ -63,6 +63,11 @@ const AppHandler = () => {
       element: <VerticalTemplate />,
       errorElement: <Error />,
     },
+    {
+      path: "/quiz-admin",
+      element: React.createElement(View.QuizAdminDashboard),
+      errorElement: <Error />,
+    },
   ]), [route.routes]);
 
   return (

@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { GOOGLE_DOCS_DOMAIN, GOOGLE_DRIVE_DOMAIN } from "@config/constant";
 import { CONTENT_SUBTYPE, FILETYPE } from "@utils/types";
+import { QuestionFormData } from "@/types/types";
 
 export const getGoogleDocsDownloadUrl = (url: string): string => {
   const fileId = extractFileIdFromURL(url);
@@ -162,3 +163,29 @@ export function useInViewport<T extends HTMLElement>(options?: IntersectionObser
 
   return { ref, isInViewport };
 }
+
+export const emptyQuestion = (): QuestionFormData => ({
+  text: "",
+  type: "mcq_single",
+  answers: [
+    { text: "", isCorrect: true },
+    { text: "", isCorrect: false },
+  ],
+  refLinks: [],
+});
+
+export const toDateTimeLocalValue = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};

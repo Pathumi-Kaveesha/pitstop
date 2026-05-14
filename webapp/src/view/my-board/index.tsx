@@ -25,6 +25,8 @@ import {
   AccordionSummary,
   AccordionDetails,
   CircularProgress,
+  Chip,
+  Pagination,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
@@ -47,10 +49,15 @@ import {
   fetchMyBoardSection,
 } from "@slices/pageSlice/page";
 import { MyBoardPanelTypes} from "@utils/types";
+import QuizCard from "@view/quiz/components/QuizCard";
+import { fetchQuizzes } from "@slices/quizSlice/quiz";
+import { QuizStatus } from "@/types/types";
+import SchoolOutlinedIcon from "@mui/icons-material/SchoolOutlined";
 
 const PINNED_CONTENT_SECTION_ID = -2;
 const ESSENTIALS_SECTION_ID = -4;
 const ITEMS_PER_PAGE = 3;
+const QUIZZES_PER_PAGE = 6;
 
 type LoadState = string;
 
@@ -93,14 +100,19 @@ const MyBoard: React.FC = () => {
   const userInfo = useSelector(selectUserInfo);
   const location = useLocation();
   const matches = matchRoutes(routes, location.pathname);
+  
 
   const [expandedAccordion, setExpandedAccordion] = useState<string | false>(
     false
   );
   const [openAddEssentialDialog, setOpenAddEssentialDialog] = useState(false);
+  const [quizzesPage, setQuizzesPage] = useState(1);
+  const quizzes = useAppSelector((s: RootState) => s.quiz.quizzes);
+  const quizzesStatus = useAppSelector((s: RootState) => s.quiz.quizzesStatus);
+  const [quizFilter, setQuizFilter] = useState<"all" | QuizStatus>("all");
 
   const authorizedRoles: Role[] = useAppSelector(
-    (state: RootState) => state.auth.roles
+    (state: RootState) => (state.auth as { roles: Role[] }).roles
   );
   const isAdmin = authorizedRoles.includes(Role.SALES_ADMIN);
 
@@ -135,6 +147,10 @@ const MyBoard: React.FC = () => {
     [dispatch]
   );
 
+  const refreshQuizzes = useCallback(() => {
+    dispatch(fetchQuizzes());
+  }, [dispatch]);
+
   const seeMoreSection = (
     PanelTypes: MyBoardPanelTypes,
     currentOffset: number
@@ -158,6 +174,7 @@ const MyBoard: React.FC = () => {
         refreshSection(MyBoardPanelTypes.PINNED);
       if (panel === MyBoardPanelTypes.ESSENTIAL)
         refreshSection(MyBoardPanelTypes.ESSENTIAL);
+      if (panel === "quizzes") refreshQuizzes();
     };
 
   useEffect(() => {
@@ -178,6 +195,12 @@ const MyBoard: React.FC = () => {
       refreshSection(MyBoardPanelTypes.ESSENTIAL);
     }
   }, [expandedAccordion, pinned.status, essential.status, refreshSection]);
+
+  useEffect(() => {
+    if (expandedAccordion === "quizzes" && quizzesStatus === "idle") {
+      refreshQuizzes();
+    }
+  }, [expandedAccordion, quizzesStatus, refreshQuizzes]);
 
   const refetchDebounceRef = useRef<number | null>(null);
 
@@ -211,7 +234,10 @@ const MyBoard: React.FC = () => {
     refreshSection,
     routeMutationState,
   ]);
-
+  
+  useEffect(() => {
+    setQuizzesPage(1);
+  }, [quizFilter]);
   const renderLoadingScreen = (label: string) => (
     <Box
       sx={{
@@ -677,6 +703,217 @@ const MyBoard: React.FC = () => {
                     </Button>
                   </Box>
                 )}
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Quizzes Accordion */}
+          <Accordion
+            expanded={expandedAccordion === "quizzes"}
+            onChange={handleAccordionChange("quizzes")}
+            elevation={0}
+            sx={{
+              mt: 3,
+              border: `1px solid ${
+                theme.palette.mode === "dark"
+                  ? "rgba(255, 107, 0, 0.3)"
+                  : "rgba(255, 107, 0, 0.2)"
+              }`,
+              borderRadius: "12px !important",
+              overflow: "hidden",
+              "&:before": { display: "none" },
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? theme.palette.background.paper
+                  : theme.palette.common.white,
+            }}
+          >
+            <AccordionSummary
+              expandIcon={
+                <ExpandMoreIcon
+                  sx={{
+                    color: theme.palette.primary.main,
+                    fontSize: 28,
+                  }}
+                />
+              }
+              sx={{
+                px: 3,
+                py: 1.5,
+                minHeight: "72px",
+                "&.Mui-expanded": {
+                  minHeight: "72px",
+                  borderBottom: `1px solid ${
+                    theme.palette.mode === "dark"
+                      ? "rgba(255, 107, 0, 0.2)"
+                      : "rgba(255, 107, 0, 0.1)"
+                  }`,
+                },
+                "& .MuiAccordionSummary-content": {
+                  my: 1.5,
+                },
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                <SchoolOutlinedIcon
+                  sx={{
+                    fontSize: 26,
+                    color: theme.palette.primary.main,
+                  }}
+                />
+                <Typography
+                  variant="h5"
+                  sx={{
+                    fontWeight: 400,
+                    fontSize: "1.5rem",
+                    color: theme.palette.text.primary,
+                  }}
+                >
+                  Quizzes
+                </Typography>
+                {quizzes.length > 0 && (
+                  <Chip
+                    label={quizzes.length}
+                    size="small"
+                    sx={{
+                      backgroundColor: theme.palette.primary.main,
+                      color: "#fff",
+                      fontWeight: 600,
+                      height: 24,
+                      minWidth: 24,
+                    }}
+                  />
+                )}
+              </Box>
+            </AccordionSummary>
+
+            <AccordionDetails sx={{ px: 3, py: 3 }}>
+              {quizzesStatus === "loading" ? (
+                <Box sx={{ py: 6, display: "flex", justifyContent: "center" }}>
+                  <CircularProgress />
+                </Box>
+              ) : quizzes.length === 0 ? (
+                <Box sx={{ py: 6, textAlign: "center" }}>
+                  <SchoolOutlinedIcon
+                    sx={{
+                      fontSize: 48,
+                      color: theme.palette.primary.main,
+                      opacity: 0.4,
+                    }}
+                  />
+                  <Typography
+                    variant="h6"
+                    color="text.secondary"
+                    sx={{ mt: 1 }}
+                  >
+                    No quizzes assigned yet
+                  </Typography>
+                </Box>
+              ) : (
+                <>
+                  {/* Filter chips */}
+                  <Box
+                    sx={{
+                      display: "flex",
+                      gap: 1,
+                      mb: 3,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {(
+                      [
+                        "all",
+                        "not_started",
+                        "passed",
+                        "failed",
+                      ] as const
+                    ).map((f) => {
+                      const count =
+                        f === "all"
+                          ? quizzes.length
+                          : quizzes.filter((q) => q.status === f).length;
+                      const label = {
+                        all: "All",
+                        not_started: "Pending",
+                        passed: "Passed",
+                        failed: "Failed",
+                      }[f];
+                      return (
+                        <Chip
+                          key={f}
+                          label={`${label} ${count}`}
+                          onClick={() => setQuizFilter(f)}
+                          sx={{
+                            cursor: "pointer",
+                            backgroundColor:
+                              quizFilter === f
+                                ? theme.palette.primary.main
+                                : "transparent",
+                            color:
+                              quizFilter === f
+                                ? "#fff"
+                                : theme.palette.text.primary,
+                            border: `1px solid ${
+                              quizFilter === f
+                                ? theme.palette.primary.main
+                                : theme.palette.divider
+                            }`,
+                            fontWeight: quizFilter === f ? 600 : 400,
+                          }}
+                        />
+                      );
+                    })}
+                  </Box>
+
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 2,
+                    }}
+                  >
+                    {(() => {
+                      const filteredQuizzes = quizzes.filter(
+                        (q) =>
+                          quizFilter === "all" || q.status === quizFilter
+                      );
+                      const totalPages = Math.ceil(
+                        filteredQuizzes.length / QUIZZES_PER_PAGE
+                      );
+                      const startIdx = (quizzesPage - 1) * QUIZZES_PER_PAGE;
+                      const paginatedQuizzes = filteredQuizzes.slice(
+                        startIdx,
+                        startIdx + QUIZZES_PER_PAGE
+                      );
+
+                      return (
+                        <>
+                          {paginatedQuizzes.map((quiz) => (
+                            <QuizCard key={quiz.quizId} quiz={quiz} />
+                          ))}
+                          {totalPages > 1 && (
+                            <Box
+                              sx={{
+                                display: "flex",
+                                justifyContent: "center",
+                                mt: 2,
+                              }}
+                            >
+                              <Pagination
+                                count={totalPages}
+                                page={quizzesPage}
+                                onChange={(_, page) => {
+                                  setQuizzesPage(page);
+                                }}
+                                color="primary"
+                              />
+                            </Box>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </Box>
+                </>
+              )}
             </AccordionDetails>
           </Accordion>
         </Box>

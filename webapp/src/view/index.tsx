@@ -20,10 +20,12 @@ const Home = lazy(() => import("./home/index"));
 const MyBoard = lazy(() => import("./my-board/index"));
 const addComponents = lazy(() => import("./component"));
 const Search = lazy(() => import("./search"));
+const QuizAdminDashboard = lazy(() => import("./quiz/index"));
 
 export const View = {
   Home,
   MyBoard,
   addComponents,
   Search,
+  QuizAdminDashboard
 };
