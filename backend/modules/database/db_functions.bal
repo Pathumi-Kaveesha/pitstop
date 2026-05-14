@@ -980,6 +980,14 @@ public isolated function getQuizTitle(int quizId) returns string|error {
     return result.title;
 }
 
+# Get a quiz by its ID.
+# + quizId - Quiz ID
+# + return - Quiz record or error
+public isolated function getQuizById(int quizId) returns Quiz|error {
+    Quiz result = check dbClient->queryRow(getQuizByIdQuery(quizId));
+    return result;
+}
+
 # Get assigned user IDs for a quiz.
 # + quizId - Quiz ID
 # + return - Array of assigned user IDs or error

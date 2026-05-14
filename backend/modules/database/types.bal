@@ -398,425 +398,427 @@ public type ContentFilter record {|
     int 'offset = 0;
 |};
 
-# Quiz record representing a quiz entity stored in the database.
+# Quiz record.
 public type Quiz record {|
-    # Unique quiz identifier
+    # Quiz ID
     @sql:Column {name: "quiz_id"}
     int quizId;
-    # Quiz title
+    # Title
     @sql:Column {name: "quiz_title"}
     string title;
-    # Quiz description/instructions
+    # Description
     @sql:Column {name: "quiz_description"}
     string? description;
-    # Quiz thumbnail image URL
+    # Thumbnail URL
     @sql:Column {name: "thumbnail"}
     string? thumbnail;
-    # Minimum score percentage required to pass
+    # Passing score %
     @sql:Column {name: "passing_score"}
     int passingScore;
-    # Quiz due date (ISO format string)
+    # Due date
     @sql:Column {name: "due_date"}
     string? dueDate;
-    # JSON array of user IDs assigned to this quiz
+    # Assigned user IDs
     @sql:Column {name: "assigned_user_ids"}
     json? assignedUserIds;
-    # Quiz status: DRAFTED, PUBLISHED, ARCHIVED
+    # Status
     @sql:Column {name: "status"}
     string status;
-    # Soft delete flag
+    # Deleted
     @sql:Column {name: "is_deleted"}
     boolean isDeleted;
-    # Email of user who created the quiz
+    # Created by
     @sql:Column {name: "created_by"}
     string createdBy;
-    # Email of user who last updated the quiz
+    # Updated by
     @sql:Column {name: "updated_by"}
     string? updatedBy;
-    # Timestamp when quiz was created
+    # Created at
     @sql:Column {name: "created_at"}
     string createdAt;
-    # Timestamp of last update
+    # Updated at
     @sql:Column {name: "updated_at"}
     string? updatedAt;
-    # Total number of questions in the quiz
+    # Total questions
     @sql:Column {name: "total_questions"}
     int totalQuestions;
 |};
 
-# Payload used to create a new quiz. Includes questions and assignment details.
+# Quiz creation payload.
 public type QuizPayload record {
-    # Quiz title (required)
+    # Title
     string title;
-    # Quiz description/instructions
+    # Description
     string? description = ();
-    # Quiz thumbnail image URL
+    # Thumbnail URL
     string? thumbnail = ();
-    # Minimum passing score percentage (required)
+    # Passing score %
     int passingScore;
-    # Quiz due date (ISO format string)
+    # Due date
     string? dueDate = ();
-    # List of user IDs to assign quiz to
+    # User IDs
     int[] assignedUserIds = [];
-    # Initial status: DRAFTED (default) or PUBLISHED
+    # Status
     string status = "DRAFTED";
-    # Nested questions array (used for bulk creation)
+    # Questions
     NestedQuestionPayload[] questions = [];
 };
 
-# Payload used to update quiz fields selectively.
+# Quiz update payload.
 public type UpdateQuizPayload record {
-    # Updated quiz title
+    # Title
     string? title = ();
-    # Updated quiz description/instructions
+    # Description
     string? description = ();
-    # Updated quiz thumbnail image URL
+    # Thumbnail URL
     string? thumbnail = ();
-    # Updated passing score percentage
+    # Passing score %
     int? passingScore = ();
-    # Updated due date
+    # Due date
     string? dueDate = ();
-    # Updated list of assigned user IDs
+    # User IDs
     int[]? assignedUserIds = ();
-    # Updated quiz status
+    # Status
     string? status = ();
-    # Updated questions (for bulk updates)
+    # Questions
     NestedQuestionPayload[]? questions = ();
 };
 
-# NestedQuestionPayload represents a question provided within a quiz payload.
+# Question payload.
 public type NestedQuestionPayload record {|
-    # Question text/content (required)
+    # Text
     string text;
-    # Question type
+    # Type
     string 'type;
-    # Optional reference links for the question
+    # Reference links
     string[]? refLinks = ();
-    # Answer options for this question
+    # Answers
     NestedAnswerPayload[] answers = [];
 |};
 
-# NestedAnswerPayload represents an answer item within a nested question payload.
+# Answer payload.
 public type NestedAnswerPayload record {|
-    # Answer text/content
+    # Text
     string text;
-    # Whether this answer is correct
+    # Correct
     boolean isCorrect;
 |};
 
-# AssignUsersPayload is used to provide a list of user IDs to assign a quiz to.
+# Assign users payload.
 public type AssignUsersPayload record {|
-    # Array of user IDs to assign to quiz
+    # User IDs
     int[] userIds;
+    # Time limit (minutes)
+    int timeLimitMinutes;
 |};
 
-# Question record representing a persisted quiz question.
+# Question record.
 public type Question record {|
-    # Unique question identifier
+    # ID
     @sql:Column {name: "question_id"}
     int questionId;
-    # Question sequence number within the quiz
+    # Number
     @sql:Column {name: "question_number"}
     int questionNumber;
-    # Parent quiz ID
+    # Quiz ID
     @sql:Column {name: "quiz_id"}
     int quizId;
-    # Question text/content
+    # Text
     @sql:Column {name: "question_text"}
     string questionText;
-    # Question type
+    # Type
     @sql:Column {name: "question_type"}
     string questionType;
-    # JSON array of reference links for the question
+    # Reference links
     @sql:Column {name: "ref_links"}
     json? refLinks;
-    # Soft delete flag
+    # Deleted
     @sql:Column {name: "is_deleted"}
     boolean isDeleted;
-    # Email of user who created the question
+    # Created by
     @sql:Column {name: "created_by"}
     string createdBy;
-    # Email of user who last updated the question
+    # Updated by
     @sql:Column {name: "updated_by"}
     string? updatedBy;
-    # Timestamp when question was created
+    # Created at
     @sql:Column {name: "created_at"}
     string createdAt;
-    # Timestamp of last update
+    # Updated at
     @sql:Column {name: "updated_at"}
     string? updatedAt;
 |};
-# QuestionPayload used when creating a question for a quiz.
+# Question payload.
 public type QuestionPayload record {|
-    # Question sequence number within the quiz
+    # Number
     int questionNumber;
-    # Question text/content (required)
+    # Text
     string questionText;
-    # Question type
+    # Type
     string questionType;
-    # Optional reference links for the question
+    # Reference links
     string[]? refLinks = ();
 |};
 
-# UpdateQuestionPayload for partial updates to an existing question.
+# Update question payload.
 public type UpdateQuestionPayload record {|
-    # Updated question text/content
+    # Text
     string? questionText;
-    # Updated question type
+    # Type
     string? questionType;
-    # Updated reference links
+    # Reference links
     string[]? refLinks = ();
 |};
 
-# Answer record representing a persisted answer option for a question.
+# Answer record.
 public type Answer record {|
-    # Unique answer identifier
+    # ID
     @sql:Column {name: "answer_id"}
     int answerId;
-    # Parent question ID
+    # Question ID
     @sql:Column {name: "question_id"}
     int questionId;
-    # Answer text/content
+    # Text
     @sql:Column {name: "answer_text"}
     string answerText;
-    # Whether this is a correct answer for the question
+    # Correct
     @sql:Column {name: "is_correct"}
     boolean isCorrect;
-    # Email of user who created the answer
+    # Created by
     @sql:Column {name: "created_by"}
     string createdBy;
-    # Email of user who last updated the answer
+    # Updated by
     @sql:Column {name: "updated_by"}
     string? updatedBy;
-    # Timestamp when answer was created
+    # Created at
     @sql:Column {name: "created_at"}
     string createdAt;
-    # Timestamp of last update
+    # Updated at
     @sql:Column {name: "updated_at"}
     string? updatedAt;
 |};
 
-# Public view of an answer (excludes correctness flag).
+# Public answer view.
 public type AnswerPublic record {|
-    # Unique answer identifier
+    # ID
     @sql:Column {name: "answer_id"}
     int answerId;
-    # Parent question ID
+    # Question ID
     @sql:Column {name: "question_id"}
     int questionId;
-    # Answer text/content
+    # Text
     @sql:Column {name: "answer_text"}
     string answerText;
-    # Timestamp when answer was created
+    # Created at
     @sql:Column {name: "created_at"}
     string createdAt;
-    # Timestamp of last update
+    # Updated at
     @sql:Column {name: "updated_at"}
     string? updatedAt;
 |};
 
-# Payload used when creating a new answer for a question.
+# Answer creation payload.
 public type AnswerPayload record {|
-    # Answer text/content (required)
+    # Text
     string answerText;
-    # Whether this is a correct answer (required)
+    # Correct
     boolean isCorrect;
 |};
 
-# Payload used for updating an answer partially.
+# Answer update payload.
 public type UpdateAnswerPayload record {|
-    # Updated answer text/content
+    # Text
     string? answerText;
-    # Updated correctness flag
+    # Correct
     boolean? isCorrect;
 |};
 
-# UserAnswerPayload represents a submission from a user for a question.
+# User answer submission.
 public type UserAnswerPayload record {
-    # Question ID being answered
+    # Question ID
     int questionId;
     # Question type
     string questionType;
     # Selected answer IDs
     int[] selectedAnswerIds;
-    # Feedback text
+    # Feedback
     string? feedbackText = ();
 };
 
-# QuizResult returned to the user after completing a quiz.
+# Quiz result.
 public type QuizResult record {|
-    # Total number of questions in the quiz
+    # Total questions
     int totalQuestions;
-    # Number of questions answered correctly
+    # Correct answers
     int correctAnswers;
-    # Score as a percentage
+    # Score %
     decimal scorePercentage;
-    # Total marks available in the quiz
+    # Total marks
     int totalMarks;
-    # Marks obtained by the user
+    # Marks obtained
     int marksObtained;
-    # Whether the user passed the quiz
+    # Passed
     boolean passed;
-    # Whether all questions were answered
+    # Completed
     boolean completed;
-    # Array of all submitted answers
+    # Answers
     SubmittedAnswer[] answers;
-    # Optional feedback submitted by user
+    # Feedback
     QuizFeedback? feedback;
 |};
 
-# Internal/raw quiz result representation used for DB mappings.
+# Raw quiz result (DB mapping).
 public type QuizResultRaw record {|
-    # Total number of questions in the quiz
+    # Total questions
     @sql:Column {name: "total_questions"}
     int totalQuestions;
-    # Number of questions answered correctly
+    # Correct answers
     @sql:Column {name: "correct_answers"}
     int? correctAnswers;
-    # Score as a percentage (0-100)
+    # Score %
     @sql:Column {name: "score_percentage"}
     decimal scorePercentage;
-    # Total marks available in the quiz
+    # Total marks
     @sql:Column {name: "total_marks"}
     int? totalMarks;
-    # Marks obtained by the user
+    # Marks obtained
     @sql:Column {name: "marks_obtained"}
     int? marksObtained;
-    # Whether the user passed (1=passed, 0=failed)
+    # Passed
     @sql:Column {name: "passed"}
     int passed;
-    # Whether all questions were answered
+    # Completed
     @sql:Column {name: "completed"}
     int completed;
 |};
 
-# UserQuizAnalytics provides aggregated analytics for a user's quiz attempts.
+# User quiz analytics.
 public type UserQuizAnalytics record {|
     # User ID
     @sql:Column {name: "user_id"}
     int userId;
-    # User email address
+    # User email
     @sql:Column {name: "user_email"}
     string userEmail;
-    # Full name of the user
+    # User name
     @sql:Column {name: "user_name"}
     string userName;
-    # Total number of questions in the quiz
+    # Total questions
     @sql:Column {name: "total_questions"}
     int totalQuestions;
-    # Number of questions answered
+    # Answered
     int answered;
-    # Number of questions answered correctly
+    # Correct answers
     @sql:Column {name: "correct_answers"}
     int correctAnswers;
-    # Score as a percentage (0-100)
+    # Score %
     @sql:Column {name: "score_percentage"}
     decimal scorePercentage;
-    # Total marks available in the quiz
+    # Total marks
     @sql:Column {name: "total_marks"}
     int totalMarks;
-    # Marks obtained by the user
+    # Marks obtained
     @sql:Column {name: "marks_obtained"}
     int marksObtained;
-    # Whether quiz is completed
+    # Completed
     int completed;
-    # Whether quiz is passed
+    # Passed
     int passed;
-    # Timestamp of quiz submission
+    # Submitted at
     @sql:Column {name: "submitted_at"}
     string? submittedAt;
 |};
 
-# SubmittedAnswer represents an individual answer submitted by a user.
+# Submitted answer.
 public type SubmittedAnswer record {|
-    # Question ID for this answer
+    # Question ID
     @sql:Column {name: "question_id"}
     int questionId;
-    # Question sequence number
+    # Question number
     @sql:Column {name: "question_number"}
     int questionNumber;
-    # Full question text
+    # Question text
     @sql:Column {name: "question_text"}
     string questionText;
     # Question type
     @sql:Column {name: "question_type"}
     string questionType;
-    # Reference links for the question
+    # Reference links
     @sql:Column {name: "ref_links"}
     json? refLinks;
     # Selected answer ID
     @sql:Column {name: "selected_answer_id"}
     int selectedAnswerId;
-    # Text of the selected answer
+    # Answer text
     @sql:Column {name: "answer_text"}
     string selectedAnswerText;
-    # Whether the selected answer was correct
+    # Correct
     @sql:Column {name: "is_correct"}
     boolean isCorrect;
-    # Timestamp when answer was submitted
+    # Submitted at
     @sql:Column {name: "submitted_at"}
     string submittedAt;
 |};
 
-# UserAnswerDrillDown bundles submitted answers and optional feedback for drill-down views.
+# User answer drill-down.
 public type UserAnswerDrillDown record {|
-    # All answers submitted by the user for the quiz
+    # Answers
     SubmittedAnswer[] answers;
-    # Optional feedback provided by the user
+    # Feedback
     QuizFeedback? feedback;
 |};
 
-# QuizFeedback represents feedback left by a user for a quiz.
+# Quiz feedback.
 public type QuizFeedback record {|
-    # Unique feedback identifier
+    # ID
     @sql:Column {name: "feedback_id"}
     int feedbackId;
-    # Quiz ID for which feedback is provided
+    # Quiz ID
     @sql:Column {name: "quiz_id"}
     int quizId;
-    # User ID who provided the feedback
+    # User ID
     @sql:Column {name: "user_id"}
     int userId;
-    # Feedback text/comments
+    # Feedback text
     @sql:Column {name: "feedback_text"}
     string feedbackText;
-    # Timestamp when feedback was created
+    # Created at
     @sql:Column {name: "created_at"}
     string createdAt;
 |};
 
-# QuizFeedbackAdmin 
+# Quiz feedback (admin view).
 public type QuizFeedbackAdmin record {|
-    # Unique feedback identifier
+    # ID
     @sql:Column {name: "feedback_id"}
     int feedbackId;
-    # Quiz ID for which feedback is provided
+    # Quiz ID
     @sql:Column {name: "quiz_id"}
     int quizId;
-    # User ID who provided the feedback
+    # User ID
     @sql:Column {name: "user_id"}
     int userId;
-    # Full name of the user who provided feedback
+    # User name
     @sql:Column {name: "user_name"}
     string userName;
-    # Email address of the user who provided feedback
+    # User email
     @sql:Column {name: "user_email"}
     string userEmail;
     # Feedback text
     @sql:Column {name: "feedback_text"}
     string feedbackText;
-    # Timestamp when feedback was created
+    # Created at
     @sql:Column {name: "created_at"}
     string createdAt;
 |};
 
-# QuizTitle is a lightweight type representing only the quiz title.
+# Quiz title.
 public type QuizTitle record {|
-    # Quiz title
+    # Title
     string title;
 |};
-# QuizStatus is a lightweight type representing the status of a quiz.
+# Quiz status.
 public type QuizStatus record {|
-    # Quiz status value
+    # Status
     string status;
 |};

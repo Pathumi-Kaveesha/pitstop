@@ -2046,18 +2046,6 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        if authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
-            database:Quiz[]|error result = database:getQuizzes();
-            if result is error {
-                string customError = "Error while fetching quizzes";
-                log:printError(customError, result);
-                return <http:InternalServerError>{
-                    body: {message: customError}
-                };
-            }
-            return result;
-        }
-
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         if userEmail is error {
             log:printError(constants:GET_USER_ID_ERROR, userEmail);
@@ -2072,6 +2060,38 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
         database:Quiz[]|error result = database:getQuizzes(userId);
+        if result is error {
+            string customError = "Error while fetching quizzes";
+            log:printError(customError, result);
+            return <http:InternalServerError>{
+                body: {message: customError}
+            };
+        }
+        return result;
+    }
+
+    # Get all quizzes for admins.
+    #
+    # + ctx - Request context
+    # + return - Quiz list or error response
+    resource function get quizzes/admin(http:RequestContext ctx)
+        returns database:Quiz[]|http:Forbidden|http:InternalServerError {
+
+        string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
+        if userGroups is error {
+            log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
+            return <http:InternalServerError>{
+                body: {message: constants:GET_USER_ROLE_ERROR}
+            };
+        }
+
+        if !authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
+            return <http:Forbidden>{
+                body: {message: "Forbidden"}
+            };
+        }
+
+        database:Quiz[]|error result = database:getQuizzes();
         if result is error {
             string customError = "Error while fetching quizzes";
             log:printError(customError, result);
@@ -2306,6 +2326,15 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
+        entity:Employee|error employeeInfo = entity:getEmployee(userEmail);
+        if employeeInfo is error {
+            string customError = "Failed to get employee info";
+            log:printError(customError, employeeInfo);
+            return <http:InternalServerError>{
+                body: customError
+            };
+        }
+
         int[] newlyAssignedUserIds = [];
         foreach int userId in payload.userIds {
             if currentAssignedUserIds.indexOf(userId) is () {
@@ -2331,17 +2360,34 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         // Notify NEWLY assigned users
         if newlyAssignedUserIds.length() > 0 {
-            string|error quizTitle = database:getQuizTitle(quizId);
-            if quizTitle is string {
+            database:Quiz|error quizDetails = database:getQuizById(quizId);
+            if quizDetails is database:Quiz {
                 foreach int userId in newlyAssignedUserIds {
                     types:User|error? user = database:getUserById(userId);
                     if user is types:User {
                         string userEmailAddress = user.email;
-                        string emailSubject = string `[${appName}] New Quiz Assignment: ${quizTitle}`;
-                        string|error content = email:bindKeyValues(email:quizAssignmentTemplate,
+                        string emailSubject = string `[${appName}] New Quiz - ${quizDetails.title}`;
+                        string renderedTemplate = renderAppName(email:quizAssignmentTemplate, appName);
+                        int chosenTimeLimit = payload.timeLimitMinutes;
+                        string timeLimitText = string `${chosenTimeLimit} mins`;
+                        string dueDateText = "Not specified";
+                        string dueDateRaw = quizDetails.dueDate ?: "";
+                        if dueDateRaw != "" {
+                            int? spaceIndex = dueDateRaw.indexOf(" ");
+                            if spaceIndex is int && spaceIndex >= 0 {
+                                dueDateText = dueDateRaw.substring(0, spaceIndex);
+                            } else {
+                                dueDateText = dueDateRaw;
+                            }
+                        }
+
+                        string|error content = email:bindKeyValues(renderedTemplate,
                             {
-                                "QUIZ_TITLE": quizTitle,
-                                "APP_NAME": appName,
+                                "USER_NAME": string `${user.firstName}`,
+                                "QUIZ_TITLE": quizDetails.title,
+                                "DUE_DATE": dueDateText,
+                                "TIME_LIMIT": timeLimitText,
+                                "ASSIGNED_BY": employeeInfo.firstName + " " + employeeInfo.lastName,
                                 "QUIZ_LINK": string `${frontendBaseUrl}/quizzes`
                             });
 
@@ -2358,6 +2404,8 @@ service http:InterceptableService / on new http:Listener(9090) {
                         }
                     }
                 }
+            } else {
+                log:printError("Error fetching quiz details", quizDetails);
             }
         }
 

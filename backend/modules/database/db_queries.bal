@@ -1947,7 +1947,6 @@ sql:ParameterizedQuery query = `
             AND q.status = 'PUBLISHED'
             AND q.assigned_user_ids IS NOT NULL
             AND JSON_CONTAINS(q.assigned_user_ids, JSON_ARRAY(${userId}))
-            AND (q.due_date IS NULL OR q.due_date > NOW())
         `);
     }
 
@@ -1980,17 +1979,19 @@ isolated function getQuizStatusQuery(int quizId) returns sql:ParameterizedQuery 
 isolated function getQuizByIdQuery(int quizId) returns sql:ParameterizedQuery => `
     SELECT
         quiz_id, 
-        title, 
-        description, 
+        title AS quiz_title, 
+        description AS quiz_description, 
         thumbnail, 
         passing_score,
         due_date, 
         assigned_user_ids, 
+        status,
         is_deleted,
         created_by, 
         updated_by, 
         created_at, 
-        updated_at
+        updated_at,
+        (SELECT COUNT(*) FROM question WHERE quiz_id = ${quizId} AND is_deleted = false) AS total_questions
     FROM quiz
     WHERE 
         quiz_id = ${quizId} 

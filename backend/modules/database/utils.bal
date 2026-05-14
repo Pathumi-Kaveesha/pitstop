@@ -443,7 +443,7 @@ isolated function submitUserAnswersWithFeedback(int quizId, int userId, UserAnsw
 # + quizId - Quiz ID for which to build the result
 # + userEmail - User email to fetch the result for
 # + return - QuizResult with transformations applied or error
-isolated function buildQuizResultWithTransformations(int quizId, string userEmail) returns QuizResult|error {
+isolated function buildQuizResultWithTransformations(int quizId, string userEmail) returns sql:Error|QuizResult|error {
     // Step 1: Get raw score summary
     QuizResultRaw|sql:Error raw = dbClient->queryRow(getUserResultQuery(quizId, userEmail));
     if raw is sql:Error {
