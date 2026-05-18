@@ -18,12 +18,14 @@ import Error from "../layout/pages/404";
 import MaintenancePage from "@layout/pages/Maintenance";
 import { getActiveRoutesV2 } from "../route";
 import Layout from "../layout/Layout";
-import { RootState, useAppSelector } from "@slices/store";
+import { RootState, useAppSelector, useAppDispatch } from "@slices/store";
+import { clearSnackbarMessage } from "@slices/commonSlice/common";
+import { useSnackbar } from "notistack";
 import PreLoader from "@components/common/PreLoader";
 import ErrorHandler from "@components/common/ErrorHandler";
 import Search from "@view/search/index";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import Summary from "@view/summary/index";
 import VerticalTemplate from "@layout/pages/VerticalTemplate";
 import React from "react";
@@ -31,6 +33,25 @@ import { View } from "@root/src/view";
 
 // For matomo integration
 export declare let _paq: unknown[];
+
+const GlobalSnackbarListener = () => {
+  const { enqueueSnackbar } = useSnackbar();
+  const dispatch = useAppDispatch();
+  const common = useAppSelector((state: RootState) => state.common);
+
+  useEffect(() => {
+    if (common.timestamp != null) {
+      enqueueSnackbar(common.message, {
+        variant: common.type,
+        preventDuplicate: true,
+        anchorOrigin: common.anchorOrigin,
+      });
+      dispatch(clearSnackbarMessage());
+    }
+  }, [common.anchorOrigin, common.message, common.timestamp, common.type, enqueueSnackbar, dispatch]);
+
+  return null;
+};
 
 const AppHandler = () => {
   const auth = useAppSelector((state: RootState) => state.auth);
@@ -72,6 +93,7 @@ const AppHandler = () => {
 
   return (
     <>
+      <GlobalSnackbarListener />
       {auth.status === "loading" && <PreLoader isLoading={true} message={auth.statusMessage}></PreLoader>}
       {auth.status === "success" && auth.mode === "active" && route.routes.length > 0 && (
         <RouterProvider router={router} />

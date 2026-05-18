@@ -26,6 +26,7 @@ import { fetchQuizResult, resetResult } from "@slices/quizSlice/quiz";
 import { useAppDispatch, useAppSelector } from "@slices/store";
 
 import { QuizWithStatus } from "@/types/types";
+import { parseDateAsUtc } from "@utils/utils";
 import QuizResultModal from "./QuizResultModal";
 import QuizTakeModal from "./QuizTakeModal";
 
@@ -68,7 +69,8 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
 
   const progressValue = quiz.scorePercentage ?? 0;
 
-  const isOverdue = !!quiz.dueDate && new Date(quiz.dueDate) < new Date();
+  const parsedDueDate = parseDateAsUtc(quiz.dueDate);
+  const isOverdue = !!parsedDueDate && parsedDueDate < new Date();
   const isPendingQuiz = quiz.status === "not_started";
 
   const isLoadingResults = viewingResult && !result;
@@ -140,7 +142,7 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                     sx={{ color: theme.palette.warning.dark, fontWeight: 600 }}
                   >
                     Due{" "}
-                    {new Date(quiz.dueDate).toLocaleDateString("en-US", {
+                    {parsedDueDate?.toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",

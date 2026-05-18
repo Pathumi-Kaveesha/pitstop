@@ -38,16 +38,17 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
   const dispatch = useAppDispatch();
   const theme = useTheme();
 
-  const dialogBoxHandler = () => {
+  const dialogBoxHandler = async () => {
     if (quizId == null) return;
+    await dispatch(publishQuiz(quizId)).unwrap();
     handleClose();
-    dispatch(publishQuiz(quizId));
   };
-
-  const publishAndAssignHandler = () => {
+  
+  const publishAndAssignHandler = async () => {
     if (quizId == null) return;
+    await dispatch(publishQuiz(quizId)).unwrap();
     handleClose();
-    if (onPublishAndAssign) onPublishAndAssign();
+    onPublishAndAssign?.();
   };
 
   return (

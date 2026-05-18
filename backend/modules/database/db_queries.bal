@@ -2441,52 +2441,122 @@ isolated function getUserResultQuery(int quizId, string userEmail) returns sql:P
 # + quizId - Quiz ID
 # + return - SQL parameterized query
 isolated function getQuizAnalyticsQuery(int quizId) returns sql:ParameterizedQuery => `
+    WITH quiz_stats AS (
+        SELECT
+            COUNT(*) AS total_questions,
+            COUNT(
+                CASE
+                    WHEN question_type NOT IN ('rating', 'feedback')
+                    THEN 1
+                END
+            ) AS scorable_questions
+        FROM question
+        WHERE quiz_id = ${quizId}
+            AND is_deleted = false
+    ),
+
+    user_question_scores AS (
+        SELECT
+            ua.user_id,
+            qn.question_id,
+            qn.question_type,
+
+            CASE
+                WHEN qn.question_type IN ('rating', 'feedback') THEN 0
+
+                WHEN (
+                    SELECT COUNT(*)
+                    FROM answer a2
+                    WHERE a2.question_id = qn.question_id
+                        AND a2.is_correct = 1
+                ) = SUM(
+                    CASE
+                        WHEN a.is_correct = 1 THEN 1
+                        ELSE 0
+                    END
+                )
+                AND SUM(
+                    CASE
+                        WHEN a.is_correct = 0 THEN 1
+                        ELSE 0
+                    END
+                ) = 0
+                THEN 1
+
+                ELSE 0
+            END AS is_correct,
+
+            MAX(ua.submitted_at) AS submitted_at
+
+        FROM question qn
+        JOIN user_answer ua
+            ON ua.question_id = qn.question_id
+        LEFT JOIN answer a
+            ON a.answer_id = ua.selected_answer_id
+
+        WHERE qn.quiz_id = ${quizId}
+            AND qn.is_deleted = false
+
+        GROUP BY
+            ua.user_id,
+            qn.question_id,
+            qn.question_type
+    )
+
     SELECT
         u.user_id,
         u.email AS user_email,
         CONCAT(u.first_name, ' ', u.last_name) AS user_name,
 
-        CAST(COUNT(DISTINCT q.question_id) AS SIGNED) AS total_questions,
-        CAST(COUNT(DISTINCT ua.question_id) AS SIGNED) AS answered,
+        CAST(qs.total_questions AS SIGNED) AS total_questions,
+        CAST(COUNT(uqs.question_id) AS SIGNED) AS answered,
 
-        CAST(SUM(CASE WHEN a.is_correct = 1 THEN 1 ELSE 0 END) AS SIGNED) AS correct_answers,
+        CAST(SUM(uqs.is_correct) AS SIGNED) AS correct_answers,
 
         ROUND(
-            SUM(CASE WHEN a.is_correct = 1 THEN 1 ELSE 0 END)
-            / NULLIF(SUM(CASE WHEN q.question_type NOT IN ('rating', 'feedback') THEN 1 ELSE 0 END), 0)
-            * 100,
-        2) AS score_percentage,
+            SUM(uqs.is_correct)
+            / NULLIF(qs.scorable_questions, 0) * 100,
+            2
+        ) AS score_percentage,
 
-        CAST(SUM(CASE WHEN q.question_type NOT IN ('rating', 'feedback') THEN 1 ELSE 0 END) AS SIGNED) AS total_marks,
+        CAST(qs.scorable_questions AS SIGNED) AS total_marks,
 
-        CAST(SUM(CASE WHEN a.is_correct = 1 THEN 1 ELSE 0 END) AS SIGNED) AS marks_obtained,
+        CAST(SUM(uqs.is_correct) AS SIGNED) AS marks_obtained,
 
-        IF(COUNT(DISTINCT q.question_id) = COUNT(DISTINCT ua.question_id), 1, 0) AS completed,
+        IF(
+            COUNT(uqs.question_id) = qs.total_questions,
+            1,
+            0
+        ) AS completed,
 
         IF(
             ROUND(
-                SUM(CASE WHEN a.is_correct = 1 THEN 1 ELSE 0 END)
-                / NULLIF(SUM(CASE WHEN q.question_type NOT IN ('rating', 'feedback') THEN 1 ELSE 0 END), 0)
-                * 100,
-            2) >= qz.passing_score,
-        1, 0) AS passed,
+                SUM(uqs.is_correct)
+                / NULLIF(qs.scorable_questions, 0) * 100,
+                2
+            ) >= qz.passing_score,
+            1,
+            0
+        ) AS passed,
 
-        MAX(ua.submitted_at) AS submitted_at
+        MAX(uqs.submitted_at) AS submitted_at
 
     FROM user u
-    JOIN user_answer ua ON ua.user_id = u.user_id
-    JOIN question q ON q.question_id = ua.question_id
-    JOIN quiz qz ON qz.quiz_id = q.quiz_id
-    LEFT JOIN answer a ON a.answer_id = ua.selected_answer_id
+    JOIN user_question_scores uqs
+        ON uqs.user_id = u.user_id
+    JOIN quiz qz
+        ON qz.quiz_id = ${quizId}
+    CROSS JOIN quiz_stats qs
 
-    WHERE q.quiz_id = ${quizId}
-    AND q.is_deleted = false
+    WHERE qz.is_deleted = false
 
     GROUP BY
         u.user_id,
         u.email,
         u.first_name,
         u.last_name,
+        qs.total_questions,
+        qs.scorable_questions,
         qz.passing_score
 
     ORDER BY score_percentage DESC

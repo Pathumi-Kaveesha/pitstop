@@ -78,7 +78,7 @@ import type {
 import { ADMIN_QUIZZES_PER_PAGE } from "@config/constant";
 import AssignQuizModal from "./AssignQuizModal";
 import { exportAnalyticsToCSV } from "@utils/quizCsvExport";
-import { emptyQuestion, toDateValue } from "@utils/utils";
+import { emptyQuestion, toDateValue, calculateDueDateToSave, parseDateAsUtc } from "@utils/utils";
 import { QuizAnswerAnalysis } from "./components/QuizAnswerAnalysis";
 
 const QuizAdminDashboard: React.FC = () => {
@@ -115,8 +115,9 @@ const QuizAdminDashboard: React.FC = () => {
   );
 
   const selectedAnalyticsQuiz = adminQuizzes.find((q) => q.quizId === analyticsQuizId);
+  const parsedAnalyticsDueDate = parseDateAsUtc(selectedAnalyticsQuiz?.dueDate);
   const isAnalyticsQuizOverdue =
-    !!selectedAnalyticsQuiz?.dueDate && new Date(selectedAnalyticsQuiz.dueDate) < new Date();
+    !!parsedAnalyticsDueDate && parsedAnalyticsDueDate < new Date();
 
   useEffect(() => {
     dispatch(fetchAdminQuizzes());
@@ -338,25 +339,25 @@ const QuizAdminDashboard: React.FC = () => {
             payload: {
               title: formTitle,
               description: formDescription,
-              dueDate: formDueDate ? new Date(formDueDate).toISOString() : undefined,
+              dueDate: formDueDate ? calculateDueDateToSave(formDueDate, editingQuiz.createdAt) : undefined,
               passingScore,
               questions: formQuestions,
             },
           }),
-        );
+        ).unwrap();
       } else {
         await dispatch(
           createQuiz({
             title: formTitle,
             description: formDescription,
-            dueDate: formDueDate ? new Date(formDueDate).toISOString() : undefined,
+            dueDate: formDueDate ? calculateDueDateToSave(formDueDate) : undefined,
             passingScore,
             assignedUserIds: [],
             questions: formQuestions,
           }),
-        );
+        ).unwrap();
       }
-      await dispatch(fetchAdminQuizzes());
+      await dispatch(fetchAdminQuizzes()).unwrap();
       handleCloseQuizDialog();
     } catch (err) {
       console.error("Failed to save quiz", err);
@@ -608,7 +609,7 @@ const QuizAdminDashboard: React.FC = () => {
                             />
                             {quiz.dueDate && (
                               <Chip
-                                label={`Due ${new Date(quiz.dueDate).toLocaleDateString("en-US", {
+                                label={`Due ${parseDateAsUtc(quiz.dueDate)?.toLocaleDateString("en-US", {
                                   month: "short",
                                   day: "numeric",
                                 })}`}
@@ -622,19 +623,22 @@ const QuizAdminDashboard: React.FC = () => {
                                 }}
                               />
                             )}
-                            {!!quiz.dueDate && new Date(quiz.dueDate) < new Date() && (
-                              <Chip
-                                label="Overdue"
-                                size="small"
-                                sx={{
-                                  backgroundColor: alpha(theme.palette.error.main, 0.12),
-                                  color: theme.palette.error.main,
-                                  fontWeight: 600,
-                                  fontSize: "0.7rem",
-                                  height: 20,
-                                }}
-                              />
-                            )}
+                            {(() => {
+                              const parsedDue = parseDateAsUtc(quiz.dueDate);
+                              return !!parsedDue && parsedDue < new Date() && (
+                                <Chip
+                                  label="Overdue"
+                                  size="small"
+                                  sx={{
+                                    backgroundColor: alpha(theme.palette.error.main, 0.12),
+                                    color: theme.palette.error.main,
+                                    fontWeight: 600,
+                                    fontSize: "0.7rem",
+                                    height: 20,
+                                  }}
+                                />
+                              );
+                            })()}
                           </Box>
                           {quiz.description && (
                             <Typography

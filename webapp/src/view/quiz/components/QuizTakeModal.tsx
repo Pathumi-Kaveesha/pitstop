@@ -33,6 +33,7 @@ import { useTheme } from "@mui/material/styles";
 import React, { useEffect, useState } from "react";
 
 import { QuizQuestion, QuizWithStatus } from "@/types/types";
+import { parseDateAsUtc } from "@utils/utils";
 import {
   fetchAnswerOptions,
   fetchQuestionsForQuiz,
@@ -287,7 +288,7 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
               {quiz.dueDate && (
                 <Typography variant="body2" color="text.secondary">
                   Due{" "}
-                  {new Date(quiz.dueDate).toLocaleDateString("en-US", {
+                  {parseDateAsUtc(quiz.dueDate)?.toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",
                     year: "numeric",

@@ -174,16 +174,50 @@ export const emptyQuestion = (): QuestionFormData => ({
   refLinks: [],
 });
 
+export const parseDateAsUtc = (value: string | undefined): Date | null => {
+  if (!value) return null;
+
+  if (value.includes("Z") || value.includes("+") || /-\d{2}:\d{2}$/.test(value)) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  
+  let formatted = value.trim();
+  if (formatted.includes(" ")) {
+    formatted = formatted.replace(" ", "T");
+  }
+  if (!formatted.includes("Z") && !formatted.includes("+")) {
+    formatted = formatted + "Z";
+  }
+  
+  const d = new Date(formatted);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
 export const toDateValue = (value: string): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const date = parseDateAsUtc(value);
+  if (!date || Number.isNaN(date.getTime())) {
     return "";
   }
 
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const year = date.getFullYear();
-  const month = pad(date.getMonth() + 1);
-  const day = pad(date.getDate());
+return date.toISOString().split("T")[0];
+};
 
-  return `${year}-${month}-${day}`;
+export const calculateDueDateToSave = (formDueDate: string, createdAtStr?: string): string => {
+  if (!formDueDate) return "";
+  
+  const createdAt = parseDateAsUtc(createdAtStr) || new Date();
+  
+  const createdYear = createdAt.getFullYear();
+  const createdMonth = createdAt.getMonth();
+  const createdDay = createdAt.getDate();
+  const createdDateLocal = new Date(createdYear, createdMonth, createdDay);
+  
+  const [dueYear, dueMonth, dueDay] = formDueDate.split("-").map(Number);
+  const dueDateLocal = new Date(dueYear, dueMonth - 1, dueDay);
+  
+  const diffTime = dueDateLocal.getTime() - createdDateLocal.getTime();
+  
+  const dueDateUTC = new Date(createdAt.getTime() + diffTime);
+  return dueDateUTC.toISOString();
 };
