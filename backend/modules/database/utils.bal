@@ -18,8 +18,10 @@ import pitstop.types;
 import pitstop.constants;
 
 import ballerina/lang.regexp;
+import ballerina/lang.'int as langint;
 import ballerina/log;
 import ballerina/sql;
+import ballerina/time;
 
 # Build the database update query with dynamic attributes.
 #
@@ -444,7 +446,6 @@ isolated function submitUserAnswersWithFeedback(int quizId, int userId, UserAnsw
 # + userEmail - User email to fetch the result for
 # + return - QuizResult with transformations applied or error
 isolated function buildQuizResultWithTransformations(int quizId, string userEmail) returns sql:Error|QuizResult|error {
-    // Step 1: Get raw score summary
     QuizResultRaw|sql:Error raw = dbClient->queryRow(getUserResultQuery(quizId, userEmail));
     if raw is sql:Error {
         return raw;
@@ -475,7 +476,6 @@ isolated function buildQuizResultWithTransformations(int quizId, string userEmai
         totalQuestions: raw.totalQuestions,
         correctAnswers: <int>(raw.correctAnswers ?: 0),
         scorePercentage: raw.scorePercentage,
-        totalMarks: <int>(raw.totalMarks ?: 0),
         marksObtained: <int>(raw.marksObtained ?: 0),
         passed: raw.passed == 1,
         completed: raw.completed == 1,
@@ -502,6 +502,7 @@ isolated function transformRawAnswersToSubmittedAnswers(stream<record {}, sql:Er
             anydata refLinks = row.get("ref_links");
             anydata ansId = row.get("selected_answer_id");
             anydata ansText = row.get("answer_text");
+            anydata correctAnswerText = row.get("correct_answer_text");
             anydata isCorrect = row.get("is_correct");
             anydata submittedAt = row.get("submitted_at");
 
@@ -509,6 +510,7 @@ isolated function transformRawAnswersToSubmittedAnswers(stream<record {}, sql:Er
                 ansId is int && ansText is string && isCorrect is boolean && submittedAt is string {
 
                 json? refLinksJson = refLinks is json ? refLinks : ();
+                string? correctAnswerTextValue = correctAnswerText is string ? correctAnswerText : ();
 
                 SubmittedAnswer answer = {
                     questionId: qId,
@@ -518,6 +520,7 @@ isolated function transformRawAnswersToSubmittedAnswers(stream<record {}, sql:Er
                     refLinks: refLinksJson,
                     selectedAnswerId: ansId,
                     selectedAnswerText: ansText,
+                    correctAnswerText: correctAnswerTextValue,
                     isCorrect: isCorrect,
                     submittedAt: submittedAt
                 };
@@ -530,4 +533,47 @@ isolated function transformRawAnswersToSubmittedAnswers(stream<record {}, sql:Er
     }
 
     return answers;
+}
+
+# Shift and format a UTC date string to the local timezone of the client based on header.
+#
+# + dueDateStr - UTC due date string from database
+# + offsetHeader - Header representing the timezone offset in minutes from the client
+# + return - Formatted ISO-8601 string with local timezone offset or error
+public isolated function formatDueDateWithOffset(string dueDateStr, string? offsetHeader) returns string|error {
+    string formatted = dueDateStr.trim();
+    if formatted.includes(" ") {
+        formatted = regexp:replace(re ` `, formatted, "T");
+    }
+    if !formatted.endsWith("Z") && !formatted.includes("+") {
+        formatted = formatted + "Z";
+    }
+    
+    time:Utc utc = check time:utcFromString(formatted);
+    
+    int offsetMinutes = 0;
+    if offsetHeader is string {
+        var parsedOffset = langint:fromString(offsetHeader);
+        if parsedOffset is int {
+            offsetMinutes = parsedOffset;
+        }
+    }
+    
+    if offsetMinutes == 0 {
+        return formatted;
+    }
+    
+    int offsetSeconds = -offsetMinutes * 60;
+    time:Utc shifted = [utc[0] + offsetSeconds, utc[1]];
+    string localUtcStr = time:utcToString(shifted);
+    string withoutZ = localUtcStr.substring(0, localUtcStr.length() - 1);
+    int absOffset = offsetMinutes < 0 ? -offsetMinutes : offsetMinutes;
+    int offHours = absOffset / 60;
+    int offMins = absOffset % 60;
+    
+    string sign = offsetMinutes < 0 ? "+" : "-";
+    string offHoursStr = offHours < 10 ? "0" + offHours.toString() : offHours.toString();
+    string offMinsStr = offMins < 10 ? "0" + offMins.toString() : offMins.toString();
+    
+    return string `${withoutZ}${sign}${offHoursStr}:${offMinsStr}`;
 }

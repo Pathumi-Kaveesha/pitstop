@@ -2386,7 +2386,6 @@ isolated function getUserResultQuery(int quizId, string userEmail) returns sql:P
         COUNT(*) AS total_questions,
         CAST(SUM(perq.is_correct) AS SIGNED) AS correct_answers,
         ROUND(SUM(perq.is_correct) / NULLIF(COUNT(*), 0) * 100, 2) AS score_percentage,
-        COUNT(*) AS total_marks,
         CAST(SUM(perq.is_correct) AS SIGNED) AS marks_obtained,
         COUNT(*) = SUM(perq.answered) AS completed,
         ROUND(SUM(perq.is_correct) / NULLIF(COUNT(*), 0) * 100, 2) >= qz.passing_score AS passed
@@ -2519,8 +2518,6 @@ isolated function getQuizAnalyticsQuery(int quizId) returns sql:ParameterizedQue
             2
         ) AS score_percentage,
 
-        CAST(qs.scorable_questions AS SIGNED) AS total_marks,
-
         CAST(SUM(uqs.is_correct) AS SIGNED) AS marks_obtained,
 
         IF(
@@ -2576,6 +2573,12 @@ isolated function getUserSubmittedAnswersQuery(int quizId, int userId) returns s
         CAST(IF(qn.ref_links IS NULL, NULL, qn.ref_links) AS JSON) AS ref_links,
         a.answer_id AS selected_answer_id,
         a.answer_text,
+        (
+            SELECT GROUP_CONCAT(a2.answer_text ORDER BY a2.answer_id SEPARATOR ', ')
+            FROM answer a2
+            WHERE a2.question_id = qn.question_id
+                AND a2.is_correct = 1
+        ) AS correct_answer_text,
         a.is_correct,
         ua.submitted_at
     FROM 
@@ -2652,3 +2655,45 @@ isolated function getAssignedUserIdsQuery(int quizId) returns sql:ParameterizedQ
     WHERE quiz_id = ${quizId} AND is_deleted = false
 `;
 
+# Get all answers for a quiz (public view - excludes is_correct).
+#
+# + quizId - Quiz ID
+# + return - SQL parameterized query
+isolated function getAnswersByQuizIdPublicQuery(int quizId) returns sql:ParameterizedQuery => `
+    SELECT
+        a.answer_id, 
+        a.question_id, 
+        a.answer_text,
+        a.created_at, 
+        a.updated_at
+    FROM 
+        answer a
+    JOIN 
+        question q ON a.question_id = q.question_id
+    WHERE 
+        q.quiz_id = ${quizId}
+        AND q.is_deleted = false
+`;
+
+# Get all answers for a quiz (includes is_correct).
+#
+# + quizId - Quiz ID
+# + return - SQL parameterized query
+isolated function getAnswersByQuizIdQuery(int quizId) returns sql:ParameterizedQuery => `
+    SELECT
+        a.answer_id, 
+        a.question_id, 
+        a.answer_text, 
+        a.is_correct,
+        a.created_by, 
+        a.updated_by, 
+        a.created_at, 
+        a.updated_at
+    FROM 
+        answer a
+    JOIN 
+        question q ON a.question_id = q.question_id
+    WHERE 
+        q.quiz_id = ${quizId}
+        AND q.is_deleted = false
+`;

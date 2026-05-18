@@ -2035,8 +2035,9 @@ service http:InterceptableService / on new http:Listener(9090) {
     # Get quizzes.
     #
     # + ctx - Request context
+    # + req - HTTP request
     # + return - Quiz list or error response
-    resource function get quizzes(http:RequestContext ctx)
+    resource function get quizzes(http:RequestContext ctx, http:Request req)
         returns database:Quiz[]|http:InternalServerError {
 
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
@@ -2068,14 +2069,32 @@ service http:InterceptableService / on new http:Listener(9090) {
                 body: {message: customError}
             };
         }
+
+        string? offsetHeader = ();
+        string|error headerVal = req.getHeader("x-timezone-offset");
+        if headerVal is string {
+            offsetHeader = headerVal;
+        }
+
+        foreach var quiz in result {
+            string? dueDate = quiz.dueDate;
+            if dueDate is string {
+                string|error converted = database:formatDueDateWithOffset(dueDate, offsetHeader);
+                if converted is string {
+                    quiz.dueDate = converted;
+                }
+            }
+        }
+
         return result;
     }
 
     # Get all quizzes for admins.
     #
     # + ctx - Request context
+    # + req - HTTP request
     # + return - Quiz list or error response
-    resource function get quizzes/admin(http:RequestContext ctx)
+    resource function get quizzes/admin(http:RequestContext ctx, http:Request req)
         returns database:Quiz[]|http:Forbidden|http:InternalServerError {
 
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
@@ -2100,6 +2119,23 @@ service http:InterceptableService / on new http:Listener(9090) {
                 body: {message: customError}
             };
         }
+
+        string? offsetHeader = ();
+        string|error headerVal = req.getHeader("x-timezone-offset");
+        if headerVal is string {
+            offsetHeader = headerVal;
+        }
+
+        foreach var quiz in result {
+            string? dueDate = quiz.dueDate;
+            if dueDate is string {
+                string|error converted = database:formatDueDateWithOffset(dueDate, offsetHeader);
+                if converted is string {
+                    quiz.dueDate = converted;
+                }
+            }
+        }
+
         return result;
     }
 
@@ -2399,7 +2435,7 @@ service http:InterceptableService / on new http:Listener(9090) {
                                 "DUE_DATE": dueDateText,
                                 "TIME_LIMIT": timeLimitText,
                                 "ASSIGNED_BY": employeeInfo.firstName + " " + employeeInfo.lastName,
-                                "QUIZ_LINK": string `${frontendBaseUrl}/quizzes`
+                                "QUIZ_LINK": string `${frontendBaseUrl}/my-board?quizId=${quizId}`
                             });
 
                         if content is string {
@@ -2619,6 +2655,46 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
         return http:OK;
     }
+
+    # Get all answer options for a quiz.
+    #
+    # + ctx - Request context
+    # + quizId - Quiz ID
+    # + return - Answer list or error response
+    resource function get quizzes/[int quizId]/answers(http:RequestContext ctx, string? mask)
+            returns database:Answer[]|database:AnswerPublic[]|http:InternalServerError {
+
+            if mask is string && mask.toLowerAscii() == "true" {
+                database:AnswerPublic[]|error result = database:getAnswersByQuizIdPublic(quizId);
+                if result is error {
+                    string customError = "Error while fetching answers";
+                    log:printError(customError, result);
+                    return <http:InternalServerError>{body: {message: customError}};
+                }
+                return result;
+            }
+
+            string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
+
+            if userGroups is string[] && authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
+                database:Answer[]|error result = database:getAnswersByQuizId(quizId);
+                if result is error {
+                    string customError = "Error while fetching answers";
+                    log:printError(customError, result);
+                    return <http:InternalServerError>{body: {message: customError}};
+                }
+                return result;
+            }
+
+            database:AnswerPublic[]|error result = database:getAnswersByQuizIdPublic(quizId);
+            if result is error {
+                string customError = "Error while fetching answers";
+                log:printError(customError, result);
+                return <http:InternalServerError>{body: {message: customError}};
+            }
+            return result;
+        }
+
     # Get all answer options for a question..
     #
     # + ctx - Request context
@@ -2875,7 +2951,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + ctx - Request context
     # + quizId - Quiz ID
     # + return - Quiz result, not found, or error response
-    resource function get quizzes/[int quizId]/my\-result(http:RequestContext ctx)
+    resource function get quizzes/[int quizId]/results\-me(http:RequestContext ctx)
         returns database:QuizResult|http:NotFound|http:InternalServerError {
 
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);

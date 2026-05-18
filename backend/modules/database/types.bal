@@ -653,8 +653,6 @@ public type QuizResult record {|
     int correctAnswers;
     # Score %
     decimal scorePercentage;
-    # Total marks
-    int totalMarks;
     # Marks obtained
     int marksObtained;
     # Passed
@@ -678,9 +676,6 @@ public type QuizResultRaw record {|
     # Score %
     @sql:Column {name: "score_percentage"}
     decimal scorePercentage;
-    # Total marks
-    @sql:Column {name: "total_marks"}
-    int? totalMarks;
     # Marks obtained
     @sql:Column {name: "marks_obtained"}
     int? marksObtained;
@@ -714,9 +709,6 @@ public type UserQuizAnalytics record {|
     # Score %
     @sql:Column {name: "score_percentage"}
     decimal scorePercentage;
-    # Total marks
-    @sql:Column {name: "total_marks"}
-    int totalMarks;
     # Marks obtained
     @sql:Column {name: "marks_obtained"}
     int marksObtained;
@@ -752,6 +744,9 @@ public type SubmittedAnswer record {|
     # Answer text
     @sql:Column {name: "answer_text"}
     string selectedAnswerText;
+    # Correct answer text
+    @sql:Column {name: "correct_answer_text"}
+    string? correctAnswerText;
     # Correct
     @sql:Column {name: "is_correct"}
     boolean isCorrect;

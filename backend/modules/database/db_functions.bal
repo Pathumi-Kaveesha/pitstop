@@ -1062,6 +1062,25 @@ public isolated function getAnswersByQuestionIdPublic(int questionId) returns An
         select result;
 }
 
+# Get answers for a quiz.
+# + quizId - Quiz ID
+# + return - Array of answers or error
+public isolated function getAnswersByQuizId(int quizId) returns Answer[]|error {
+    stream<Answer, sql:Error?> resultStream = dbClient->query(getAnswersByQuizIdQuery(quizId));
+    return from Answer result in resultStream
+        select result;
+}
+
+# Get public answers (without correct answer) for a quiz.
+# + quizId - Quiz ID
+# + return - Array of public answers or error
+public isolated function getAnswersByQuizIdPublic(int quizId) returns AnswerPublic[]|error {
+    stream<AnswerPublic, sql:Error?> resultStream = dbClient->query(getAnswersByQuizIdPublicQuery(quizId));
+    return from AnswerPublic result in resultStream
+        select result;
+}
+
+
 # Create a new answer for a question.
 # + questionId - Question ID
 # + payload - Answer create payload
