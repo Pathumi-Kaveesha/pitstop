@@ -14,6 +14,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import { useState, useEffect } from "react";
+
 import CloseIcon from "@mui/icons-material/Close";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
@@ -37,16 +39,28 @@ interface PublishDialogBoxProps {
 const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAssign }: PublishDialogBoxProps) => {
   const dispatch = useAppDispatch();
   const theme = useTheme();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setIsSubmitting(false);
+    }
+  }, [open]);
 
   const dialogBoxHandler = async () => {
-    if (quizId == null) return;
-    await dispatch(publishQuiz(quizId)).unwrap();
-    handleClose();
+    if (quizId == null || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await dispatch(publishQuiz(quizId)).unwrap();
+      handleClose();
+    } catch (error) {
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
-  const publishAndAssignHandler = async () => {
+  const publishAndAssignHandler = () => {
     if (quizId == null) return;
-    await dispatch(publishQuiz(quizId)).unwrap();
     handleClose();
     onPublishAndAssign?.();
   };
@@ -54,7 +68,7 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
   return (
     <Dialog
       open={open}
-      onClose={handleClose}
+      onClose={isSubmitting ? undefined : handleClose}
       maxWidth="sm"
       fullWidth
       PaperProps={{
@@ -84,6 +98,7 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
         <IconButton
           aria-label="close"
           onClick={handleClose}
+          disabled={isSubmitting}
           sx={{
             position: "absolute",
             right: 16,
@@ -115,6 +130,7 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
         <Button
           variant="outlined"
           onClick={handleClose}
+          disabled={isSubmitting}
           sx={{
             borderRadius: 4,
             textTransform: "none",
@@ -133,6 +149,7 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
         <Button
           variant="contained"
           onClick={dialogBoxHandler}
+          disabled={isSubmitting}
           sx={{
             borderRadius: 4,
             textTransform: "none",
@@ -149,6 +166,7 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
         <Button
           variant="contained"
           onClick={publishAndAssignHandler}
+          disabled={isSubmitting}
           sx={{
             borderRadius: 4,
             textTransform: "none",

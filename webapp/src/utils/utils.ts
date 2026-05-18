@@ -208,16 +208,39 @@ export const calculateDueDateToSave = (formDueDate: string, createdAtStr?: strin
   
   const createdAt = parseDateAsUtc(createdAtStr) || new Date();
   
-  const createdYear = createdAt.getFullYear();
-  const createdMonth = createdAt.getMonth();
-  const createdDay = createdAt.getDate();
-  const createdDateLocal = new Date(createdYear, createdMonth, createdDay);
+  const parts = formDueDate.split("-");
+  if (parts.length !== 3) return "";
+
+  const [dueYear, dueMonth, dueDay] = parts.map(Number);
+  if (
+    Number.isNaN(dueYear) ||
+    Number.isNaN(dueMonth) ||
+    Number.isNaN(dueDay) ||
+    !Number.isInteger(dueYear) ||
+    !Number.isInteger(dueMonth) ||
+    !Number.isInteger(dueDay)
+  ) {
+    return "";
+  }
+
+  if (dueYear < 1 || dueYear > 9999 || dueMonth < 1 || dueMonth > 12) {
+    return "";
+  }
+
+  const maxDays = new Date(Date.UTC(dueYear, dueMonth, 0)).getUTCDate();
+  if (dueDay < 1 || dueDay > maxDays) {
+    return "";
+  }
+
+  const createdYear = createdAt.getUTCFullYear();
+  const createdMonth = createdAt.getUTCMonth();
+  const createdDay = createdAt.getUTCDate();
   
-  const [dueYear, dueMonth, dueDay] = formDueDate.split("-").map(Number);
-  const dueDateLocal = new Date(dueYear, dueMonth - 1, dueDay);
+  const createdDateUTC = Date.UTC(createdYear, createdMonth, createdDay);
+  const dueDateUTC = Date.UTC(dueYear, dueMonth - 1, dueDay);
   
-  const diffTime = dueDateLocal.getTime() - createdDateLocal.getTime();
+  const diffTime = dueDateUTC - createdDateUTC;
   
-  const dueDateUTC = new Date(createdAt.getTime() + diffTime);
-  return dueDateUTC.toISOString();
+  const targetDueDateUTC = new Date(createdAt.getTime() + diffTime);
+  return targetDueDateUTC.toISOString();
 };
