@@ -713,7 +713,6 @@ export interface QuizResult {
   totalQuestions: number;
   correctAnswers: number;
   scorePercentage: number;
-  totalMarks: number;
   marksObtained: number;
   passed: boolean;
   completed: boolean;
@@ -745,7 +744,6 @@ export interface UserQuizAnalytics {
   answered: number;
   correctAnswers: number;
   scorePercentage: number;
-  totalMarks: number;
   marksObtained: number;
   completed: number;
   passed: number;

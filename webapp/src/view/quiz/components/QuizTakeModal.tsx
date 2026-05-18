@@ -33,9 +33,8 @@ import { useTheme } from "@mui/material/styles";
 import React, { useEffect, useState } from "react";
 
 import { QuizQuestion, QuizWithStatus } from "@/types/types";
-import { parseDateAsUtc } from "@utils/utils";
 import {
-  fetchAnswerOptions,
+  fetchAnswerOptionsForQuiz,
   fetchQuestionsForQuiz,
   fetchQuizResult,
   resetQuestions,
@@ -43,6 +42,7 @@ import {
   submitQuizAnswers,
 } from "@slices/quizSlice/quiz";
 import { useAppDispatch, useAppSelector } from "@slices/store";
+import { parseDateAsUtc } from "@utils/utils";
 
 interface Props {
   quiz: QuizWithStatus;
@@ -64,23 +64,42 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
 
   const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [feedbackText, setFeedbackText] = useState<Record<number, string>>({});
+  const [isContentLoading, setIsContentLoading] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      dispatch(resetQuestions());
-      dispatch(fetchQuestionsForQuiz(quiz.quizId))
-        .unwrap()
-        .then((questions: QuizQuestion[]) => {
-          if (questions) {
-            questions.forEach((q: QuizQuestion) => {
-              if (q.questionType !== "feedback") {
-                dispatch(fetchAnswerOptions(q.questionId));
-              }
-            });
-          }
-        })
-        .catch(() => {});
+    if (!open) {
+      return;
     }
+
+    let isCancelled = false;
+
+    const loadQuizContent = async () => {
+      setIsContentLoading(true);
+      setCurrentIndex(0);
+      setAnswers({});
+      setFeedbackText({});
+
+      dispatch(resetQuestions());
+
+      try {
+        await Promise.all([
+          dispatch(fetchQuestionsForQuiz(quiz.quizId)).unwrap(),
+          dispatch(fetchAnswerOptionsForQuiz(quiz.quizId)).unwrap(),
+        ]);
+      } catch (error) {
+        void error;
+      } finally {
+        if (!isCancelled) {
+          setIsContentLoading(false);
+        }
+      }
+    };
+
+    loadQuizContent();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [open, quiz.quizId, dispatch]);
 
   useEffect(() => {
@@ -109,6 +128,18 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
         };
       });
     }
+  };
+
+  const hasAnsweredQuestion = (question: QuizQuestion | undefined) => {
+    if (!question) {
+      return false;
+    }
+
+    if (question.questionType === "feedback") {
+      return Boolean(feedbackText[question.questionId]?.trim());
+    }
+
+    return (answers[question.questionId] || []).length > 0;
   };
 
   const handleSubmit = () => {
@@ -250,7 +281,7 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
                   justifyContent: "center",
                   fontSize: "0.8rem",
                   fontWeight: 600,
-                  color: selected ? "#fff" : theme.palette.text.secondary,
+                  color: selected ? theme.palette.common.white : theme.palette.text.secondary,
                   flexShrink: 0,
                 }}
               >
@@ -297,8 +328,17 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
               )}
             </Box>
             <Box
-              sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5 }}
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-end",
+                gap: 0.5,
+                ml: 2,
+              }}
             >
+              <IconButton onClick={onClose} size="small" sx={{ mt: -1, mr: -1 }}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
               <Chip
                 label="1 attempt only"
                 size="small"
@@ -311,14 +351,11 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
               <Typography variant="caption" color="text.secondary">
                 Pass: {quiz.passingScore}%
               </Typography>
-              <IconButton onClick={onClose} size="small">
-                <CloseIcon fontSize="small" />
-              </IconButton>
             </Box>
           </Box>
         </Box>
 
-        {questionsStatus === "loading" ? (
+        {isContentLoading || questionsStatus === "loading" ? (
           <Box sx={{ py: 8, display: "flex", justifyContent: "center" }}>
             <CircularProgress />
           </Box>
@@ -380,7 +417,7 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
                   <Button
                     variant="contained"
                     onClick={handleSubmit}
-                    disabled={submitStatus === "loading"}
+                    disabled={submitStatus === "loading" || !hasAnsweredQuestion(currentQuestion)}
                     sx={{
                       textTransform: "none",
                       borderRadius: 2,
@@ -398,7 +435,12 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
                   <Button
                     variant="contained"
                     endIcon={<ArrowForwardIcon />}
-                    onClick={() => setCurrentIndex((i) => i + 1)}
+                    onClick={() => {
+                      if (hasAnsweredQuestion(currentQuestion)) {
+                        setCurrentIndex((i) => i + 1);
+                      }
+                    }}
+                    disabled={!hasAnsweredQuestion(currentQuestion)}
                     sx={{
                       textTransform: "none",
                       borderRadius: 2,

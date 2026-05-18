@@ -57,7 +57,7 @@ const DeleteContentDialogBox = ({
       case "testimonial":
         return "Delete Testimonial";
       case "quiz":
-        return "Delete Quiz";
+        return "Delete";
       default:
         return "Delete";
     }
@@ -248,7 +248,7 @@ const DeleteContentDialogBox = ({
                 : type === "page"
                   ? "Page"
                   : type === "quiz"
-                    ? "Quiz"
+                    ? ""
                     : "Testimonial"}
           </Button>
         </DialogActions>

@@ -30,24 +30,8 @@ interface QuizAnswerAnalysisProps {
   dispatch: AppDispatch;
 }
 
-export const QuizAnswerAnalysis: React.FC<QuizAnswerAnalysisProps> = ({
-  drillDown,
-  dispatch,
-}) => {
+export const QuizAnswerAnalysis: React.FC<QuizAnswerAnalysisProps> = ({ drillDown, dispatch }) => {
   const theme = useTheme();
-  const isDarkMode = theme.palette.mode === "dark";
-  const successText = isDarkMode ? theme.palette.success.light : theme.palette.success.dark;
-  const dangerText = isDarkMode ? theme.palette.error.light : theme.palette.error.dark;
-  const successBorder = isDarkMode
-    ? alpha(theme.palette.success.main, 0.35)
-    : alpha(theme.palette.success.main, 0.2);
-  const dangerBorder = isDarkMode
-    ? alpha(theme.palette.error.main, 0.35)
-    : alpha(theme.palette.error.main, 0.2);
-  const surfaceBg = isDarkMode ? theme.palette.grey[900] : theme.palette.grey[50];
-  const wrongSurfaceBg = isDarkMode
-    ? alpha(theme.palette.error.main, 0.12)
-    : alpha(theme.palette.error.main, 0.08);
 
   const [correctMap, setCorrectMap] = React.useState<Record<number, string>>({});
 
@@ -79,8 +63,8 @@ export const QuizAnswerAnalysis: React.FC<QuizAnswerAnalysisProps> = ({
                 .map((o: QuizAnswerOption & { isCorrect?: boolean }) => o.answerText ?? "")
                 .join(", ");
             }
-            } catch {
-              // skip if error occurs, correct answer will not be shown
+          } catch {
+            // skip if error occurs, correct answer will not be shown
           }
         }),
       );
@@ -118,13 +102,21 @@ export const QuizAnswerAnalysis: React.FC<QuizAnswerAnalysisProps> = ({
           const cardBorder = isNeutralQuestion
             ? theme.palette.divider
             : q.allCorrect
-              ? successBorder
-              : dangerBorder;
+              ? theme.palette.mode === "dark"
+                ? alpha(theme.palette.success.main, 0.35)
+                : alpha(theme.palette.success.main, 0.2)
+              : theme.palette.mode === "dark"
+                ? alpha(theme.palette.error.main, 0.35)
+                : alpha(theme.palette.error.main, 0.2);
           const cardBackground = isNeutralQuestion
             ? theme.palette.background.paper
             : q.allCorrect
-              ? surfaceBg
-              : wrongSurfaceBg;
+              ? theme.palette.mode === "dark"
+                ? theme.palette.grey[900]
+                : theme.palette.grey[50]
+              : theme.palette.mode === "dark"
+                ? alpha(theme.palette.error.main, 0.12)
+                : alpha(theme.palette.error.main, 0.08);
 
           return (
             <Box
@@ -150,10 +142,28 @@ export const QuizAnswerAnalysis: React.FC<QuizAnswerAnalysisProps> = ({
                 {!isNeutralQuestion &&
                   (q.allCorrect ? (
                     <CheckCircleIcon
-                      sx={{ color: successText, fontSize: 22, flexShrink: 0, ml: 1 }}
+                      sx={{
+                        color:
+                          theme.palette.mode === "dark"
+                            ? theme.palette.success.light
+                            : theme.palette.success.dark,
+                        fontSize: 22,
+                        flexShrink: 0,
+                        ml: 1,
+                      }}
                     />
                   ) : (
-                    <CancelIcon sx={{ color: dangerText, fontSize: 22, flexShrink: 0, ml: 1 }} />
+                    <CancelIcon
+                      sx={{
+                        color:
+                          theme.palette.mode === "dark"
+                            ? theme.palette.error.light
+                            : theme.palette.error.dark,
+                        fontSize: 22,
+                        flexShrink: 0,
+                        ml: 1,
+                      }}
+                    />
                   ))}
               </Box>
 
@@ -172,8 +182,12 @@ export const QuizAnswerAnalysis: React.FC<QuizAnswerAnalysisProps> = ({
                     color: isNeutralQuestion
                       ? theme.palette.text.primary
                       : q.allCorrect
-                        ? successText
-                        : dangerText,
+                        ? theme.palette.mode === "dark"
+                          ? theme.palette.success.light
+                          : theme.palette.success.dark
+                        : theme.palette.mode === "dark"
+                          ? theme.palette.error.light
+                          : theme.palette.error.dark,
                   }}
                 >
                   {yourAnswerDisplay || "N/A"}
@@ -185,11 +199,25 @@ export const QuizAnswerAnalysis: React.FC<QuizAnswerAnalysisProps> = ({
                   <Typography
                     variant="caption"
                     fontWeight={600}
-                    sx={{ color: successText, flexShrink: 0 }}
+                    sx={{
+                      color:
+                        theme.palette.mode === "dark"
+                          ? theme.palette.success.light
+                          : theme.palette.success.dark,
+                      flexShrink: 0,
+                    }}
                   >
                     Correct answer:
                   </Typography>
-                  <Typography variant="body2" sx={{ color: successText }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color:
+                        theme.palette.mode === "dark"
+                          ? theme.palette.success.light
+                          : theme.palette.success.dark,
+                    }}
+                  >
                     {correctMap[q.questionId]}
                   </Typography>
                 </Box>

@@ -184,10 +184,10 @@ const ExpandedContentCard: React.FC<ComponentCardProps> = ({
                 },
                 "&::-webkit-scrollbar-track": {
                   background: "transparent",
-                  borderRadius: 10,
+                  borderRadius: 999,
                 },
                 "&::-webkit-scrollbar-thumb": {
-                  borderRadius: 10,
+                  borderRadius: 999,
                   background: (t) => alpha(t.palette.primary.main, 0.3),
                   "&:hover": {
                     background: (t) => alpha(t.palette.primary.main, 0.5),

@@ -15,6 +15,7 @@
 // under the License.
 
 import { UserQuizAnalytics } from "@/types/types";
+import { parseDateAsUtc } from "./utils";
 
 export const exportAnalyticsToCSV = (
   analytics: UserQuizAnalytics[],
@@ -22,6 +23,7 @@ export const exportAnalyticsToCSV = (
   employeeInfos: { email: string; team: string; subteam: string }[] = [],
   answerSummaries: Record<number, string> = {},
   isQuizOverdue: boolean = false,
+  quizDueDate?: string,
 ) => {
   const headers = [
     "Name",
@@ -34,6 +36,8 @@ export const exportAnalyticsToCSV = (
     "Answers",
   ];
 
+  const parsedDueDate = quizDueDate ? parseDateAsUtc(quizDueDate) : null;
+
   const rows = analytics.map((row) => {
     const emp = employeeInfos.find((e) => e.email === row.userEmail) || {
       team: "—",
@@ -41,10 +45,14 @@ export const exportAnalyticsToCSV = (
       email: "",
     };
     const attempted = !!row.submittedAt;
+    const isSubmissionLate =
+      attempted &&
+      !!parsedDueDate &&
+      !!row.submittedAt &&
+      new Date(row.submittedAt) > parsedDueDate;
+
     const status = attempted
-      ? row.passed
-        ? "Passed"
-        : "Failed"
+      ? `${row.passed ? "Passed" : "Failed"}${isSubmissionLate ? " (Overdue)" : ""}`
       : isQuizOverdue
         ? "Overdue"
         : "N/A";

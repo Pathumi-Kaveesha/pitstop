@@ -132,7 +132,7 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
           onClick={handleClose}
           disabled={isSubmitting}
           sx={{
-            borderRadius: 4,
+            borderRadius: 2,
             textTransform: "none",
             px: 3,
             color: theme.palette.grey[700],
@@ -151,7 +151,7 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
           onClick={dialogBoxHandler}
           disabled={isSubmitting}
           sx={{
-            borderRadius: 4,
+            borderRadius: 2,
             textTransform: "none",
             px: 3,
             backgroundColor: theme.palette.primary.main,
@@ -168,7 +168,7 @@ const PublishDialogBox = ({ open, handleClose, quizId, quizTitle, onPublishAndAs
           onClick={publishAndAssignHandler}
           disabled={isSubmitting}
           sx={{
-            borderRadius: 4,
+            borderRadius: 2,
             textTransform: "none",
             px: 3,
             backgroundColor: theme.palette.primary.main,

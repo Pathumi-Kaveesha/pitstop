@@ -160,6 +160,23 @@ export const themeSettings = (mode: PaletteMode) => {
       blue: colors.blue,
       redAccent: colors.redAccent,
     },
+    components: {
+      MuiLinearProgress: {
+        styleOverrides: {
+          root: {
+            borderRadius: 999,
+            overflow: "hidden",
+          },
+        },
+      },
+      MuiCircularProgress: {
+        styleOverrides: {
+          circle: {
+            strokeLinecap: "round",
+          },
+        },
+      },
+    },
     typography: {
       fontSize: 13,
       fontFamily: ["Inter", "sans-serif"].join(","),

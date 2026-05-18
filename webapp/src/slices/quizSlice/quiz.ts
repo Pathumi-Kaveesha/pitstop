@@ -571,6 +571,30 @@ export const fetchAnswerOptions = createAsyncThunk(
   },
 );
 
+export const fetchAnswerOptionsForQuiz = createAsyncThunk(
+  "quiz/fetchAnswerOptionsForQuiz",
+  async (quizId: number, { dispatch }) => {
+    return new Promise<QuizAnswerOption[]>((resolve, reject) => {
+      ApiService.getInstance()
+        .get(AppConfig.serviceUrls.getAnswersByQuiz(quizId))
+        .then((resp) => {
+          resolve(resp.data);
+        })
+        .catch((error) => {
+          dispatch(
+            enqueueSnackbarMessage({
+              message: "Failed to load quiz answer options",
+              type: "error",
+              anchorOrigin: { vertical: "bottom", horizontal: "right" },
+            }),
+          );
+          reject(error);
+        });
+    });
+  },
+);
+
+
 export const createAnswer = createAsyncThunk(
   "quiz/createAnswer",
   async (
@@ -874,6 +898,20 @@ const quizSlice = createSlice({
 
     builder.addCase(fetchAnswerOptions.fulfilled, (state, action) => {
       state.answerOptions[action.payload.questionId] = action.payload.options;
+    });
+
+    builder.addCase(fetchAnswerOptionsForQuiz.fulfilled, (state, action) => {
+      const answersByQuestion: Record<number, QuizAnswerOption[]> = {};
+      action.payload.forEach((ans) => {
+        if (!answersByQuestion[ans.questionId]) {
+          answersByQuestion[ans.questionId] = [];
+        }
+        answersByQuestion[ans.questionId].push(ans);
+      });
+      state.answerOptions = {
+        ...state.answerOptions,
+        ...answersByQuestion,
+      };
     });
 
     builder.addCase(deleteAnswer.fulfilled, (state, action) => {

@@ -14,50 +14,49 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Box,
-  Typography,
-  Container,
-  Stack,
-  Button,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  CircularProgress,
-  Chip,
-  Pagination,
-} from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import AddIcon from "@mui/icons-material/Add";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import SchoolOutlinedIcon from "@mui/icons-material/SchoolOutlined";
 import StarOutlineIcon from "@mui/icons-material/StarOutline";
-import AddIcon from "@mui/icons-material/Add";
+import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Container,
+  Pagination,
+  Stack,
+  Typography,
+} from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import { useSelector } from "react-redux";
+import { matchRoutes, useLocation } from "react-router-dom";
+import { ContentResponse } from "src/types/types";
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
+
+import { QuizStatus } from "@/types/types";
+import ErrorHandler from "@components/common/ErrorHandler";
+import ContentDialogBox from "@components/dialogs/ContentDialogBox";
+import ComponentCard from "@components/ui/content/Card";
 import Header from "@layout/header";
 import { selectUserInfo } from "@slices/authSlice";
-import { RootState, useAppSelector, useAppDispatch } from "@slices/store";
-import { useSelector } from "react-redux";
-import { useLocation, matchRoutes } from "react-router-dom";
-import ComponentCard from "@components/ui/content/Card";
-import ErrorHandler from "@components/common/ErrorHandler";
-import { ContentResponse } from "src/types/types";
-import ContentDialogBox from "@components/dialogs/ContentDialogBox";
-import { Role } from "@utils/types";
-import {
-  getPinnedContentIds,
-  fetchMyBoardSection,
-} from "@slices/pageSlice/page";
-import { MyBoardPanelTypes} from "@utils/types";
-import QuizCard from "@view/quiz/components/QuizCard";
+import { fetchMyBoardSection, getPinnedContentIds } from "@slices/pageSlice/page";
 import { fetchQuizzes } from "@slices/quizSlice/quiz";
-import { QuizStatus } from "@/types/types";
-import SchoolOutlinedIcon from "@mui/icons-material/SchoolOutlined";
+import { RootState, useAppDispatch, useAppSelector } from "@slices/store";
+import { Role } from "@utils/types";
+import { MyBoardPanelTypes } from "@utils/types";
+import QuizCard from "@view/quiz/components/QuizCard";
 
 const PINNED_CONTENT_SECTION_ID = -2;
 const ESSENTIALS_SECTION_ID = -4;
 const ITEMS_PER_PAGE = 3;
-const QUIZZES_PER_PAGE = 6;
+const QUIZZES_PER_PAGE = 5;
 
 type LoadState = string;
 
@@ -85,9 +84,9 @@ type MyBoardState = {
 
 const selectBoardSection = (
   state: RootState,
-  MyBoardCategories: MyBoardPanelTypes
+  MyBoardCategories: MyBoardPanelTypes,
 ): BoardSectionState => {
-  const pageState = state.page as MyBoardState ;
+  const pageState = state.page as MyBoardState;
   const section = pageState?.myBoard?.[MyBoardCategories];
   return section ?? defaultBoardSectionState;
 };
@@ -100,11 +99,8 @@ const MyBoard: React.FC = () => {
   const userInfo = useSelector(selectUserInfo);
   const location = useLocation();
   const matches = matchRoutes(routes, location.pathname);
-  
 
-  const [expandedAccordion, setExpandedAccordion] = useState<string | false>(
-    false
-  );
+  const [expandedAccordion, setExpandedAccordion] = useState<string | false>(false);
   const [openAddEssentialDialog, setOpenAddEssentialDialog] = useState(false);
   const [quizzesPage, setQuizzesPage] = useState(1);
   const quizzes = useAppSelector((s: RootState) => s.quiz.quizzes);
@@ -112,23 +108,17 @@ const MyBoard: React.FC = () => {
   const [quizFilter, setQuizFilter] = useState<"all" | QuizStatus>("all");
 
   const authorizedRoles: Role[] = useAppSelector(
-    (state: RootState) => (state.auth as { roles: Role[] }).roles
+    (state: RootState) => (state.auth as { roles: Role[] }).roles,
   );
   const isAdmin = authorizedRoles.includes(Role.SALES_ADMIN);
 
-  const pinned = useAppSelector((s: RootState) =>
-    selectBoardSection(s, MyBoardPanelTypes.PINNED)
-  );
+  const pinned = useAppSelector((s: RootState) => selectBoardSection(s, MyBoardPanelTypes.PINNED));
   const essential = useAppSelector((s: RootState) =>
-    selectBoardSection(s, MyBoardPanelTypes.ESSENTIAL)
+    selectBoardSection(s, MyBoardPanelTypes.ESSENTIAL),
   );
 
-  const pageMutationState = useAppSelector(
-    (state: RootState) => state.page.state
-  );
-  const routeMutationState = useAppSelector(
-    (state: RootState) => state.route.state
-  );
+  const pageMutationState = useAppSelector((state: RootState) => state.page.state);
+  const routeMutationState = useAppSelector((state: RootState) => state.route.state);
 
   const getAppBarTitle = (): string => {
     let title = "";
@@ -144,22 +134,19 @@ const MyBoard: React.FC = () => {
     (PanelTypes: MyBoardPanelTypes) => {
       dispatch(fetchMyBoardSection({ PanelTypes, offset: 0 }));
     },
-    [dispatch]
+    [dispatch],
   );
 
   const refreshQuizzes = useCallback(() => {
     dispatch(fetchQuizzes());
   }, [dispatch]);
 
-  const seeMoreSection = (
-    PanelTypes: MyBoardPanelTypes,
-    currentOffset: number
-  ) => {
+  const seeMoreSection = (PanelTypes: MyBoardPanelTypes, currentOffset: number) => {
     dispatch(
       fetchMyBoardSection({
         PanelTypes,
         offset: currentOffset + ITEMS_PER_PAGE,
-      })
+      }),
     );
   };
 
@@ -170,10 +157,8 @@ const MyBoard: React.FC = () => {
 
       if (!isExpanded) return;
 
-      if (panel === MyBoardPanelTypes.PINNED)
-        refreshSection(MyBoardPanelTypes.PINNED);
-      if (panel === MyBoardPanelTypes.ESSENTIAL)
-        refreshSection(MyBoardPanelTypes.ESSENTIAL);
+      if (panel === MyBoardPanelTypes.PINNED) refreshSection(MyBoardPanelTypes.PINNED);
+      if (panel === MyBoardPanelTypes.ESSENTIAL) refreshSection(MyBoardPanelTypes.ESSENTIAL);
       if (panel === "quizzes") refreshQuizzes();
     };
 
@@ -182,16 +167,10 @@ const MyBoard: React.FC = () => {
   }, [dispatch]);
 
   useEffect(() => {
-    if (
-      expandedAccordion === MyBoardPanelTypes.PINNED &&
-      pinned.status === "idle"
-    ) {
+    if (expandedAccordion === MyBoardPanelTypes.PINNED && pinned.status === "idle") {
       refreshSection(MyBoardPanelTypes.PINNED);
     }
-    if (
-      expandedAccordion === MyBoardPanelTypes.ESSENTIAL &&
-      essential.status === "idle"
-    ) {
+    if (expandedAccordion === MyBoardPanelTypes.ESSENTIAL && essential.status === "idle") {
       refreshSection(MyBoardPanelTypes.ESSENTIAL);
     }
   }, [expandedAccordion, pinned.status, essential.status, refreshSection]);
@@ -207,8 +186,7 @@ const MyBoard: React.FC = () => {
   useEffect(() => {
     if (!expandedAccordion) return;
 
-    const isSuccess =
-      pageMutationState === "success" || routeMutationState === "success";
+    const isSuccess = pageMutationState === "success" || routeMutationState === "success";
     if (!isSuccess) return;
 
     if (refetchDebounceRef.current) {
@@ -216,8 +194,7 @@ const MyBoard: React.FC = () => {
     }
 
     refetchDebounceRef.current = window.setTimeout(() => {
-      if (expandedAccordion === MyBoardPanelTypes.PINNED)
-        refreshSection(MyBoardPanelTypes.PINNED);
+      if (expandedAccordion === MyBoardPanelTypes.PINNED) refreshSection(MyBoardPanelTypes.PINNED);
       if (expandedAccordion === MyBoardPanelTypes.ESSENTIAL)
         refreshSection(MyBoardPanelTypes.ESSENTIAL);
     }, 250);
@@ -228,16 +205,8 @@ const MyBoard: React.FC = () => {
         refetchDebounceRef.current = null;
       }
     };
-  }, [
-    expandedAccordion,
-    pageMutationState,
-    refreshSection,
-    routeMutationState,
-  ]);
-  
-  useEffect(() => {
-    setQuizzesPage(1);
-  }, [quizFilter]);
+  }, [expandedAccordion, pageMutationState, refreshSection, routeMutationState]);
+
   const renderLoadingScreen = (label: string) => (
     <Box
       sx={{
@@ -250,37 +219,113 @@ const MyBoard: React.FC = () => {
       }}
     >
       <CircularProgress />
-      <Typography
-        variant="h6"
-        color="text.secondary"
-        sx={{ mt: 2, maxWidth: 380 }}
-      >
+      <Typography variant="h6" color="text.secondary" sx={{ mt: 2, maxWidth: 380 }}>
         Loading {label}...
       </Typography>
     </Box>
   );
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const contentIdParam = searchParams.get("contentId");
+
+    if (!contentIdParam) {
+      return;
+    }
+
+    const contentId = Number.parseInt(contentIdParam, 10);
+
+    if (Number.isNaN(contentId)) {
+      return;
+    }
+
+    const pinnedMatch = pinned.items.find((item) => item.contentId === contentId);
+    const essentialMatch = essential.items.find((item) => item.contentId === contentId);
+
+    if (pinnedMatch) {
+      setExpandedAccordion(MyBoardPanelTypes.PINNED);
+      return;
+    }
+
+    if (essentialMatch) {
+      setExpandedAccordion(MyBoardPanelTypes.ESSENTIAL);
+      return;
+    }
+
+    if (!pinned.isLoadingMore && pinned.hasMore) {
+      setExpandedAccordion(MyBoardPanelTypes.PINNED);
+      dispatch(
+        fetchMyBoardSection({
+          PanelTypes: MyBoardPanelTypes.PINNED,
+          offset: pinned.offset + ITEMS_PER_PAGE,
+        }),
+      );
+    }
+
+    if (!essential.isLoadingMore && essential.hasMore) {
+      setExpandedAccordion(MyBoardPanelTypes.ESSENTIAL);
+      dispatch(
+        fetchMyBoardSection({
+          PanelTypes: MyBoardPanelTypes.ESSENTIAL,
+          offset: essential.offset + ITEMS_PER_PAGE,
+        }),
+      );
+    }
+  }, [dispatch, essential, location.search, pinned]);
+
+  useEffect(() => {
+    const quizIdParam = new URLSearchParams(location.search).get("quizId");
+    if (!quizIdParam) {
+      return;
+    }
+
+    const quizId = Number.parseInt(quizIdParam, 10);
+    if (Number.isNaN(quizId)) {
+      return;
+    }
+
+    setExpandedAccordion("quizzes");
+
+    if (quizzesStatus === "idle") {
+      refreshQuizzes();
+      return;
+    }
+
+    if (quizzesStatus !== "success" || quizzes.length === 0) {
+      return;
+    }
+
+    const targetQuiz = quizzes.find((quiz) => quiz.quizId === quizId);
+    if (!targetQuiz) {
+      return;
+    }
+
+    const targetIndex = quizzes.findIndex((quiz) => quiz.quizId === quizId);
+    if (targetIndex === -1) {
+      return;
+    }
+
+    setExpandedAccordion("quizzes");
+    setQuizzesPage(Math.floor(targetIndex / QUIZZES_PER_PAGE) + 1);
+  }, [location.search, quizzes, quizzesStatus, refreshQuizzes]);
 
   const renderContentGrid = (
     section: BoardSectionState,
     emptyIcon: React.ReactNode,
     emptyTitle: string,
     emptyDescription: string,
-    sectionTypes: MyBoardPanelTypes
+    sectionTypes: MyBoardPanelTypes,
   ) => {
     if (section.status === "loading") {
       return renderLoadingScreen(
-        sectionTypes === MyBoardPanelTypes.PINNED
-          ? "pinned contents"
-          : "essential contents"
+        sectionTypes === MyBoardPanelTypes.PINNED ? "pinned contents" : "essential contents",
       );
     }
 
     if (section.status === "failed") {
       return (
         <Box sx={{ my: 4 }}>
-          <ErrorHandler
-            message={section.errorMessage || "Failed to load contents"}
-          />
+          <ErrorHandler message={section.errorMessage || "Failed to load contents"} />
         </Box>
       );
     }
@@ -300,16 +345,16 @@ const MyBoard: React.FC = () => {
               spacing={0}
               sx={{
                 gap: { xs: 3, sm: 4, md: 5 },
-                '& > *': {
+                "& > *": {
                   flexBasis: {
-                    xs: '100%',
-                    sm: 'calc(50% - 16px)',
-                    md: 'calc(33.333% - 26.667px)',
+                    xs: "100%",
+                    sm: "calc(50% - 16px)",
+                    md: "calc(33.333% - 26.667px)",
                   },
                   minWidth: {
-                    xs: '100%',
-                    sm: 'min(calc(50% - 16px), 350px)',
-                    md: 'min(calc(33.333% - 26.667px), 320px)',
+                    xs: "100%",
+                    sm: "min(calc(50% - 16px), 350px)",
+                    md: "min(calc(33.333% - 26.667px), 320px)",
                   },
                 },
               }}
@@ -332,15 +377,10 @@ const MyBoard: React.FC = () => {
                     tags={content.tags}
                     isVisible={content.isVisible}
                     customButtons={content.customButtons}
-                    isInPinnedSection={
-                      sectionTypes === MyBoardPanelTypes.PINNED
-                    }
+                    isInPinnedSection={sectionTypes === MyBoardPanelTypes.PINNED}
                     onContentUnpinned={() => {
                       if (expandedAccordion === MyBoardPanelTypes.PINNED) {
-                        window.setTimeout(
-                          () => refreshSection(MyBoardPanelTypes.PINNED),
-                          250
-                        );
+                        window.setTimeout(() => refreshSection(MyBoardPanelTypes.PINNED), 250);
                       }
                     }}
                   />
@@ -371,18 +411,10 @@ const MyBoard: React.FC = () => {
       return (
         <Box sx={{ py: { xs: 6, sm: 8 }, textAlign: "center" }}>
           <Box sx={{ display: "inline-block", mb: 2 }}>{emptyIcon}</Box>
-          <Typography
-            variant="h6"
-            color="text.secondary"
-            sx={{ mb: 1, fontWeight: 500 }}
-          >
+          <Typography variant="h6" color="text.secondary" sx={{ mb: 1, fontWeight: 500 }}>
             {emptyTitle}
           </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ maxWidth: 350, mx: "auto" }}
-          >
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 350, mx: "auto" }}>
             {emptyDescription}
           </Typography>
         </Box>
@@ -442,9 +474,7 @@ const MyBoard: React.FC = () => {
             sx={{
               mb: 3,
               border: `1px solid ${
-                theme.palette.mode === "dark"
-                  ? "rgba(255, 107, 0, 0.3)"
-                  : "rgba(255, 107, 0, 0.2)"
+                theme.palette.mode === "dark" ? "rgba(255, 107, 0, 0.3)" : "rgba(255, 107, 0, 0.2)"
               }`,
               borderRadius: "12px !important",
               overflow: "hidden",
@@ -500,9 +530,7 @@ const MyBoard: React.FC = () => {
                 </Typography>
               </Box>
             </AccordionSummary>
-            <AccordionDetails
-              sx={{ px: 3, py: 3, backgroundColor: "transparent" }}
-            >
+            <AccordionDetails sx={{ px: 3, py: 3, backgroundColor: "transparent" }}>
               {isAdmin && (
                 <Box
                   sx={{
@@ -544,46 +572,37 @@ const MyBoard: React.FC = () => {
                 />,
                 "No essential contents yet",
                 "Essential content will appear here!",
-                MyBoardPanelTypes.ESSENTIAL
+                MyBoardPanelTypes.ESSENTIAL,
               )}
 
-              {essential.hasMore &&
-                !essential.isLoadingMore &&
-                essential.items.length > 0 && (
-                  <Box
-                    sx={{ display: "flex", justifyContent: "center", mt: 4 }}
-                  >
-                    <Button
-                      variant="outlined"
-                      endIcon={<KeyboardArrowDownIcon />}
-                      onClick={() =>
-                        seeMoreSection(
-                          MyBoardPanelTypes.ESSENTIAL,
-                          essential.offset
-                        )
-                      }
-                      disabled={essential.isLoadingMore}
-                      sx={{
-                        borderRadius: 8,
-                        backgroundColor: theme.palette.primary.main,
-                        px: 4,
-                        py: 0.5,
-                        fontWeight: 400,
-                        letterSpacing: 0.2,
+              {essential.hasMore && !essential.isLoadingMore && essential.items.length > 0 && (
+                <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
+                  <Button
+                    variant="outlined"
+                    endIcon={<KeyboardArrowDownIcon />}
+                    onClick={() => seeMoreSection(MyBoardPanelTypes.ESSENTIAL, essential.offset)}
+                    disabled={essential.isLoadingMore}
+                    sx={{
+                      borderRadius: 8,
+                      backgroundColor: theme.palette.primary.main,
+                      px: 4,
+                      py: 0.5,
+                      fontWeight: 400,
+                      letterSpacing: 0.2,
+                      color: theme.palette.common.white,
+                      "&:hover": {
+                        backgroundColor: theme.palette.primary.dark,
+                      },
+                      "&.Mui-disabled": {
+                        opacity: 0.7,
                         color: theme.palette.common.white,
-                        "&:hover": {
-                          backgroundColor: theme.palette.primary.dark,
-                        },
-                        "&.Mui-disabled": {
-                          opacity: 0.7,
-                          color: theme.palette.common.white,
-                        },
-                      }}
-                    >
-                      See More
-                    </Button>
-                  </Box>
-                )}
+                      },
+                    }}
+                  >
+                    See More
+                  </Button>
+                </Box>
+              )}
             </AccordionDetails>
           </Accordion>
 
@@ -594,9 +613,7 @@ const MyBoard: React.FC = () => {
             elevation={0}
             sx={{
               border: `1px solid ${
-                theme.palette.mode === "dark"
-                  ? "rgba(255, 107, 0, 0.3)"
-                  : "rgba(255, 107, 0, 0.2)"
+                theme.palette.mode === "dark" ? "rgba(255, 107, 0, 0.3)" : "rgba(255, 107, 0, 0.2)"
               }`,
               borderRadius: "12px !important",
               overflow: "hidden",
@@ -652,9 +669,7 @@ const MyBoard: React.FC = () => {
                 </Typography>
               </Box>
             </AccordionSummary>
-            <AccordionDetails
-              sx={{ px: 3, py: 3, backgroundColor: "transparent" }}
-            >
+            <AccordionDetails sx={{ px: 3, py: 3, backgroundColor: "transparent" }}>
               {renderContentGrid(
                 pinned,
                 <PushPinOutlinedIcon
@@ -666,43 +681,37 @@ const MyBoard: React.FC = () => {
                 />,
                 "No pinned contents yet",
                 "Start pinning your favorite content from other pages!",
-                MyBoardPanelTypes.PINNED
+                MyBoardPanelTypes.PINNED,
               )}
 
-              {pinned.hasMore &&
-                !pinned.isLoadingMore &&
-                pinned.items.length > 0 && (
-                  <Box
-                    sx={{ display: "flex", justifyContent: "center", mt: 4 }}
-                  >
-                    <Button
-                      variant="outlined"
-                      endIcon={<KeyboardArrowDownIcon />}
-                      onClick={() =>
-                        seeMoreSection(MyBoardPanelTypes.PINNED, pinned.offset)
-                      }
-                      disabled={pinned.isLoadingMore}
-                      sx={{
-                        borderRadius: 8,
-                        backgroundColor: theme.palette.primary.main,
-                        px: 4,
-                        py: 0.5,
-                        fontWeight: 400,
-                        letterSpacing: 0.2,
+              {pinned.hasMore && !pinned.isLoadingMore && pinned.items.length > 0 && (
+                <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
+                  <Button
+                    variant="outlined"
+                    endIcon={<KeyboardArrowDownIcon />}
+                    onClick={() => seeMoreSection(MyBoardPanelTypes.PINNED, pinned.offset)}
+                    disabled={pinned.isLoadingMore}
+                    sx={{
+                      borderRadius: 8,
+                      backgroundColor: theme.palette.primary.main,
+                      px: 4,
+                      py: 0.5,
+                      fontWeight: 400,
+                      letterSpacing: 0.2,
+                      color: theme.palette.common.white,
+                      "&:hover": {
+                        backgroundColor: theme.palette.primary.dark,
+                      },
+                      "&.Mui-disabled": {
+                        opacity: 0.7,
                         color: theme.palette.common.white,
-                        "&:hover": {
-                          backgroundColor: theme.palette.primary.dark,
-                        },
-                        "&.Mui-disabled": {
-                          opacity: 0.7,
-                          color: theme.palette.common.white,
-                        },
-                      }}
-                    >
-                      See More
-                    </Button>
-                  </Box>
-                )}
+                      },
+                    }}
+                  >
+                    See More
+                  </Button>
+                </Box>
+              )}
             </AccordionDetails>
           </Accordion>
 
@@ -714,9 +723,7 @@ const MyBoard: React.FC = () => {
             sx={{
               mt: 3,
               border: `1px solid ${
-                theme.palette.mode === "dark"
-                  ? "rgba(255, 107, 0, 0.3)"
-                  : "rgba(255, 107, 0, 0.2)"
+                theme.palette.mode === "dark" ? "rgba(255, 107, 0, 0.3)" : "rgba(255, 107, 0, 0.2)"
               }`,
               borderRadius: "12px !important",
               overflow: "hidden",
@@ -776,7 +783,7 @@ const MyBoard: React.FC = () => {
                     size="small"
                     sx={{
                       backgroundColor: theme.palette.primary.main,
-                      color: "#fff",
+                      color: theme.palette.common.white,
                       fontWeight: 600,
                       height: 24,
                       minWidth: 24,
@@ -800,11 +807,7 @@ const MyBoard: React.FC = () => {
                       opacity: 0.4,
                     }}
                   />
-                  <Typography
-                    variant="h6"
-                    color="text.secondary"
-                    sx={{ mt: 1 }}
-                  >
+                  <Typography variant="h6" color="text.secondary" sx={{ mt: 1 }}>
                     No quizzes assigned yet
                   </Typography>
                 </Box>
@@ -819,18 +822,9 @@ const MyBoard: React.FC = () => {
                       flexWrap: "wrap",
                     }}
                   >
-                    {(
-                      [
-                        "all",
-                        "not_started",
-                        "passed",
-                        "failed",
-                      ] as const
-                    ).map((f) => {
+                    {(["all", "not_started", "passed", "failed"] as const).map((f) => {
                       const count =
-                        f === "all"
-                          ? quizzes.length
-                          : quizzes.filter((q) => q.status === f).length;
+                        f === "all" ? quizzes.length : quizzes.filter((q) => q.status === f).length;
                       const label = {
                         all: "All",
                         not_started: "Pending",
@@ -841,23 +835,30 @@ const MyBoard: React.FC = () => {
                         <Chip
                           key={f}
                           label={`${label} ${count}`}
-                          onClick={() => setQuizFilter(f)}
+                          onClick={() => {
+                            setQuizFilter(f);
+                            setQuizzesPage(1);
+                          }}
                           sx={{
                             cursor: "pointer",
                             backgroundColor:
-                              quizFilter === f
-                                ? theme.palette.primary.main
-                                : "transparent",
+                              quizFilter === f ? theme.palette.primary.main : "transparent",
                             color:
                               quizFilter === f
-                                ? "#fff"
+                                ? theme.palette.common.white
                                 : theme.palette.text.primary,
                             border: `1px solid ${
-                              quizFilter === f
-                                ? theme.palette.primary.main
-                                : theme.palette.divider
+                              quizFilter === f ? theme.palette.primary.main : theme.palette.divider
                             }`,
                             fontWeight: quizFilter === f ? 600 : 400,
+                            "&:hover":
+                              quizFilter === f
+                                ? {
+                                    backgroundColor: theme.palette.primary.main,
+                                  }
+                                : {
+                                    backgroundColor: theme.palette.action.hover,
+                                  },
                           }}
                         />
                       );
@@ -873,16 +874,13 @@ const MyBoard: React.FC = () => {
                   >
                     {(() => {
                       const filteredQuizzes = quizzes.filter(
-                        (q) =>
-                          quizFilter === "all" || q.status === quizFilter
+                        (q) => quizFilter === "all" || q.status === quizFilter,
                       );
-                      const totalPages = Math.ceil(
-                        filteredQuizzes.length / QUIZZES_PER_PAGE
-                      );
+                      const totalPages = Math.ceil(filteredQuizzes.length / QUIZZES_PER_PAGE);
                       const startIdx = (quizzesPage - 1) * QUIZZES_PER_PAGE;
                       const paginatedQuizzes = filteredQuizzes.slice(
                         startIdx,
-                        startIdx + QUIZZES_PER_PAGE
+                        startIdx + QUIZZES_PER_PAGE,
                       );
 
                       return (
@@ -926,10 +924,7 @@ const MyBoard: React.FC = () => {
         sectionId={ESSENTIALS_SECTION_ID}
         handleClose={() => {
           setOpenAddEssentialDialog(false);
-          window.setTimeout(
-            () => refreshSection(MyBoardPanelTypes.ESSENTIAL),
-            300
-          );
+          window.setTimeout(() => refreshSection(MyBoardPanelTypes.ESSENTIAL), 300);
         }}
       />
     </Box>

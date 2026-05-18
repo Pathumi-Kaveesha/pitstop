@@ -60,6 +60,7 @@ import {
   resetAssign,
 } from "@slices/quizSlice/quiz";
 import { useAppDispatch } from "@slices/store";
+import { parseDateAsUtc } from "@utils/utils";
 
 interface Props {
   open: boolean;
@@ -70,18 +71,8 @@ interface Props {
 const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
   const dispatch = useAppDispatch();
   const theme = useTheme();
-  const isDarkMode = theme.palette.mode === "dark";
-
-  const dialogBackground = isDarkMode ? theme.palette.grey[900] : theme.palette.background.paper;
-  const subtleSurface = isDarkMode
-    ? alpha(theme.palette.common.white, 0.03)
-    : theme.palette.grey[50];
-  const subtleBorder = isDarkMode ? alpha(theme.palette.common.white, 0.08) : theme.palette.divider;
-  const borderColor = isDarkMode ? alpha(theme.palette.common.white, 0.1) : theme.palette.divider;
-  const hoverSurface = alpha(theme.palette.primary.main, isDarkMode ? 0.12 : 0.08);
-  const inputSurface = isDarkMode
-    ? alpha(theme.palette.common.white, 0.04)
-    : theme.palette.grey[50];
+  const parsedDueDate = parseDateAsUtc(quiz?.dueDate);
+  const isQuizOverdue = !!parsedDueDate && parsedDueDate < new Date();
 
   const [currentlyAssignedUsers, setCurrentlyAssignedUsers] = useState<QuizAssignableEmployee[]>(
     [],
@@ -237,7 +228,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
   };
 
   const handleAssign = async () => {
-    if (!quiz || timeLimit === "" || Number.isNaN(Number(timeLimit))) return;
+    if (!quiz || isQuizOverdue || timeLimit === "" || Number.isNaN(Number(timeLimit))) return;
     setIsAssigning(true);
     try {
       const allUserIds = [
@@ -274,7 +265,11 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
 
   const isLoading = isAssigning || isRemoving !== null || loadingAssigned;
   const isAssignDisabled =
-    isLoading || pendingUsers.length === 0 || timeLimit === "" || Number.isNaN(Number(timeLimit));
+    isLoading ||
+    isQuizOverdue ||
+    pendingUsers.length === 0 ||
+    timeLimit === "" ||
+    Number.isNaN(Number(timeLimit));
 
   return (
     <Dialog
@@ -285,9 +280,15 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
       PaperProps={{
         sx: {
           borderRadius: "16px",
-          backgroundColor: dialogBackground,
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? theme.palette.grey[900]
+              : theme.palette.background.paper,
           color: theme.palette.text.primary,
-          boxShadow: isDarkMode ? "0 24px 80px rgba(0,0,0,0.45)" : "0 20px 60px rgba(0,0,0,0.15)",
+          boxShadow:
+            theme.palette.mode === "dark"
+              ? "0 24px 80px rgba(0,0,0,0.45)"
+              : "0 20px 60px rgba(0,0,0,0.15)",
           overflow: "visible",
           maxWidth: 580,
         },
@@ -310,8 +311,11 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
               width: 32,
               height: 32,
               borderRadius: "8px",
-              backgroundColor: alpha(theme.palette.primary.main, isDarkMode ? 0.18 : 0.1),
-              border: `1.5px solid ${alpha(theme.palette.primary.main, isDarkMode ? 0.4 : 0.25)}`,
+              backgroundColor: alpha(
+                theme.palette.primary.main,
+                theme.palette.mode === "dark" ? 0.18 : 0.1,
+              ),
+              border: `1.5px solid ${alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.4 : 0.25)}`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -361,7 +365,17 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
         </Box>
 
         {/* Divider line */}
-        <Box sx={{ height: "1px", backgroundColor: borderColor, mb: 2.5, mx: -3 }} />
+        <Box
+          sx={{
+            height: "1px",
+            backgroundColor:
+              theme.palette.mode === "dark"
+                ? alpha(theme.palette.common.white, 0.1)
+                : theme.palette.divider,
+            mb: 2.5,
+            mx: -3,
+          }}
+        />
 
         {/* Search Section */}
         <Box sx={{ mb: 3, position: "relative" }}>
@@ -389,10 +403,16 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
             sx={{
               "& .MuiOutlinedInput-root": {
                 borderRadius: "10px",
-                backgroundColor: inputSurface,
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? alpha(theme.palette.common.white, 0.04)
+                    : theme.palette.grey[50],
                 fontSize: "0.9rem",
                 "& fieldset": {
-                  borderColor: subtleBorder,
+                  borderColor:
+                    theme.palette.mode === "dark"
+                      ? alpha(theme.palette.common.white, 0.08)
+                      : theme.palette.divider,
                 },
                 "&:hover fieldset": {
                   borderColor: theme.palette.text.disabled,
@@ -418,13 +438,28 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
                 right: 0,
                 maxHeight: 220,
                 overflowY: "auto",
-                backgroundColor: dialogBackground,
-                border: `1px solid ${subtleBorder}`,
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? theme.palette.grey[900]
+                    : theme.palette.background.paper,
+                border: `1px solid ${theme.palette.mode === "dark" ? alpha(theme.palette.common.white, 0.08) : theme.palette.divider}`,
                 borderRadius: "12px",
                 zIndex: 20,
                 boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
                 p: 0.5,
                 scrollbarWidth: "thin",
+                scrollbarColor: `${alpha(theme.palette.primary.main, 0.3)} transparent`,
+                "&::-webkit-scrollbar": {
+                  width: 6,
+                },
+                "&::-webkit-scrollbar-track": {
+                  background: "transparent",
+                  borderRadius: 999,
+                },
+                "&::-webkit-scrollbar-thumb": {
+                  background: alpha(theme.palette.primary.main, 0.3),
+                  borderRadius: 999,
+                },
               }}
             >
               {isLoadingSuggestions ? (
@@ -479,8 +514,11 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
                         width: "100%",
                         textAlign: "left",
                         "&:hover": {
-                          backgroundColor: hoverSurface,
-                          border: `1px solid ${alpha(theme.palette.primary.main, isDarkMode ? 0.35 : 0.2)}`,
+                          backgroundColor: alpha(
+                            theme.palette.primary.main,
+                            theme.palette.mode === "dark" ? 0.12 : 0.08,
+                          ),
+                          border: `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.35 : 0.2)}`,
                         },
                       }}
                     >
@@ -538,9 +576,12 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
                   minWidth: 26,
                   fontSize: "0.72rem",
                   fontWeight: 700,
-                  backgroundColor: alpha(theme.palette.primary.main, isDarkMode ? 0.16 : 0.1),
+                  backgroundColor: alpha(
+                    theme.palette.primary.main,
+                    theme.palette.mode === "dark" ? 0.16 : 0.1,
+                  ),
                   color: theme.palette.primary.main,
-                  border: `1px solid ${alpha(theme.palette.primary.main, isDarkMode ? 0.35 : 0.2)}`,
+                  border: `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.35 : 0.2)}`,
                   "& .MuiChip-label": { px: "6px" },
                 }}
               />
@@ -548,9 +589,12 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
             <Box
               sx={{
                 borderRadius: "10px",
-                border: `1.5px solid ${alpha(theme.palette.primary.main, isDarkMode ? 0.35 : 0.2)}`,
+                border: `1.5px solid ${alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.35 : 0.2)}`,
                 overflow: "hidden",
-                backgroundColor: subtleSurface,
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? alpha(theme.palette.common.white, 0.03)
+                    : theme.palette.grey[50],
               }}
             >
               <Table size="small">
@@ -579,7 +623,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
                             "&:hover": {
                               backgroundColor: alpha(
                                 theme.palette.error.main,
-                                isDarkMode ? 0.16 : 0.08,
+                                theme.palette.mode === "dark" ? 0.16 : 0.08,
                               ),
                             },
                           }}
@@ -597,7 +641,17 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
 
         {/* Divider */}
         {pendingUsers.length > 0 && (
-          <Box sx={{ height: "1px", backgroundColor: borderColor, mb: 2.5, mx: -3 }} />
+          <Box
+            sx={{
+              height: "1px",
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? alpha(theme.palette.common.white, 0.1)
+                  : theme.palette.divider,
+              mb: 2.5,
+              mx: -3,
+            }}
+          />
         )}
 
         {/* Currently Assigned Section */}
@@ -615,11 +669,12 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
                 minWidth: 26,
                 fontSize: "0.72rem",
                 fontWeight: 700,
-                backgroundColor: isDarkMode
-                  ? alpha(theme.palette.common.white, 0.06)
-                  : theme.palette.grey[100],
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? alpha(theme.palette.common.white, 0.06)
+                    : theme.palette.grey[100],
                 color: theme.palette.text.secondary,
-                border: `1px solid ${subtleBorder}`,
+                border: `1px solid ${theme.palette.mode === "dark" ? alpha(theme.palette.common.white, 0.08) : theme.palette.divider}`,
                 "& .MuiChip-label": { px: "6px" },
               }}
             />
@@ -634,9 +689,12 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
               sx={{
                 py: 3,
                 borderRadius: "10px",
-                border: `1.5px dashed ${subtleBorder}`,
+                border: `1.5px dashed ${theme.palette.mode === "dark" ? alpha(theme.palette.common.white, 0.08) : theme.palette.divider}`,
                 textAlign: "center",
-                backgroundColor: subtleSurface,
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? alpha(theme.palette.common.white, 0.03)
+                    : theme.palette.grey[50],
               }}
             >
               <Typography variant="body2" color="text.disabled" fontSize="0.85rem">
@@ -645,11 +703,22 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
             </Box>
           ) : (
             <Box
-              sx={{ borderRadius: "10px", border: `1px solid ${borderColor}`, overflow: "hidden" }}
+              sx={{
+                borderRadius: "10px",
+                border: `1px solid ${theme.palette.mode === "dark" ? alpha(theme.palette.common.white, 0.1) : theme.palette.divider}`,
+                overflow: "hidden",
+              }}
             >
               <Table size="small">
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: subtleSurface }}>
+                  <TableRow
+                    sx={{
+                      backgroundColor:
+                        theme.palette.mode === "dark"
+                          ? alpha(theme.palette.common.white, 0.03)
+                          : theme.palette.grey[50],
+                    }}
+                  >
                     <TableCell
                       sx={{
                         fontWeight: 600,
@@ -690,7 +759,12 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
                       key={emp.userId}
                       sx={{
                         "&:last-child td": { borderBottom: 0 },
-                        "&:hover": { backgroundColor: hoverSurface },
+                        "&:hover": {
+                          backgroundColor: alpha(
+                            theme.palette.primary.main,
+                            theme.palette.mode === "dark" ? 0.12 : 0.08,
+                          ),
+                        },
                       }}
                     >
                       <TableCell sx={{ py: 1 }}>
@@ -716,7 +790,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
                             "&:hover": {
                               backgroundColor: alpha(
                                 theme.palette.error.main,
-                                isDarkMode ? 0.16 : 0.08,
+                                theme.palette.mode === "dark" ? 0.16 : 0.08,
                               ),
                             },
                           }}
@@ -743,7 +817,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
           px: 3,
           py: 2.5,
           gap: 1,
-          borderTop: `1px solid ${borderColor}`,
+          borderTop: `1px solid ${theme.palette.mode === "dark" ? alpha(theme.palette.common.white, 0.1) : theme.palette.divider}`,
         }}
       >
         <Button
@@ -755,7 +829,12 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
             color: theme.palette.text.primary,
             fontWeight: 500,
             px: 2.5,
-            "&:hover": { backgroundColor: subtleSurface },
+            "&:hover": {
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? alpha(theme.palette.common.white, 0.03)
+                  : theme.palette.grey[50],
+            },
           }}
         >
           Cancel
@@ -784,7 +863,10 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
               boxShadow: "none",
             },
             "&.Mui-disabled": {
-              backgroundColor: alpha(theme.palette.primary.main, isDarkMode ? 0.35 : 0.25),
+              backgroundColor: alpha(
+                theme.palette.primary.main,
+                theme.palette.mode === "dark" ? 0.35 : 0.25,
+              ),
               color: theme.palette.common.white,
             },
           }}

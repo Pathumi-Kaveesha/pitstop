@@ -478,9 +478,9 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
                 scrollbarWidth: "thin",
                 scrollbarColor: `${alpha(theme.palette.primary.main, 0.3)} transparent`,
                 "&::-webkit-scrollbar": { width: 4 },
-                "&::-webkit-scrollbar-track": { background: "transparent" },
+                "&::-webkit-scrollbar-track": { background: "transparent", borderRadius: 999 },
                 "&::-webkit-scrollbar-thumb": {
-                  borderRadius: 4,
+                  borderRadius: 999,
                   background: alpha(theme.palette.primary.main, 0.3),
                 },
               }}

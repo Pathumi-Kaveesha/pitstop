@@ -28,12 +28,14 @@
 /* Track */
 ::-webkit-scrollbar-track {
   background: #ffffff;
+  border-radius: 999px;
   /* margin-left: ; */
 }
 
 /* Handle */
 ::-webkit-scrollbar-thumb {
   background: #888;
+  border-radius: 999px;
 }
 
 /* Handle on hover */

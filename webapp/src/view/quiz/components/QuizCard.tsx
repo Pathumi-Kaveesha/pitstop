@@ -17,16 +17,17 @@
 import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
 import EmojiEventsOutlinedIcon from "@mui/icons-material/EmojiEventsOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
-import { Box, Button, Chip, LinearProgress, Skeleton, Typography } from "@mui/material";
+import { Box, Button, Chip, LinearProgress, Skeleton, Typography, alpha } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import { useLocation, useNavigate } from "react-router-dom";
 
-import React, { useState } from "react";
-
-import { fetchQuizResult, resetResult } from "@slices/quizSlice/quiz";
-import { useAppDispatch, useAppSelector } from "@slices/store";
+import React, { useCallback, useEffect, useState } from "react";
 
 import { QuizWithStatus } from "@/types/types";
+import { fetchQuizResult, resetResult } from "@slices/quizSlice/quiz";
+import { useAppDispatch, useAppSelector } from "@slices/store";
 import { parseDateAsUtc } from "@utils/utils";
+
 import QuizResultModal from "./QuizResultModal";
 import QuizTakeModal from "./QuizTakeModal";
 
@@ -37,11 +38,45 @@ interface Props {
 const QuizCard: React.FC<Props> = ({ quiz }) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const result = useAppSelector((s) => s.quiz.result);
 
   const [takingQuiz, setTakingQuiz] = useState(false);
   const [viewingResult, setViewingResult] = useState(false);
+
+  const syncQuizIdInUrl = useCallback(
+    (quizId?: number) => {
+      const searchParams = new URLSearchParams(location.search);
+
+      if (quizId == null) {
+        searchParams.delete("quizId");
+      } else {
+        searchParams.set("quizId", quizId.toString());
+      }
+
+      const search = searchParams.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: search ? `?${search}` : "",
+        },
+        { replace: true },
+      );
+    },
+    [location.pathname, location.search, navigate],
+  );
+
+  useEffect(() => {
+    const urlQuizId = new URLSearchParams(location.search).get("quizId");
+    const parsedQuizId = urlQuizId ? Number.parseInt(urlQuizId, 10) : null;
+    const shouldOpenQuiz = parsedQuizId === quiz.quizId;
+
+    if (shouldOpenQuiz) {
+      setTakingQuiz(true);
+    }
+  }, [location.search, quiz.quizId]);
 
   const handleViewResult = () => {
     dispatch(resetResult());
@@ -51,6 +86,8 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
   };
 
   const handleStartQuiz = () => {
+    setViewingResult(false);
+    syncQuizIdInUrl(quiz.quizId);
     setTakingQuiz(true);
   };
 
@@ -60,12 +97,6 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
     // Fetch results immediately after quiz submission
     dispatch(fetchQuizResult(quiz.quizId));
   };
-
-  const statusColor = {
-    not_started: theme.palette.text.secondary,
-    passed: "#2e7d32",
-    failed: "#c62828",
-  }[quiz.status];
 
   const progressValue = quiz.scorePercentage ?? 0;
 
@@ -131,7 +162,7 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                     px: 1,
                     py: 0.25,
                     borderRadius: 1,
-                    backgroundColor: `${theme.palette.warning.main}15`,
+                    backgroundColor: alpha(theme.palette.warning.main, 0.08),
                   }}
                 >
                   <CalendarTodayOutlinedIcon
@@ -152,8 +183,33 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
               )}
               {quiz.status !== "not_started" && quiz.scorePercentage !== undefined && (
                 <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                  <EmojiEventsOutlinedIcon sx={{ fontSize: 14, color: statusColor }} />
-                  <Typography variant="caption" sx={{ color: statusColor, fontWeight: 600 }}>
+                  <EmojiEventsOutlinedIcon
+                    sx={{
+                      fontSize: 14,
+                      color:
+                        quiz.status === "passed"
+                          ? theme.palette.mode === "dark"
+                            ? theme.palette.success.light
+                            : theme.palette.success.dark
+                          : theme.palette.mode === "dark"
+                            ? theme.palette.error.light
+                            : theme.palette.error.dark,
+                    }}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color:
+                        quiz.status === "passed"
+                          ? theme.palette.mode === "dark"
+                            ? theme.palette.success.light
+                            : theme.palette.success.dark
+                          : theme.palette.mode === "dark"
+                            ? theme.palette.error.light
+                            : theme.palette.error.dark,
+                      fontWeight: 600,
+                    }}
+                  >
                     {quiz.scorePercentage}%
                   </Typography>
                 </Box>
@@ -179,9 +235,15 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                       label="Passed"
                       size="small"
                       sx={{
-                        backgroundColor: "#e8f5e9",
-                        color: "#2e7d32",
-                        border: "1px solid #c8e6c9",
+                        backgroundColor:
+                          theme.palette.mode === "dark"
+                            ? alpha(theme.palette.success.main, 0.16)
+                            : alpha(theme.palette.success.main, 0.12),
+                        color:
+                          theme.palette.mode === "dark"
+                            ? theme.palette.success.light
+                            : theme.palette.success.dark,
+                        border: `1px solid ${theme.palette.mode === "dark" ? alpha(theme.palette.success.light, 0.35) : alpha(theme.palette.success.main, 0.25)}`,
                         fontWeight: 500,
                       }}
                     />
@@ -190,15 +252,35 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                 {quiz.status === "failed" && (
                   <>
                     <Chip
-                      icon={<LockOutlinedIcon sx={{ color: "#c62828" }} />}
+                      icon={
+                        <LockOutlinedIcon
+                          sx={{
+                            color:
+                              theme.palette.mode === "dark"
+                                ? theme.palette.error.light
+                                : theme.palette.error.dark,
+                          }}
+                        />
+                      }
                       label="Failed"
                       size="small"
                       sx={{
-                        backgroundColor: "#ffebee",
-                        color: "#c62828",
-                        border: "1px solid #ffcdd2",
+                        backgroundColor:
+                          theme.palette.mode === "dark"
+                            ? alpha(theme.palette.error.main, 0.12)
+                            : alpha(theme.palette.error.main, 0.04),
+                        color:
+                          theme.palette.mode === "dark"
+                            ? theme.palette.error.light
+                            : theme.palette.error.dark,
+                        border: `1px solid ${theme.palette.mode === "dark" ? alpha(theme.palette.error.light, 0.35) : alpha(theme.palette.error.main, 0.25)}`,
                         fontWeight: 500,
-                        "& .MuiChip-icon": { color: "#c62828" },
+                        "& .MuiChip-icon": {
+                          color:
+                            theme.palette.mode === "dark"
+                              ? theme.palette.error.light
+                              : theme.palette.error.dark,
+                        },
                       }}
                     />
                   </>
@@ -210,7 +292,7 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                         label="Overdue"
                         size="small"
                         sx={{
-                          backgroundColor: theme.palette.error.main + "15",
+                          backgroundColor: alpha(theme.palette.error.main, 0.08),
                           color: theme.palette.error.main,
                           fontWeight: 600,
                         }}
@@ -220,8 +302,11 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                         label="Pending"
                         size="small"
                         sx={{
-                          backgroundColor: theme.palette.grey[100],
-                          color: theme.palette.common.black,
+                          backgroundColor:
+                            theme.palette.mode === "dark"
+                              ? alpha(theme.palette.common.white, 0.08)
+                              : theme.palette.grey[100],
+                          color: theme.palette.text.secondary,
                         }}
                       />
                     )}
@@ -229,13 +314,16 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                       size="medium"
                       variant="contained"
                       onClick={handleStartQuiz}
-                      disabled={isOverdue}
                       sx={{
                         textTransform: "none",
                         borderRadius: 1.5,
-                        fontSize: "0.8rem",
+                        fontSize: "0.9rem",
+                        whiteSpace: "nowrap",
+                        minWidth: 120,
+                        px: 2,
+                        py: 0.75,
                         backgroundColor: theme.palette.primary.main,
-                        color: "#fff",
+                        color: theme.palette.common.white,
                       }}
                     >
                       Start
@@ -266,8 +354,26 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                     sx={{
                       height: 3,
                       borderRadius: 3,
-                      backgroundColor: `${statusColor}20`,
-                      "& .MuiLinearProgress-bar": { backgroundColor: statusColor },
+                      backgroundColor: alpha(
+                        quiz.status === "passed"
+                          ? theme.palette.mode === "dark"
+                            ? theme.palette.success.light
+                            : theme.palette.success.dark
+                          : theme.palette.mode === "dark"
+                            ? theme.palette.error.light
+                            : theme.palette.error.dark,
+                        0.12,
+                      ),
+                      "& .MuiLinearProgress-bar": {
+                        backgroundColor:
+                          quiz.status === "passed"
+                            ? theme.palette.mode === "dark"
+                              ? theme.palette.success.light
+                              : theme.palette.success.dark
+                            : theme.palette.mode === "dark"
+                              ? theme.palette.error.light
+                              : theme.palette.error.dark,
+                      },
                     }}
                   />
                 </Box>
@@ -278,8 +384,11 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
                   sx={{
                     textTransform: "none",
                     borderRadius: 1.5,
-                    fontSize: "0.8rem",
+                    fontSize: "0.9rem",
                     whiteSpace: "nowrap",
+                    minWidth: 120,
+                    px: 2,
+                    py: 0.75,
                     borderColor: theme.palette.divider,
                     color: theme.palette.text.primary,
                   }}
@@ -297,7 +406,11 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
         <QuizTakeModal
           quiz={quiz}
           open={takingQuiz}
-          onClose={() => setTakingQuiz(false)}
+          onClose={() => {
+            setViewingResult(false);
+            setTakingQuiz(false);
+            syncQuizIdInUrl();
+          }}
           onSubmitted={handleSubmitted}
         />
       )}

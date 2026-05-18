@@ -184,11 +184,19 @@ const QuizAdminDashboard: React.FC = () => {
         employeeInfos,
         answerSummaries,
         isAnalyticsQuizOverdue,
+        selectedAnalyticsQuiz?.dueDate,
       );
     } catch (e) {
       console.error("Failed to fetch employee info for CSV export", e);
       const merged = buildMergedAnalytics();
-      exportAnalyticsToCSV(merged, analyticsQuizTitle, [], {}, isAnalyticsQuizOverdue);
+      exportAnalyticsToCSV(
+        merged,
+        analyticsQuizTitle,
+        [],
+        {},
+        isAnalyticsQuizOverdue,
+        selectedAnalyticsQuiz?.dueDate,
+      );
     }
   };
 
@@ -214,7 +222,6 @@ const QuizAdminDashboard: React.FC = () => {
           answered: 0,
           correctAnswers: 0,
           scorePercentage: 0,
-          totalMarks: 0,
           marksObtained: 0,
           completed: 0,
           passed: false,
@@ -508,9 +515,9 @@ const QuizAdminDashboard: React.FC = () => {
               variant="contained"
               startIcon={<AddIcon />}
               onClick={openCreateDialog}
-              sx={{ textTransform: "none", color: "white", borderRadius: 8, px: 3 }}
+              sx={{ textTransform: "none", color: "white", borderRadius: 3, px: 3 }}
             >
-              New quiz
+              Add quiz
             </Button>
           </Box>
           <Box
@@ -542,11 +549,19 @@ const QuizAdminDashboard: React.FC = () => {
                     cursor: "pointer",
                     backgroundColor:
                       adminQuizzesFilter === f ? theme.palette.primary.main : "transparent",
-                    color: adminQuizzesFilter === f ? "#fff" : theme.palette.text.primary,
+                    color: adminQuizzesFilter === f ? theme.palette.common.white : theme.palette.text.primary,
                     border: `1px solid ${
                       adminQuizzesFilter === f ? theme.palette.primary.main : theme.palette.divider
                     }`,
                     fontWeight: adminQuizzesFilter === f ? 600 : 400,
+                    "&:hover": {
+                      backgroundColor:
+                        adminQuizzesFilter === f ? theme.palette.primary.main : "transparent",
+                      color:
+                        adminQuizzesFilter === f ? theme.palette.common.white : theme.palette.text.primary,
+                      borderColor:
+                        adminQuizzesFilter === f ? theme.palette.primary.main : theme.palette.divider,
+                    },
                   }}
                 />
               );
@@ -600,8 +615,21 @@ const QuizAdminDashboard: React.FC = () => {
                               size="small"
                               sx={{
                                 backgroundColor:
-                                  quiz.status === "PUBLISHED" ? "#e8f5e9" : "#fff3e0",
-                                color: quiz.status === "PUBLISHED" ? "#2e7d32" : "#e65100",
+                                  quiz.status === "PUBLISHED"
+                                    ? theme.palette.mode === "dark"
+                                      ? alpha(theme.palette.success.main, 0.16)
+                                      : alpha(theme.palette.success.main, 0.12)
+                                    : theme.palette.mode === "dark"
+                                      ? alpha(theme.palette.warning.main, 0.16)
+                                      : alpha(theme.palette.warning.main, 0.12),
+                                color:
+                                  quiz.status === "PUBLISHED"
+                                    ? theme.palette.mode === "dark"
+                                      ? theme.palette.success.light
+                                      : theme.palette.success.dark
+                                    : theme.palette.mode === "dark"
+                                      ? theme.palette.warning.light
+                                      : theme.palette.warning.dark,
                                 fontWeight: 600,
                                 fontSize: "0.7rem",
                                 height: 20,
@@ -667,22 +695,36 @@ const QuizAdminDashboard: React.FC = () => {
                         <Box
                           sx={{ display: "flex", alignItems: "center", gap: 1.5, flexShrink: 0 }}
                         >
-                          {quiz.status == "PUBLISHED" && (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              startIcon={<PersonAddIcon />}
-                              onClick={() => setAssignQuiz(quiz)}
-                              sx={{
-                                textTransform: "none",
-                                borderRadius: 8,
-                                borderColor: theme.palette.divider,
-                                color: theme.palette.text.primary,
-                              }}
-                            >
-                              Assign
-                            </Button>
-                          )}
+                          {(() => {
+                            const parsedDue = parseDateAsUtc(quiz.dueDate);
+                            const isQuizOverdue = !!parsedDue && parsedDue < new Date();
+
+                            return quiz.status == "PUBLISHED" ? (
+                              <Tooltip
+                                title={isQuizOverdue ? "Overdue quizzes can't be assigned" : ""}
+                                arrow
+                                placement="top"
+                              >
+                                <span>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<PersonAddIcon />}
+                                    onClick={() => setAssignQuiz(quiz)}
+                                    disabled={isQuizOverdue}
+                                    sx={{
+                                      textTransform: "none",
+                                      borderRadius: 3,
+                                      borderColor: theme.palette.divider,
+                                      color: theme.palette.text.primary,
+                                    }}
+                                  >
+                                    Assign
+                                  </Button>
+                                </span>
+                              </Tooltip>
+                            ) : null;
+                          })()}
                           {quiz.status == "PUBLISHED" && (
                             <Button
                               size="small"
@@ -691,7 +733,7 @@ const QuizAdminDashboard: React.FC = () => {
                               onClick={() => handleOpenAnalytics(quiz.quizId, quiz.title)}
                               sx={{
                                 textTransform: "none",
-                                borderRadius: 8,
+                                borderRadius: 3,
                                 borderColor: theme.palette.divider,
                                 color: theme.palette.text.primary,
                               }}
@@ -709,9 +751,9 @@ const QuizAdminDashboard: React.FC = () => {
                                   onClick={() => handlePublish(quiz.quizId)}
                                   sx={{
                                     textTransform: "none",
-                                    borderRadius: 8,
+                                    borderRadius: 3,
                                     backgroundColor: theme.palette.primary.main,
-                                    color: "#fff",
+                                    color: theme.palette.common.white,
                                     "&:hover": {
                                       backgroundColor: theme.palette.primary.dark,
                                     },
@@ -734,7 +776,7 @@ const QuizAdminDashboard: React.FC = () => {
                               onClick={() => openEditDialog(quiz)}
                               sx={{
                                 textTransform: "none",
-                                borderRadius: 8,
+                                borderRadius: 3,
                                 borderColor: theme.palette.divider,
                                 color: theme.palette.text.primary,
                               }}
@@ -746,7 +788,7 @@ const QuizAdminDashboard: React.FC = () => {
                             size="small"
                             startIcon={<DeleteOutlineIcon />}
                             onClick={() => handleDelete(quiz.quizId)}
-                            sx={{ textTransform: "none", borderRadius: 8, color: "#c62828" }}
+                            sx={{ textTransform: "none", borderRadius: 3, color: theme.palette.mode === "dark" ? theme.palette.error.light : theme.palette.error.dark }}
                           >
                             Delete
                           </Button>
@@ -857,8 +899,21 @@ const QuizAdminDashboard: React.FC = () => {
             pb: 1.5,
           }}
         >
-          <Typography variant="h6" fontWeight={600}>
+          <Typography variant="h6" fontWeight={600} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             {analyticsQuizTitle} — Analytics
+            {isAnalyticsQuizOverdue && (
+              <Chip
+                label="Overdue"
+                size="small"
+                sx={{
+                  backgroundColor: alpha(theme.palette.error.main, 0.12),
+                  color: theme.palette.error.main,
+                  fontWeight: 600,
+                  fontSize: "0.75rem",
+                  height: 22,
+                }}
+              />
+            )}
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             {(analytics.length > 0 || assignedUsers.length > 0) && (
@@ -935,23 +990,48 @@ const QuizAdminDashboard: React.FC = () => {
                         </TableCell>
                         <TableCell align="center">
                           {row.submittedAt ? (
-                            <Chip
-                              label={row.passed ? "Passed" : "Failed"}
-                              size="small"
-                              sx={{
-                                backgroundColor: row.passed
-                                  ? isDarkMode
-                                    ? alpha(theme.palette.success.main, 0.18)
-                                    : "#e8f5e9"
-                                  : isDarkMode
-                                    ? alpha(theme.palette.error.main, 0.18)
-                                    : "#ffebee",
-                                color: row.passed
-                                  ? theme.palette.success.main
-                                  : theme.palette.error.main,
-                                fontWeight: 500,
-                              }}
-                            />
+                            (() => {
+                              const isSubmissionLate =
+                                !!parsedAnalyticsDueDate &&
+                                !!row.submittedAt &&
+                                new Date(row.submittedAt) > parsedAnalyticsDueDate;
+                              return (
+                                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
+                                  <Chip
+                                    label={row.passed ? "Passed" : "Failed"}
+                                    size="small"
+                                    sx={{
+                                      backgroundColor: row.passed
+                                        ? isDarkMode
+                                          ? alpha(theme.palette.success.main, 0.18)
+                                          : alpha(theme.palette.success.main, 0.12)
+                                        : isDarkMode
+                                          ? alpha(theme.palette.error.main, 0.18)
+                                          : alpha(theme.palette.error.main, 0.08),
+                                      color: row.passed
+                                        ? theme.palette.success.main
+                                        : theme.palette.error.main,
+                                      fontWeight: 500,
+                                    }}
+                                  />
+                                  {isSubmissionLate && (
+                                    <Chip
+                                      label="Overdue"
+                                      size="small"
+                                      sx={{
+                                        backgroundColor: isDarkMode
+                                          ? alpha(theme.palette.error.main, 0.18)
+                                          : alpha(theme.palette.error.main, 0.08),
+                                        color: theme.palette.error.main,
+                                        fontWeight: 600,
+                                        fontSize: "0.7rem",
+                                        height: 20,
+                                      }}
+                                    />
+                                  )}
+                                </Box>
+                              );
+                            })()
                           ) : isAnalyticsQuizOverdue ? (
                             <Chip
                               label="Overdue"
@@ -959,7 +1039,7 @@ const QuizAdminDashboard: React.FC = () => {
                               sx={{
                                 backgroundColor: isDarkMode
                                   ? alpha(theme.palette.error.main, 0.18)
-                                  : "#ffebee",
+                                  : alpha(theme.palette.error.main, 0.08),
                                 color: theme.palette.error.main,
                                 fontWeight: 600,
                               }}
