@@ -517,8 +517,8 @@ public type NestedAnswerPayload record {|
 
 # Quiz lifecycle status.
 public enum QuizStatus {
-    DRAFTED = "DRAFTED",
-    PUBLISHED = "PUBLISHED"
+    DRAFTED,
+    PUBLISHED
 }
 
 # Assign users payload.

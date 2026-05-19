@@ -140,6 +140,12 @@ public type SwapSectionOrders record {|
     int sectionOrder;
 |};
 
+# Simple mapping record for quiz id lookups
+public type QuizIdRow record {|
+    # Quiz ID
+    int quizId;
+|};
+
 # Update section payload.
 public type UpdateSectionPayload record {|
     # Type of the section

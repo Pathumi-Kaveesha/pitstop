@@ -2036,6 +2036,7 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         return http:OK;
     }
+    
     # Get quizzes for the logged-in user. 
     #
     # + ctx - Request context
@@ -2061,7 +2062,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         if userId is () {
-            return[];
+            return [];
         }
 
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
@@ -2088,12 +2089,9 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         foreach database:Quiz quiz in result {
-            string? dueDate = quiz.dueDate;
-            if dueDate is string {
-                string|error converted = database:formatDueDateWithOffset(dueDate, offsetHeader);
-                if converted is string {
-                    quiz.dueDate = converted;
-                }
+            string|error converted = database:formatDueDateWithOffset(quiz.dueDate, offsetHeader);
+            if converted is string {
+                quiz.dueDate = converted;
             }
         }
 
@@ -2107,7 +2105,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + return - Quiz list or error response
     resource function get quizzes(http:RequestContext ctx, http:Request req)
         returns database:Quiz[]|http:Forbidden|http:InternalServerError {
-        
+
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         if userEmail is error {
             log:printError(constants:GET_USER_ID_ERROR, userEmail);
@@ -2125,9 +2123,9 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         if userId is () {
-            return[];
+            return [];
         }
-        
+
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
         if userGroups is error {
             log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
@@ -2157,14 +2155,11 @@ service http:InterceptableService / on new http:Listener(9090) {
         if headerVal is string {
             offsetHeader = headerVal;
         }
-        
+
         foreach database:Quiz quiz in result {
-            string? dueDate = quiz.dueDate;
-            if dueDate is string {
-                string|error converted = database:formatDueDateWithOffset(dueDate, offsetHeader);
-                if converted is string {
-                    quiz.dueDate = converted;
-                }
+            string|error converted = database:formatDueDateWithOffset(quiz.dueDate, offsetHeader);
+            if converted is string {
+                quiz.dueDate = converted;
             }
         }
 
@@ -2255,7 +2250,7 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         // If PUBLISHED — only allow status changes in the payload, block everything else
         if currentStatus.toString() == database:PUBLISHED {
-                boolean hasOtherFields =
+            boolean hasOtherFields =
                     payload.title != () ||
                     payload.description != () ||
                     payload.thumbnail != () ||
@@ -2263,13 +2258,12 @@ service http:InterceptableService / on new http:Listener(9090) {
                     payload.dueDate != () ||
                     payload.questions != ();
 
-                if hasOtherFields {
-                    return <http:BadRequest>{
-                        body: {message: "Cannot edit a published quiz."}
-                    };
-                }
+            if hasOtherFields {
+                return <http:BadRequest>{
+                    body: {message: "Cannot edit a published quiz."}
+                };
             }
-
+        }
 
         int|error? result = database:updateQuiz(quizId, payload, userEmail);
         if result is error || result is () {
@@ -2339,13 +2333,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        int[] newlyAssignedUserIds = [];
-        foreach int userId in payload.userIds {
-            if currentAssignedUserIds.indexOf(userId) is () {
-                newlyAssignedUserIds.push(userId);
-            }
-        }
-
+        int[] assignedUserIds = currentAssignedUserIds;
+        int[] newlyAssignedUserIds = payload.userIds.filter(userId => assignedUserIds.indexOf(userId) is ());
         int|error? result = database:assignUsersToQuiz(quizId, payload.userIds, userEmail);
         if result is error || result is () {
             string customError = "Error while assigning users to quiz";
@@ -2639,7 +2628,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + quizId - Quiz ID
     # + payload - Question payload
     # + return - Created, forbidden, or error response
-    resource function post quizzes/[int quizId]/questions(http:RequestContext ctx, 
+    resource function post quizzes/[int quizId]/questions(http:RequestContext ctx,
             database:QuestionCreatePayload payload)
         returns http:Created|http:Forbidden|http:InternalServerError {
 
@@ -2701,7 +2690,7 @@ service http:InterceptableService / on new http:Listener(9090) {
                 body: {message: constants:GET_USER_ROLE_ERROR}
             };
         }
-        
+
         if !authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
             log:printError(constants:UNAUTHORIZED_ACCESS_ERROR);
             return <http:Forbidden>{
@@ -2729,7 +2718,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             log:printError(customError, result);
             return <http:InternalServerError>{body: {message: customError}};
         }
-        
+
         if result == 0 {
             string notFoundError = "Question not found!";
             log:printError(notFoundError);
@@ -2861,8 +2850,8 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + answerId - Answer ID
     # + payload - Update payload
     # + return - OK, not found, forbidden, or error response
-    resource function patch questions/[int questionId]/answers/[int answerId](http:RequestContext ctx, 
-            database:UpdateAnswerPayload payload) 
+    resource function patch questions/[int questionId]/answers/[int answerId](http:RequestContext ctx,
+            database:UpdateAnswerPayload payload)
         returns http:Ok|http:NotFound|http:Forbidden|http:InternalServerError {
 
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
@@ -3078,22 +3067,14 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        int|error? userId = database:getUserIdByUserEmail(userEmail);
-        if userId is () {
+        database:QuizResult|error? result = database:getUserQuizResult(quizId, userEmail);
+        if result is () {
             string notFoundError = "No submission found for this user";
             log:printError(notFoundError);
             return <http:NotFound>{
                 body: {message: notFoundError}
             };
         }
-        if userId is error {
-            log:printError(constants:GET_USER_ID_ERROR, userId);
-            return <http:InternalServerError>{
-                body: {message: constants:GET_USER_ID_ERROR}
-            };
-        }
-
-        database:QuizResult|error result = database:getUserQuizResult(quizId, userEmail);
         if result is error {
             string customError = "Error while fetching quiz result";
             log:printError(customError, result);
@@ -3158,7 +3139,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         returns database:UserAnswerDrillDown|http:Forbidden|http:InternalServerError {
 
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-        if userEmail is error { 
+        if userEmail is error {
             log:printError(constants:GET_USER_ID_ERROR, userEmail);
             return <http:InternalServerError>{
                 body: {message: constants:GET_USER_ID_ERROR}
@@ -3210,7 +3191,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         returns database:Feedback[]|http:Forbidden|http:InternalServerError {
 
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-        if userEmail is error { 
+        if userEmail is error {
             log:printError(constants:GET_USER_ID_ERROR, userEmail);
             return <http:InternalServerError>{
                 body: {message: constants:GET_USER_ID_ERROR}

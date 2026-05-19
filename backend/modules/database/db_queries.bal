@@ -1944,7 +1944,7 @@ isolated function getQuizzesQuery(int? userId = ()) returns sql:ParameterizedQue
 
     if userId is int {
         query = sql:queryConcat(query, `
-            AND q.status = 'PUBLISHED'
+            AND q.status = ${PUBLISHED}
             AND q.assigned_user_ids IS NOT NULL
             AND JSON_CONTAINS(q.assigned_user_ids, JSON_ARRAY(${userId}))
         `);
@@ -2636,7 +2636,10 @@ isolated function getQuizTitleQuery(int quizId) returns sql:ParameterizedQuery =
 # + return - SQL parameterized query
 isolated function getAssignedUserIdsQuery(int quizId) returns sql:ParameterizedQuery => `
     SELECT 
-        assigned_user_ids 
+        (
+            SELECT COALESCE(array_agg((v)::int), ARRAY[]::int[])
+            FROM jsonb_array_elements_text(assigned_user_ids) AS v
+        ) AS assigned_user_ids
     FROM quiz 
     WHERE quiz_id = ${quizId} AND is_deleted = false
 `;

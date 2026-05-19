@@ -17,7 +17,6 @@
 import pitstop.constants;
 import pitstop.types;
 
-import ballerina/lang.'int as langint;
 import ballerina/lang.regexp;
 import ballerina/log;
 import ballerina/sql;
@@ -332,10 +331,8 @@ isolated function createQuizWithQuestionsAndAnswers(QuizCreatePayload quiz, stri
                 _ = check createAnswer(questionId, aPayload, createdBy);
             }
         }
-
         check commit;
     }
-
     return quizId;
 }
 
@@ -347,6 +344,7 @@ isolated function createQuizWithQuestionsAndAnswers(QuizCreatePayload quiz, stri
 # + return - Total affected rows for the quiz update or error
 isolated function updateQuizWithQuestionsAndAnswers(int quizId, QuizUpdatePayload payload, string updatedBy) 
     returns int|error? {
+
     int totalAffectedRows = 0;
 
     transaction {
@@ -356,7 +354,6 @@ isolated function updateQuizWithQuestionsAndAnswers(int quizId, QuizUpdatePayloa
         NestedQuestionPayload[]? questions = payload.questions;
         if questions is NestedQuestionPayload[] {
             _ = check dbClient->execute(deleteAnswersByQuizIdQuery(quizId));
-
             _ = check dbClient->execute(deleteQuestionsByQuizIdQuery(quizId));
 
             foreach int i in 0 ..< questions.length() {
@@ -378,10 +375,8 @@ isolated function updateQuizWithQuestionsAndAnswers(int quizId, QuizUpdatePayloa
                 }
             }
         }
-
         check commit;
     }
-
     return totalAffectedRows;
 }
 
@@ -422,10 +417,8 @@ isolated function submitUserAnswersWithFeedback(int quizId, int userId, UserAnsw
                 }
             }
         }
-
         check commit;
     }
-
     return totalAffected;
 }
 
@@ -434,15 +427,21 @@ isolated function submitUserAnswersWithFeedback(int quizId, int userId, UserAnsw
 # + quizId - Quiz ID for which to build the result
 # + userEmail - User email to fetch the result for
 # + return - QuizResult with transformations applied or error
-isolated function buildQuizResultWithTransformations(int quizId, string userEmail) returns sql:Error|QuizResult|error {
+isolated function buildQuizResultWithTransformations(int quizId, string userEmail) returns QuizResult|error? {
     QuizResultRaw|sql:Error raw = dbClient->queryRow(getUserResultQuery(quizId, userEmail));
     if raw is sql:Error {
+        if raw is sql:NoRowsError {
+            return ();
+        }
         return raw;
     }
 
     int|error? userId = getUserIdByUserEmail(userEmail);
-    if userId is () || userId is error {
-        return error("User not found for email: " + userEmail);
+    if userId is () {
+        return ();
+    }
+    if userId is error {
+        return userId;
     }
 
     SubmittedAnswer[]|error answers = getUserSubmittedAnswers(quizId, userId);
@@ -462,8 +461,8 @@ isolated function buildQuizResultWithTransformations(int quizId, string userEmai
         marksObtained: <int>(raw.marksObtained ?: 0),
         passed: raw.passed == 1,
         completed: raw.completed == 1,
-        answers: answers,
-        feedback: feedback
+        answers,
+        feedback
     };
 }
 
@@ -537,7 +536,7 @@ public isolated function formatDueDateWithOffset(string dueDateStr, string? offs
 
     int offsetMinutes = 0;
     if offsetHeader is string {
-        var parsedOffset = langint:fromString(offsetHeader);
+        var parsedOffset = int:fromString(offsetHeader);
         if parsedOffset is int {
             offsetMinutes = parsedOffset;
         }
