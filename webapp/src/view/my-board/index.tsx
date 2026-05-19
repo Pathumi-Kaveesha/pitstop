@@ -252,7 +252,7 @@ const MyBoard: React.FC = () => {
       return;
     }
 
-    if (!pinned.isLoadingMore && pinned.hasMore) {
+    if (pinned.status !== "idle" && !pinned.isLoadingMore && pinned.hasMore) {
       setExpandedAccordion(MyBoardPanelTypes.PINNED);
       dispatch(
         fetchMyBoardSection({
@@ -262,7 +262,7 @@ const MyBoard: React.FC = () => {
       );
     }
 
-    if (!essential.isLoadingMore && essential.hasMore) {
+    if (essential.status !== "idle" && !essential.isLoadingMore && essential.hasMore) {
       setExpandedAccordion(MyBoardPanelTypes.ESSENTIAL);
       dispatch(
         fetchMyBoardSection({

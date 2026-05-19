@@ -79,7 +79,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
     [],
   );
   const [pendingUsers, setPendingUsers] = useState<QuizAssignableEmployee[]>([]);
-  const [timeLimit, setTimeLimit] = useState<number | "">("");
+  const [timeLimit, setTimeLimit] = useState("");
   const [loadingAssigned, setLoadingAssigned] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<EmployeeSuggestion[]>([]);
@@ -88,6 +88,13 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
   const [isAssigning, setIsAssigning] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const parsedTimeLimit = timeLimit === "" ? null : Number(timeLimit);
+  const isValidTimeLimit =
+    parsedTimeLimit !== null &&
+    Number.isFinite(parsedTimeLimit) &&
+    Number.isInteger(parsedTimeLimit) &&
+    parsedTimeLimit >= 1;
 
   const refreshAssignedUsers = useCallback(() => {
     if (quiz && quiz.assignedUserIds.length > 0) {
@@ -187,8 +194,15 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
         if (!fullEmployee) {
           return;
         }
-
-        setPendingUsers((prev) => [...prev, fullEmployee]);
+        setPendingUsers((prev) =>
+          prev.some(
+            (user) =>
+              user.userId === fullEmployee.userId ||
+              user.workEmail === fullEmployee.workEmail,
+          )
+            ? prev
+            : [...prev, fullEmployee],
+        );
         setSearchQuery("");
         setSuggestions([]);
       })
@@ -223,7 +237,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
   };
 
   const handleAssign = async () => {
-    if (!quiz || isQuizOverdue || timeLimit === "" || Number.isNaN(Number(timeLimit))) return;
+    if (!quiz || isQuizOverdue || !isValidTimeLimit) return;
     setIsAssigning(true);
     try {
       const allUserIds = [
@@ -237,7 +251,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
         assignUsersToQuiz({
           quizId: quiz.quizId,
           userIds: allUserIds,
-          timeLimitMinutes: Number(timeLimit),
+          timeLimitMinutes: parsedTimeLimit,
         }),
       ).unwrap();
       await dispatch(fetchAdminQuizzes());
@@ -263,8 +277,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
     isLoading ||
     isQuizOverdue ||
     pendingUsers.length === 0 ||
-    timeLimit === "" ||
-    Number.isNaN(Number(timeLimit));
+    !isValidTimeLimit;
 
   return (
     <Dialog
@@ -349,11 +362,8 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
             type="number"
             size="small"
             value={timeLimit}
-            onChange={(e) => {
-              const value = e.target.value;
-              setTimeLimit(value === "" ? "" : Math.max(1, Number(value)));
-            }}
-            inputProps={{ min: 1, max: 1440 }}
+            onChange={(e) => setTimeLimit(e.target.value)}
+            inputProps={{ min: 1, step: 1 }}
             required
             sx={{ width: 160 }}
           />

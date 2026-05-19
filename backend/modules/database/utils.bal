@@ -429,7 +429,7 @@ isolated function submitUserAnswersWithFeedback(int quizId, int userId, UserAnsw
     return totalAffected;
 }
 
-# builds the quiz result for a user.
+# Builds the quiz result for a user.
 # 
 # + quizId - Quiz ID for which to build the result
 # + userEmail - User email to fetch the result for
@@ -448,12 +448,6 @@ isolated function buildQuizResultWithTransformations(int quizId, string userEmai
     SubmittedAnswer[]|error answers = getUserSubmittedAnswers(quizId, userId);
     if answers is error {
         return answers;
-    }
-
-    foreach var i in 0 ..< answers.length() {
-        if answers[i].isCorrect {
-            answers[i].refLinks = ();
-        }
     }
 
     UserFeedback|error? feedback = getUserFeedback(quizId, userId);

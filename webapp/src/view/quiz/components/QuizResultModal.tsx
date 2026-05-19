@@ -69,6 +69,31 @@ const QuizResultModal: React.FC<Props> = ({ quiz, result, open, onClose }) => {
 
   const uniqueQuestions = Object.values(grouped);
 
+  const normalizeRefLinks = (refLinks: unknown) => {
+    if (Array.isArray(refLinks)) {
+      return refLinks.filter(
+        (link): link is string => typeof link === "string" && Boolean(link.trim()),
+      );
+    }
+
+    if (typeof refLinks === "string" && refLinks.trim()) {
+      try {
+        const parsed = JSON.parse(refLinks);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (link): link is string => typeof link === "string" && Boolean(link.trim()),
+          );
+        }
+      } catch (error) {
+        void error;
+      }
+
+      return [refLinks];
+    }
+
+    return [];
+  };
+
   const getAnswerText = (ans: SubmittedAnswer) =>
     ans.selectedAnswerText || ans.selectedOptionText || "";
 
@@ -223,7 +248,7 @@ const QuizResultModal: React.FC<Props> = ({ quiz, result, open, onClose }) => {
                 q.answers.find((ans) => ans.correctAnswerText)?.correctAnswerText ?? "";
               const refLinks = Array.from(
                 new Set(
-                  q.answers.flatMap((ans) => (Array.isArray(ans.refLinks) ? ans.refLinks : [])),
+                  q.answers.flatMap((ans) => normalizeRefLinks(ans.refLinks)),
                 ),
               );
               const yourAnswerTexts = q.answers.map((a) => getAnswerText(a)).filter(Boolean);
@@ -357,7 +382,7 @@ const QuizResultModal: React.FC<Props> = ({ quiz, result, open, onClose }) => {
                     </Box>
                   )}
 
-                  {isWrongScoredQuestion && refLinks.length > 0 && (
+                  {refLinks.length > 0 && (
                     <Box
                       sx={{
                         mt: 1,
@@ -374,21 +399,48 @@ const QuizResultModal: React.FC<Props> = ({ quiz, result, open, onClose }) => {
                         Learn more:
                       </Typography>
                       {refLinks.map((link, i) => (
-                        <a
-                          key={i}
-                          href={link}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: "block",
-                            color: theme.palette.primary.main,
-                            fontSize: "0.8rem",
-                            marginBottom: 4,
-                            wordBreak: "break-all",
-                          }}
-                        >
-                          {link}
-                        </a>
+                        (() => {
+                          try {
+                            const url = new URL(link);
+
+                            if (url.protocol === "http:" || url.protocol === "https:") {
+                              return (
+                                <a
+                                  key={i}
+                                  href={url.toString()}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    display: "block",
+                                    color: theme.palette.primary.main,
+                                    fontSize: "0.8rem",
+                                    marginBottom: 4,
+                                    wordBreak: "break-all",
+                                  }}
+                                >
+                                  {link}
+                                </a>
+                              );
+                            }
+                          } catch (error) {
+                            void error;
+                          }
+
+                          return (
+                            <span
+                              key={i}
+                              style={{
+                                display: "block",
+                                color: theme.palette.text.secondary,
+                                fontSize: "0.8rem",
+                                marginBottom: 4,
+                                wordBreak: "break-all",
+                              }}
+                            >
+                              {link}
+                            </span>
+                          );
+                        })()
                       ))}
                     </Box>
                   )}
