@@ -26,12 +26,7 @@ import ballerina/sql;
 # + return - User or error if not found
 public isolated function getUserById(int userId) returns types:User|error? {
     types:User|error result = dbClient->queryRow(getUserByIdQuery(userId));
-    if result is error {
-        if result is sql:NoRowsError {
-            return ();
-        }
-    }
-    return result;
+    return result is sql:NoRowsError ? () : result;
 }
 
 # Create a route path.
@@ -937,7 +932,7 @@ public isolated function getQuizzes(int? userId = ()) returns Quiz[]|error {
 # + quiz - Quiz create payload
 # + createdBy - User email who created
 # + return - Inserted quiz ID or error
-public isolated function createQuiz(QuizPayload quiz, string createdBy) returns int|error {
+public isolated function createQuiz(QuizCreatePayload quiz, string createdBy) returns int|error {
     return createQuizWithQuestionsAndAnswers(quiz, createdBy);
 }
 
@@ -947,7 +942,7 @@ public isolated function createQuiz(QuizPayload quiz, string createdBy) returns 
 # + payload - Quiz update payload
 # + updatedBy - User email who updated
 # + return - Affected row count or error
-public isolated function updateQuiz(int quizId, UpdateQuizPayload payload, string updatedBy) returns int|error? {
+public isolated function updateQuiz(int quizId, QuizUpdatePayload payload, string updatedBy) returns int|error? {
     return updateQuizWithQuestionsAndAnswers(quizId, payload, updatedBy);
 }
 
@@ -976,7 +971,7 @@ public isolated function deleteQuiz(int quizId) returns int|error? {
 # + quizId - Quiz ID
 # + return - Quiz title or error
 public isolated function getQuizTitle(int quizId) returns string|error {
-    QuizTitle result = check dbClient->queryRow(getQuizTitleQuery(quizId));
+    Quiz result = check dbClient->queryRow(getQuizByIdQuery(quizId));
     return result.title;
 }
 
@@ -992,10 +987,7 @@ public isolated function getQuizById(int quizId) returns Quiz|error {
 # + quizId - Quiz ID
 # + return - Array of assigned user IDs or error
 public isolated function getAssignedUserIds(int quizId) returns int[]|error {
-    record {|
-        @sql:Column {name: "assigned_user_ids"}
-        json? assignedUserIds;
-    |}|error result = dbClient->queryRow(getAssignedUserIdsQuery(quizId));
+    QuizAssignedUserIds|error result = dbClient->queryRow(getAssignedUserIdsQuery(quizId));
     if result is error {
         return result;
     }
@@ -1021,7 +1013,7 @@ public isolated function getQuestionsByQuizId(int quizId) returns Question[]|err
 # + payload - Additional payload if needed for fetching public questions
 # + createdBy - User email who is fetching the questions
 # + return - Array of public questions or error
-public isolated function createQuestion(int quizId, QuestionPayload payload, string createdBy) returns int|error {
+public isolated function createQuestion(int quizId, QuestionCreatePayload payload, string createdBy) returns int|error {
     sql:ExecutionResult result = check dbClient->execute(createQuestionQuery(quizId, payload, createdBy));
     return result.lastInsertId.ensureType(int);
 }
@@ -1031,7 +1023,7 @@ public isolated function createQuestion(int quizId, QuestionPayload payload, str
 # + payload - Question update payload
 # + updatedBy - User email who updated the question
 # + return - Affected row count or error
-public isolated function updateQuestion(int questionId, UpdateQuestionPayload payload, string updatedBy) returns int|error? {
+public isolated function updateQuestion(int questionId, QuestionUpdatePayload payload, string updatedBy) returns int|error? {
     sql:ExecutionResult result = check dbClient->execute(updateQuestionQuery(questionId, payload, updatedBy));
     return result.affectedRowCount;
 }
@@ -1143,16 +1135,17 @@ public isolated function getUserSubmittedAnswers(int quizId, int userId) returns
     stream<record {}, sql:Error?> resultStream = dbClient->query(getUserSubmittedAnswersQuery(quizId, userId));
     return transformRawAnswersToSubmittedAnswers(resultStream);
 }
+
 # Get user feedback for a quiz.
 # + quizId - Quiz ID
 # + userId - User ID
 # + return - User feedback or error
 public isolated function getUserFeedback(int quizId, int userId) returns QuizFeedback|error? {
-    QuizFeedback|sql:Error result = dbClient->queryRow(getUserFeedbackQuery(quizId, userId));
-    if result is sql:NoRowsError {
-        return ();
-    }
-    if result is sql:Error {
+    QuizFeedback|error result = dbClient->queryRow(getUserFeedbackQuery(quizId, userId));
+    if result is error {
+        if result is sql:NoRowsError {
+            return ();
+        }
         return result;
     }
     return result;
@@ -1171,7 +1164,7 @@ public isolated function getAllFeedbackForQuiz(int quizId) returns QuizFeedbackA
 # + quizId - Quiz ID
 # + return - Quiz status or error
 public isolated function getQuizStatus(int quizId) returns string|error {
-    QuizStatus result = check dbClient->queryRow(getQuizStatusQuery(quizId));
+    Quiz result = check dbClient->queryRow(getQuizByIdQuery(quizId));
     return result.status;
 }
 
@@ -1179,14 +1172,25 @@ public isolated function getQuizStatus(int quizId) returns string|error {
 # + questionId - Question ID
 # + return - Quiz status or error
 public isolated function getQuizStatusByQuestionId(int questionId) returns string|error {
-    QuizStatus result = check dbClient->queryRow(getQuizStatusByQuestionIdQuery(questionId));
-    return result.status;
+    record { int quiz_id; } quizIdRow = check dbClient->queryRow(getQuizStatusByQuestionIdQuery(questionId));
+    int quizId = quizIdRow.quiz_id;
+    Quiz quiz = check dbClient->queryRow(getQuizByIdQuery(quizId));
+    return quiz.status;
 }
 
 # Get quiz status for an answer ID.
 # + answerId - Answer ID
-# + return - Quiz status or error
-public isolated function getQuizStatusByAnswerId(int answerId) returns string|error {
-    QuizStatus result = check dbClient->queryRow(getQuizStatusByAnswerIdQuery(answerId));
-    return result.status;
+# + return - Quiz status, no rows, or error
+public isolated function getQuizStatusByAnswerId(int answerId) returns string|error? {
+    record { int quiz_id; }|sql:Error quizIdResult = dbClient->queryRow(getQuizStatusByAnswerIdQuery(answerId));
+    if quizIdResult is error {
+        if quizIdResult is sql:NoRowsError {
+            return ();
+        }
+        return quizIdResult;
+    }
+    record { int quiz_id; } quizIdRow = quizIdResult;
+    int quizId = quizIdRow.quiz_id;
+    Quiz quiz = check dbClient->queryRow(getQuizByIdQuery(quizId));
+    return quiz.status;
 }

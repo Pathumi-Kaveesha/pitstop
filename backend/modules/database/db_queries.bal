@@ -1865,7 +1865,7 @@ isolated function getTestimonialByIdQuery(int id) returns sql:ParameterizedQuery
 # + quiz - Quiz payload details
 # + createdBy - User email who created the quiz
 # + return - SQL parameterized query
-isolated function createQuizQuery(QuizPayload quiz, string createdBy) returns sql:ParameterizedQuery => `
+isolated function createQuizQuery(QuizCreatePayload quiz, string createdBy) returns sql:ParameterizedQuery => `
     INSERT INTO quiz (
         title,
         description,
@@ -1977,15 +1977,15 @@ isolated function getQuizStatusQuery(int quizId) returns sql:ParameterizedQuery 
 # + questionId - Question ID
 # + return - SQL parameterized query
 isolated function getQuizStatusByQuestionIdQuery(int questionId) returns sql:ParameterizedQuery => `
-    SELECT 
-        qz.status
-    FROM 
+    SELECT
+        qz.quiz_id
+    FROM
         quiz qz
-    JOIN 
+    JOIN
         question q ON qz.quiz_id = q.quiz_id
-    WHERE 
-        q.question_id = ${questionId} 
-        AND qz.is_deleted = false 
+    WHERE
+        q.question_id = ${questionId}
+        AND qz.is_deleted = false
         AND q.is_deleted = false
 `;
 
@@ -1994,17 +1994,17 @@ isolated function getQuizStatusByQuestionIdQuery(int questionId) returns sql:Par
 # + answerId - Answer ID
 # + return - SQL parameterized query
 isolated function getQuizStatusByAnswerIdQuery(int answerId) returns sql:ParameterizedQuery => `
-    SELECT 
-        qz.status
-    FROM 
+    SELECT
+        qz.quiz_id
+    FROM
         quiz qz
-    JOIN 
+    JOIN
         question q ON qz.quiz_id = q.quiz_id
-    JOIN 
+    JOIN
         answer a ON q.question_id = a.question_id
-    WHERE 
-        a.answer_id = ${answerId} 
-        AND qz.is_deleted = false 
+    WHERE
+        a.answer_id = ${answerId}
+        AND qz.is_deleted = false
         AND q.is_deleted = false
 `;
 
@@ -2040,7 +2040,7 @@ isolated function getQuizByIdQuery(int quizId) returns sql:ParameterizedQuery =>
 # + payload - Update quiz payload
 # + updatedBy - User email who updated the quiz
 # + return - SQL parameterized query
-isolated function updateQuizQuery(int quizId, UpdateQuizPayload payload, string updatedBy)
+isolated function updateQuizQuery(int quizId, QuizUpdatePayload payload, string updatedBy)
         returns sql:ParameterizedQuery {
 
     sql:ParameterizedQuery[] clauses = [`updated_by = ${updatedBy}`];
@@ -2142,7 +2142,7 @@ isolated function getQuestionsByQuizIdQuery(int quizId) returns sql:Parameterize
 # + q - Question payload
 # + createdBy - User email who created the question
 # + return - SQL parameterized query
-isolated function createQuestionQuery(int quizId, QuestionPayload q, string createdBy)
+isolated function createQuestionQuery(int quizId, QuestionCreatePayload q, string createdBy)
         returns sql:ParameterizedQuery => `
     INSERT INTO question (
         question_number,
@@ -2176,7 +2176,7 @@ isolated function createQuestionQuery(int quizId, QuestionPayload q, string crea
 # + payload - Update question payload
 # + updatedBy - User email who updated the question
 # + return - SQL parameterized query
-isolated function updateQuestionQuery(int questionId, UpdateQuestionPayload payload, string updatedBy)
+isolated function updateQuestionQuery(int questionId, QuestionUpdatePayload payload, string updatedBy)
         returns sql:ParameterizedQuery {
 
     sql:ParameterizedQuery[] clauses = [`updated_by = ${updatedBy}`];

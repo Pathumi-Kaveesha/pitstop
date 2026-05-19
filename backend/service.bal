@@ -25,7 +25,6 @@ import pitstop.types;
 import ballerina/http;
 import ballerina/log;
 import ballerina/time;
-import ballerina/sql;
 
 configurable int recentContentsLimit = 6;
 configurable int suggestedContentsLimit = 12;
@@ -92,22 +91,27 @@ service http:InterceptableService / on new http:Listener(9090) {
         return userResult;
     }
 
-    # Retrieve basic information of a user from the local database by email.
-    # If not found, fetches from HR and creates the user.
+    # Retrieve the current logged-in user based on token email.
     #
-    # + email - User email
-    # + return - User array or error
-    resource function get users(string email) returns types:User[]|http:NotFound|http:InternalServerError {
-        int|error? userIdResult = database:getUserIdByUserEmail(email);
+    # + ctx - Request context
+    # + return - User object or error response
+    resource function get users/me(http:RequestContext ctx) returns types:User|http:NotFound|http:InternalServerError {
+        string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+        if userEmail is error {
+            log:printError("Error while fetching user email from token", userEmail);
+            return <http:InternalServerError>{ body: "Error while fetching user email from token" };
+        }
+
+        int|error? userIdResult = database:getUserIdByUserEmail(userEmail);
         if userIdResult is int {
             types:User|error? userResult = database:getUserById(userIdResult);
             if userResult is types:User {
-                return [userResult];
+                return userResult;
             }
         }
         
         // If not found in DB, fetch from HR
-        entity:Employee|error employee = entity:getEmployee(email);
+        entity:Employee|error employee = entity:getEmployee(userEmail);
         if employee is error {
             log:printError("Error fetching employee from HR", employee);
             return <http:NotFound>{ body: "Employee not found" };
@@ -121,11 +125,11 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
         
         // Fetch again to get the generated ID
-        userIdResult = database:getUserIdByUserEmail(email);
+        userIdResult = database:getUserIdByUserEmail(userEmail);
         if userIdResult is int {
             types:User|error? userResult = database:getUserById(userIdResult);
             if userResult is types:User {
-                return [userResult];
+                return userResult;
             }
         }
         return <http:InternalServerError>{ body: "Failed to retrieve user after creation" };
@@ -2144,7 +2148,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + ctx - Request context
     # + quiz - Quiz payload
     # + return - Created, forbidden, or error response
-    resource function post quizzes(http:RequestContext ctx, database:QuizPayload quiz)
+    resource function post quizzes(http:RequestContext ctx, database:QuizCreatePayload quiz)
         returns http:Created|http:Forbidden|http:InternalServerError {
 
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
@@ -2186,7 +2190,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + quizId - Quiz ID
     # + payload - Update payload
     # + return - OK, not found, bad request, forbidden, or error response
-    resource function patch quizzes/[int quizId](http:RequestContext ctx, database:UpdateQuizPayload payload)
+    resource function patch quizzes/[int quizId](http:RequestContext ctx, database:QuizUpdatePayload payload)
         returns http:InternalServerError|http:BadRequest|http:NotFound|http:Ok|http:Forbidden {
 
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
@@ -2302,7 +2306,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        database:UpdateQuizPayload publishPayload = {
+        database:QuizUpdatePayload publishPayload = {
             status: "PUBLISHED"
         };
         
@@ -2520,7 +2524,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + quizId - Quiz ID
     # + payload - Question payload
     # + return - Created, forbidden, or error response
-    resource function post quizzes/[int quizId]/questions(http:RequestContext ctx, database:QuestionPayload payload)
+    resource function post quizzes/[int quizId]/questions(http:RequestContext ctx, database:QuestionCreatePayload payload)
         returns http:Created|http:Forbidden|http:InternalServerError {
 
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
@@ -2561,7 +2565,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + questionId - Question ID
     # + payload - Update payload
     # + return - OK, not found, forbidden, or error response
-    resource function patch quizzes/[int quizId]/questions/[int questionId](http:RequestContext ctx, database:UpdateQuestionPayload payload)
+    resource function patch quizzes/[int quizId]/questions/[int questionId](http:RequestContext ctx, database:QuestionUpdatePayload payload)
         returns http:Ok|http:NotFound|http:Forbidden|http:InternalServerError {
 
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
@@ -2695,7 +2699,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             return result;
         }
 
-    # Get all answer options for a question..
+    # Get all answer options for a question.
     #
     # + ctx - Request context
     # + questionId - Question ID
@@ -2716,7 +2720,6 @@ service http:InterceptableService / on new http:Listener(9090) {
 
             string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
 
-            // If admin — return full answers including is_correct
             if userGroups is string[] && authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
                 database:Answer[]|error result = database:getAnswersByQuestionId(questionId);
                 if result is error {
@@ -2726,8 +2729,7 @@ service http:InterceptableService / on new http:Listener(9090) {
                 }
                 return result;
             }
-
-            // Regular user — return answers without is_correct
+            
             database:AnswerPublic[]|error result = database:getAnswersByQuestionIdPublic(questionId);
             if result is error {
                 string customError = "Error while fetching answers";
@@ -2852,16 +2854,14 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        string|error currentStatus = database:getQuizStatusByAnswerId(answerId);
+        string|error? currentStatus = database:getQuizStatusByAnswerId(answerId);
         if currentStatus is string {
             if currentStatus == "PUBLISHED" {
                 return <http:BadRequest>{
                     body: {message: "Cannot delete answers from a published quiz."}
                 };
             }
-        } else if currentStatus is sql:NoRowsError {
-            // Let the delete call handle the "not found" state.
-        } else {
+        } else if currentStatus is error {
             string customError = "Error while fetching quiz status";
             log:printError(customError, currentStatus);
             return <http:InternalServerError>{

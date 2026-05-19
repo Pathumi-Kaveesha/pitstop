@@ -444,8 +444,15 @@ public type Quiz record {|
     int totalQuestions;
 |};
 
+# Quiz assigned user IDs row.
+public type QuizAssignedUserIds record {|
+    # Assigned user IDs JSON array.
+    @sql:Column {name: "assigned_user_ids"}
+    json? assignedUserIds;
+|};
+
 # Quiz creation payload.
-public type QuizPayload record {
+public type QuizCreatePayload record {
     # Title
     string title;
     # Description
@@ -465,7 +472,7 @@ public type QuizPayload record {
 };
 
 # Quiz update payload.
-public type UpdateQuizPayload record {
+public type QuizUpdatePayload record {
     # Title
     string? title = ();
     # Description
@@ -548,8 +555,9 @@ public type Question record {|
     @sql:Column {name: "updated_at"}
     string? updatedAt;
 |};
+
 # Question payload.
-public type QuestionPayload record {|
+public type QuestionCreatePayload record {|
     # Number
     int questionNumber;
     # Text
@@ -561,7 +569,7 @@ public type QuestionPayload record {|
 |};
 
 # Update question payload.
-public type UpdateQuestionPayload record {|
+public type QuestionUpdatePayload record {|
     # Text
     string? questionText;
     # Type
@@ -598,7 +606,7 @@ public type Answer record {|
     string? updatedAt;
 |};
 
-# Public answer view.
+# Public answer record.
 public type AnswerPublic record {|
     # ID
     @sql:Column {name: "answer_id"}
@@ -807,13 +815,3 @@ public type QuizFeedbackAdmin record {|
     string createdAt;
 |};
 
-# Quiz title.
-public type QuizTitle record {|
-    # Title
-    string title;
-|};
-# Quiz status.
-public type QuizStatus record {|
-    # Status
-    string status;
-|};

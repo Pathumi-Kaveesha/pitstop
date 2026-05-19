@@ -307,27 +307,27 @@ public isolated function formatDateTime(string? dateTimeStr) returns string? {
 # + quiz - Quiz payload with nested questions and answers
 # + createdBy - User email who created the quiz
 # + return - Created quiz ID or error
-isolated function createQuizWithQuestionsAndAnswers(QuizPayload quiz, string createdBy) returns int|error {
+isolated function createQuizWithQuestionsAndAnswers(QuizCreatePayload quiz, string createdBy) returns int|error {
     int quizId;
 
     transaction {
         sql:ExecutionResult result = check dbClient->execute(createQuizQuery(quiz, createdBy));
         quizId = check result.lastInsertId.ensureType(int);
 
-        foreach int i in 0 ..< quiz.questions.length() {
-            var q = quiz.questions[i];
-            QuestionPayload qPayload = {
-                questionNumber: i + 1,
-                questionText: q.text,
-                questionType: q.'type,
-                refLinks: q.refLinks
+        foreach int questionIndex in 0 ..< quiz.questions.length() {
+            NestedQuestionPayload question = quiz.questions[questionIndex];
+            QuestionCreatePayload qPayload = {
+                questionNumber: questionIndex + 1,
+                questionText: question.text,
+                questionType: question.'type,
+                refLinks: question.refLinks
             };
             int questionId = check createQuestion(quizId, qPayload, createdBy);
 
-            foreach var a in q.answers {
+            foreach NestedAnswerPayload answer in question.answers {
                 AnswerPayload aPayload = {
-                    answerText: a.text,
-                    isCorrect: a.isCorrect
+                    answerText: answer.text,
+                    isCorrect: answer.isCorrect
                 };
                 _ = check createAnswer(questionId, aPayload, createdBy);
             }
@@ -345,7 +345,8 @@ isolated function createQuizWithQuestionsAndAnswers(QuizPayload quiz, string cre
 # + payload - Updated quiz payload with nested questions and answers
 # + updatedBy - User email who updated the quiz
 # + return - Total affected rows for the quiz update or error
-isolated function updateQuizWithQuestionsAndAnswers(int quizId, UpdateQuizPayload payload, string updatedBy) returns int|error? {
+isolated function updateQuizWithQuestionsAndAnswers(int quizId, QuizUpdatePayload payload, string updatedBy) 
+    returns int|error? {
     int totalAffectedRows = 0;
 
     transaction {
@@ -359,19 +360,19 @@ isolated function updateQuizWithQuestionsAndAnswers(int quizId, UpdateQuizPayloa
             _ = check dbClient->execute(deleteQuestionsByQuizIdQuery(quizId));
 
             foreach int i in 0 ..< questions.length() {
-                var q = questions[i];
-                QuestionPayload qPayload = {
+                NestedQuestionPayload nestedQuestion = questions[i];
+                QuestionCreatePayload qPayload = {
                     questionNumber: i + 1,
-                    questionText: q.text,
-                    questionType: q.'type,
-                    refLinks: q.refLinks
+                    questionText: nestedQuestion.text,
+                    questionType: nestedQuestion.'type,
+                    refLinks: nestedQuestion.refLinks
                 };
                 int questionId = check createQuestion(quizId, qPayload, updatedBy);
 
-                foreach var a in q.answers {
+                foreach NestedAnswerPayload nestedAnswer in nestedQuestion.answers {
                     AnswerPayload aPayload = {
-                        answerText: a.text,
-                        isCorrect: a.isCorrect
+                        answerText: nestedAnswer.text,
+                        isCorrect: nestedAnswer.isCorrect
                     };
                     _ = check createAnswer(questionId, aPayload, updatedBy);
                 }
@@ -429,6 +430,7 @@ isolated function submitUserAnswersWithFeedback(int quizId, int userId, UserAnsw
 }
 
 # builds the quiz result for a user.
+# 
 # + quizId - Quiz ID for which to build the result
 # + userEmail - User email to fetch the result for
 # + return - QuizResult with transformations applied or error
@@ -472,6 +474,7 @@ isolated function buildQuizResultWithTransformations(int quizId, string userEmai
 }
 
 # Transforms raw database rows of submitted answers into structured SubmittedAnswer records.
+# 
 # + resultStream - Stream of raw database rows for submitted answers
 # + return - Array of SubmittedAnswer or error
 isolated function transformRawAnswersToSubmittedAnswers(stream<record {}, sql:Error?> resultStream)
