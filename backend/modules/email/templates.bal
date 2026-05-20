@@ -2876,7 +2876,7 @@ public final string quizAssignmentTemplate = string `
     <meta name="color-scheme" content="light dark" />
     <meta name="supported-color-schemes" content="light dark" />
 
-    <title>WSO2 Application Status</title>
+    <title>New Quiz Assignment</title>
 
     <style type="text/css">
       @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap");
