@@ -1125,7 +1125,7 @@ public isolated function getQuizAnalytics(int quizId) returns UserQuizAnalytics[
 # + userId - User ID
 # + return - Array of submitted answers or error
 public isolated function getUserSubmittedAnswers(int quizId, int userId) returns SubmittedAnswer[]|error {
-    stream<record {}, sql:Error?> resultStream = dbClient->query(getUserSubmittedAnswersQuery(quizId, userId));
+    stream<SubmittedAnswer, sql:Error?> resultStream = dbClient->query(getUserSubmittedAnswersQuery(quizId, userId));
     return transformRawAnswersToSubmittedAnswers(resultStream);
 }
 

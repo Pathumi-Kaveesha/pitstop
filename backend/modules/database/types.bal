@@ -759,9 +759,9 @@ public type SubmittedAnswer record {|
     # Question type
     @sql:Column {name: "question_type"}
     string questionType;
-    # Reference links
+    # Reference links (JSON string from database)
     @sql:Column {name: "ref_links"}
-    json? refLinks;
+    string refLinks;
     # Selected answer ID
     @sql:Column {name: "selected_answer_id"}
     int selectedAnswerId;
@@ -770,7 +770,7 @@ public type SubmittedAnswer record {|
     string selectedAnswerText;
     # Correct answer text
     @sql:Column {name: "correct_answer_text"}
-    string? correctAnswerText;
+    string correctAnswerText;
     # Correct
     @sql:Column {name: "is_correct"}
     boolean isCorrect;

@@ -2556,17 +2556,17 @@ isolated function getUserSubmittedAnswersQuery(int quizId, int userId) returns s
         qn.question_number,
         qn.question_text,
         qn.question_type,
-        CAST(IF(qn.ref_links IS NULL, NULL, qn.ref_links) AS JSON) AS ref_links,
+        COALESCE(CAST(qn.ref_links AS CHAR), '') AS ref_links,
         a.answer_id AS selected_answer_id,
         a.answer_text,
-        (
+        COALESCE((
             SELECT GROUP_CONCAT(a2.answer_text ORDER BY a2.answer_id SEPARATOR ', ')
             FROM answer a2
             WHERE a2.question_id = qn.question_id
                 AND a2.is_correct = 1
-        ) AS correct_answer_text,
+        ), '') AS correct_answer_text,
         a.is_correct,
-        ua.submitted_at
+        COALESCE(CAST(ua.submitted_at AS CHAR), '') AS submitted_at
     FROM 
         question qn
     JOIN 

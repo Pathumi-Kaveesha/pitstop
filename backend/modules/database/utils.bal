@@ -467,40 +467,33 @@ isolated function buildQuizResultWithTransformations(int quizId, string userEmai
 #
 # + resultStream - Stream of raw database rows for submitted answers
 # + return - Array of SubmittedAnswer or error
-isolated function transformRawAnswersToSubmittedAnswers(stream<record {}, sql:Error?> resultStream)
+isolated function transformRawAnswersToSubmittedAnswers(stream<SubmittedAnswer, sql:Error?> resultStream)
         returns SubmittedAnswer[]|error {
     SubmittedAnswer[] answers = [];
 
-    error? err = from record {} raw in resultStream
+    error? err = from SubmittedAnswer raw in resultStream
         do {
-            map<anydata> row = <map<anydata>>raw;
-
-            anydata qId = row.get("question_id");
-            anydata qNum = row.get("question_number");
-            anydata qText = row.get("question_text");
-            anydata qType = row.get("question_type");
-            anydata refLinks = row.get("ref_links");
-            anydata ansId = row.get("selected_answer_id");
-            anydata ansText = row.get("answer_text");
-            anydata correctAnswerText = row.get("correct_answer_text");
-            anydata isCorrect = row.get("is_correct");
-            anydata submittedAt = row.get("submitted_at");
+            int? qId = raw.questionId;
+            int? qNum = raw.questionNumber;
+            string? qText = raw.questionText;
+            string? qType = raw.questionType;
+            int? ansId = raw.selectedAnswerId;
+            string? ansText = raw.selectedAnswerText;
+            boolean? isCorrect = raw.isCorrect;
+            string? submittedAt = raw.submittedAt;
 
             if qId is int && qNum is int && qText is string && qType is string &&
                 ansId is int && ansText is string && isCorrect is boolean && submittedAt is string {
-
-                json? refLinksJson = refLinks is json ? refLinks : ();
-                string? correctAnswerTextValue = correctAnswerText is string ? correctAnswerText : ();
 
                 SubmittedAnswer answer = {
                     questionId: qId,
                     questionNumber: qNum,
                     questionText: qText,
                     questionType: qType,
-                    refLinks: refLinksJson,
+                    refLinks: raw.refLinks,
                     selectedAnswerId: ansId,
                     selectedAnswerText: ansText,
-                    correctAnswerText: correctAnswerTextValue,
+                    correctAnswerText: raw.correctAnswerText,
                     isCorrect: isCorrect,
                     submittedAt: submittedAt
                 };

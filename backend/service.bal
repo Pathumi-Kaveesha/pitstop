@@ -2394,13 +2394,14 @@ service http:InterceptableService / on new http:Listener(9090) {
         return http:OK;
     }
 
-    # Get all answers for a quiz (admin view).
+    # Get all answers for a quiz (admin and public view).
     #
     # + ctx - Request context
     # + quizId - Quiz ID
+    # + isAdminView - Whether the user is requesting as an admin
     # + return - Answer list or error response
-    resource function get quizzes/[int quizId]/answers(http:RequestContext ctx)
-            returns database:Answer[]|http:Forbidden|http:InternalServerError {
+    resource function get quizzes/[int quizId]/answers(http:RequestContext ctx, boolean isAdminView = false)
+            returns database:Answer[]|database:AnswerPublic[]|http:Forbidden|http:InternalServerError {
 
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         if userEmail is error {
@@ -2418,51 +2419,32 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        if !authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
-            log:printError(constants:UNAUTHORIZED_ACCESS_ERROR);
-            return <http:Forbidden>{body: {message: constants:UNAUTHORIZED_ACCESS_ERROR}};
-        }
+        if isAdminView {
+            if !authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
+                log:printError(constants:UNAUTHORIZED_ACCESS_ERROR);
+                return <http:Forbidden>{body: {message: constants:UNAUTHORIZED_ACCESS_ERROR}};
+            }
 
-        database:Answer[]|error result = database:getAnswersByQuizId(quizId);
-        if result is error {
-            string customError = "Error while fetching answers";
-            log:printError(customError, result);
-            return <http:InternalServerError>{body: {message: customError}};
-        }
-        return result;
-    }
+            database:Answer[]|error result = database:getAnswersByQuizId(quizId);
+            if result is error {
+                string customError = "Error while fetching answers";
+                log:printError(customError, result);
+                return <http:InternalServerError>{body: {message: customError}};
+            }
 
-    # Get public answers for a quiz.
-    #
-    # + ctx - Request context
-    # + quizId - Quiz ID
-    # + return - Public answer list or error response
-    resource function get quizzes/[int quizId]/answers/users(http:RequestContext ctx)
-            returns database:AnswerPublic[]|http:InternalServerError {
+            return result;
 
-        string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-        if userEmail is error {
-            log:printError(constants:GET_USER_ID_ERROR, userEmail);
-            return <http:InternalServerError>{
-                body: {message: constants:GET_USER_ID_ERROR}
-            };
-        }
+        } else {
+            
+            database:AnswerPublic[]|error result = database:getAnswersByQuizIdPublic(quizId);
+            if result is error {
+                string customError = "Error while fetching answers";
+                log:printError(customError, result);
+                return <http:InternalServerError>{body: {message: customError}};
+            }
 
-        string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
-        if userGroups is error {
-            log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
-            return <http:InternalServerError>{
-                body: {message: constants:GET_USER_ROLE_ERROR}
-            };
+            return result;
         }
-
-        database:AnswerPublic[]|error result = database:getAnswersByQuizIdPublic(quizId);
-        if result is error {
-            string customError = "Error while fetching answers";
-            log:printError(customError, result);
-            return <http:InternalServerError>{body: {message: customError}};
-        }
-        return result;
     }
 
     # Unassign users from a quiz.
