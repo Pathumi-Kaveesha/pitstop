@@ -3848,7 +3848,7 @@ public final string quizAssignmentTemplate = string `
                                 padding-top: 10px;
                               "
                             >
-                              Please ensure you complete the quiz before the due date and time. 
+                              Please ensure you complete the quiz before the due date. 
                               The estimated time to complete the quiz is <!-- [TIME_LIMIT] -->. 
                               <br></br>
                               Click the button below to start.
