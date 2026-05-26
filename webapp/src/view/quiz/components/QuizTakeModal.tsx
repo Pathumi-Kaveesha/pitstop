@@ -336,7 +336,11 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, blockedMessage, onClose, o
               )}
             </Box>
             <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", ml: 2 }}>
-              <IconButton onClick={onClose} size="small" sx={{ mt: -1, mr: -1 }}>
+              <IconButton
+                aria-label="Close quiz modal"
+                onClick={onClose}
+                size="small"
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
               {!isAccessBlocked && (

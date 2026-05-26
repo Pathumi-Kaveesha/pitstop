@@ -75,6 +75,8 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
     const shouldOpenQuiz = parsedQuizId === quiz.quizId;
 
     if (!shouldOpenQuiz) {
+      setTakingQuiz(false);
+      setBlockedMessage(null);
       return;
     }
 
