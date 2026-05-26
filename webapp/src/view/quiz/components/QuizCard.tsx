@@ -45,6 +45,7 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
 
   const [takingQuiz, setTakingQuiz] = useState(false);
   const [viewingResult, setViewingResult] = useState(false);
+  const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
 
   const syncQuizIdInUrl = useCallback(
     (quizId?: number) => {
@@ -73,10 +74,21 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
     const parsedQuizId = urlQuizId ? Number.parseInt(urlQuizId, 10) : null;
     const shouldOpenQuiz = parsedQuizId === quiz.quizId;
 
-    if (shouldOpenQuiz) {
-      setTakingQuiz(true);
+    if (!shouldOpenQuiz) {
+      setTakingQuiz(false);
+      setBlockedMessage(null);
+      return;
     }
-  }, [location.search, quiz.quizId]);
+
+    if (quiz.status === "not_started") {
+      setBlockedMessage(null);
+      setTakingQuiz(true);
+      return;
+    }
+
+    setBlockedMessage("You have already completed this quiz.");
+    setTakingQuiz(true);
+  }, [location.search, quiz.quizId, quiz.status]);
 
   const handleViewResult = () => {
     dispatch(resetResult());
@@ -87,6 +99,7 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
 
   const handleStartQuiz = () => {
     setViewingResult(false);
+    setBlockedMessage(null);
     syncQuizIdInUrl(quiz.quizId);
     setTakingQuiz(true);
   };
@@ -406,8 +419,10 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
         <QuizTakeModal
           quiz={quiz}
           open={takingQuiz}
+          blockedMessage={blockedMessage}
           onClose={() => {
             setViewingResult(false);
+            setBlockedMessage(null);
             setTakingQuiz(false);
             syncQuizIdInUrl();
           }}

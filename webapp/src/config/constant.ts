@@ -49,6 +49,8 @@ export const SALES_ADMIN_PRIVILEGE_ID = 537;
 export const SIDEBAR_WIDTH = 350;
 export const SECTION_LIMIT = 15;
 
+export const NA_VALUE = "N/A";
+
 export const ADMIN_QUIZZES_PER_PAGE = 5;
 export const CONTENTS_PER_SECTION = 3;
 export const CONTENT_STATE_SUCCESS = "success";

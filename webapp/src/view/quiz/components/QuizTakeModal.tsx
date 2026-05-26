@@ -46,11 +46,12 @@ import { parseDateAsUtc } from "@utils/utils";
 interface Props {
   quiz: QuizWithStatus;
   open: boolean;
+  blockedMessage?: string | null;
   onClose: () => void;
   onSubmitted: () => void;
 }
 
-const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) => {
+const QuizTakeModal: React.FC<Props> = ({ quiz, open, blockedMessage, onClose, onSubmitted }) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
 
@@ -64,9 +65,19 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
   const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [feedbackText, setFeedbackText] = useState<Record<number, string>>({});
   const [isContentLoading, setIsContentLoading] = useState(false);
+  const isAccessBlocked = Boolean(blockedMessage);
 
   useEffect(() => {
     if (!open) {
+      return;
+    }
+
+    if (isAccessBlocked) {
+      dispatch(resetQuestions());
+      setCurrentIndex(0);
+      setAnswers({});
+      setFeedbackText({});
+      setIsContentLoading(false);
       return;
     }
 
@@ -99,7 +110,7 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
     return () => {
       isCancelled = true;
     };
-  }, [open, quiz.quizId, dispatch]);
+  }, [blockedMessage, dispatch, isAccessBlocked, open, quiz.quizId]);
 
   useEffect(() => {
     if (submitStatus === "success") {
@@ -324,35 +335,73 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
                 </Typography>
               )}
             </Box>
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-end",
-                gap: 0.5,
-                ml: 2,
-              }}
-            >
-              <IconButton onClick={onClose} size="small" sx={{ mt: -1, mr: -1 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", ml: 2 }}>
+              <IconButton
+                aria-label="Close quiz modal"
+                onClick={onClose}
+                size="small"
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
-              <Chip
-                label="1 attempt only"
-                size="small"
-                sx={{
-                  backgroundColor: `${theme.palette.primary.main}20`,
-                  color: theme.palette.primary.main,
-                  fontWeight: 500,
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                Pass: {quiz.passingScore}%
-              </Typography>
+              {!isAccessBlocked && (
+                <>
+                  <Chip
+                    label="1 attempt only"
+                    size="small"
+                    sx={{
+                      backgroundColor: `${theme.palette.primary.main}20`,
+                      color: theme.palette.primary.main,
+                      fontWeight: 500,
+                      mt: 0.5,
+                    }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                    Pass: {quiz.passingScore}%
+                  </Typography>
+                </>
+              )}
             </Box>
           </Box>
         </Box>
 
-        {isContentLoading || questionsStatus === "loading" ? (
+        {isAccessBlocked ? (
+          <Box sx={{ px: 3, pb: 3, textAlign: "center" }}>
+            <Box
+              sx={{
+                backgroundColor: `${theme.palette.warning.main}14`,
+                borderRadius: 2,
+                p: 2,
+                display: "inline-block",
+                mx: "auto",
+              }}
+            >
+              <Typography
+                variant="subtitle1"
+                sx={{ color: theme.palette.warning.dark, fontWeight: 600, fontSize: "1.05rem" }}
+              >
+                {blockedMessage}
+              </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              This quiz allows only one attempt, so it cannot be started again.
+            </Typography>
+            <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 3 }}>
+              <Button
+                variant="contained"
+                onClick={onClose}
+                sx={{
+                  textTransform: "none",
+                  color: theme.palette.common.white,
+                  backgroundColor: theme.palette.primary.main,
+                  borderRadius: 2,
+                  px: 3,
+                }}
+              >
+                Close
+              </Button>
+            </Box>
+          </Box>
+        ) : isContentLoading || questionsStatus === "loading" ? (
           <Box sx={{ py: 8, display: "flex", justifyContent: "center" }}>
             <CircularProgress />
           </Box>
@@ -444,6 +493,7 @@ const QuizTakeModal: React.FC<Props> = ({ quiz, open, onClose, onSubmitted }) =>
                       borderRadius: 2,
                       px: 3,
                       backgroundColor: theme.palette.primary.main,
+                      color: theme.palette.common.white,
                     }}
                   >
                     Next
