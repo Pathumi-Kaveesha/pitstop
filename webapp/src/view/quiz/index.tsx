@@ -180,6 +180,7 @@ const QuizAdminDashboard: React.FC = () => {
         analyticsQuizTitle,
         employeeInfos,
         answerSummaries,
+        selectedAnalyticsQuiz?.totalQuestions,
         isAnalyticsQuizOverdue,
         selectedAnalyticsQuiz?.dueDate,
       );
@@ -191,6 +192,7 @@ const QuizAdminDashboard: React.FC = () => {
         analyticsQuizTitle,
         [],
         {},
+        selectedAnalyticsQuiz?.totalQuestions,
         isAnalyticsQuizOverdue,
         selectedAnalyticsQuiz?.dueDate,
       );

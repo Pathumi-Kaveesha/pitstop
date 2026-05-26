@@ -17,14 +17,44 @@
 import { UserQuizAnalytics } from "@/types/types";
 import { parseDateAsUtc } from "./utils";
 
+const parseQuestionAnswers = (summary: string | undefined) => {
+  const answers = new Map<number, string>();
+
+  if (!summary || summary === "N/A") {
+    return answers;
+  }
+
+  try {
+    const parsed = JSON.parse(summary) as Array<Record<string, string>>;
+
+    if (Array.isArray(parsed)) {
+      parsed.forEach((item) => {
+        Object.entries(item).forEach(([questionKey, response]) => {
+          const questionNumber = Number(questionKey.replace(/^Q/i, ""));
+
+          if (!Number.isNaN(questionNumber)) {
+            answers.set(questionNumber, response);
+          }
+        });
+      });
+    }
+  } catch {
+    answers.set(1, summary);
+  }
+
+  return answers;
+};
+
 export const exportAnalyticsToCSV = (
   analytics: UserQuizAnalytics[],
   quizTitle: string,
   employeeInfos: { email: string; team: string; subteam: string }[] = [],
   answerSummaries: Record<number, string> = {},
+  totalQuestions: number = 0,
   isQuizOverdue: boolean = false,
   quizDueDate?: string,
 ) => {
+  const questionHeaders = Array.from({ length: totalQuestions }, (_, index) => `Q${index + 1}`);
   const headers = [
     "Name",
     "Email",
@@ -33,7 +63,7 @@ export const exportAnalyticsToCSV = (
     "Score (%)",
     "Status",
     "Submitted Date",
-    "Answers",
+    ...questionHeaders,
   ];
 
   const parsedDueDate = quizDueDate ? parseDateAsUtc(quizDueDate) : null;
@@ -41,15 +71,17 @@ export const exportAnalyticsToCSV = (
   const rows = analytics.map((row) => {
     const emp = employeeInfos.find((e) => e.email === row.userEmail) || {
       team: "—",
-      subteam: "—",
+      subteam: "",
       email: "",
     };
+    const region = emp.subteam && emp.subteam !== "—" ? emp.subteam : "N/A";
     const attempted = !!row.submittedAt;
     const isSubmissionLate =
       attempted &&
       !!parsedDueDate &&
       !!row.submittedAt &&
       new Date(row.submittedAt) > parsedDueDate;
+    const questionAnswers = parseQuestionAnswers(answerSummaries[row.userId]);
 
     const status = attempted
       ? `${row.passed ? "Passed" : "Failed"}${isSubmissionLate ? " (Overdue)" : ""}`
@@ -59,12 +91,21 @@ export const exportAnalyticsToCSV = (
     return [
       row.userName || "—",
       row.userEmail || "—",
-      emp.team,
-      emp.subteam,
+      emp.team || "N/A",
+      region,
       attempted ? row.scorePercentage : "N/A",
       status,
       row.submittedAt ? new Date(row.submittedAt).toLocaleDateString() : "N/A",
-      attempted ? answerSummaries[row.userId] || "N/A" : "N/A",
+      ...questionHeaders.map((_, index) => {
+        if (!attempted) {
+          return "N/A";
+        }
+
+        const questionNumber = index + 1;
+        const incorrectAnswer = questionAnswers.get(questionNumber);
+
+        return incorrectAnswer ? `Incorrect: ${incorrectAnswer}` : "Correct";
+      }),
     ];
   });
 
