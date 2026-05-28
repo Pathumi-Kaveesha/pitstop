@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import React, { useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Box, useTheme, Typography } from "@mui/material";
 import ComponentCard from "@components/ui/content/Card";
 import { ContentResponse } from "@/types/types";
@@ -24,6 +24,7 @@ import type { Swiper as SwiperClass } from "swiper";
 import "swiper/css";
 import "swiper/css/effect-coverflow";
 import { useInViewport } from "@utils/utils";
+import { RootState, useAppSelector } from "@slices/store";
 import suggestedSection from "@assets/images/suggestedSection.jpg";
 import seWikiSuggestedSection from "@assets/images/suggestedSection_blue.png";
 
@@ -40,6 +41,16 @@ const SuggestedCarousel: React.FC<SuggestedCarouselProps> = ({ items }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const swiperRef = useRef<SwiperClass | null>(null);
+  const isNavigating = useAppSelector((state: RootState) => state.common.navigationLoading);
+
+  useEffect(() => {
+    if (!swiperRef.current) return;
+    if (isInViewport && !isNavigating) {
+      swiperRef.current.autoplay?.start();
+    } else {
+      swiperRef.current.autoplay?.stop();
+    }
+  }, [isInViewport, isNavigating]);
 
   const infiniteItems = useMemo(() => {
     if (!items || items.length === 0) return [];
@@ -136,8 +147,13 @@ const SuggestedCarousel: React.FC<SuggestedCarouselProps> = ({ items }) => {
         >
           <Swiper
             modules={[Autoplay, EffectCoverflow]}
-            onSwiper={(inst: SwiperClass) => (swiperRef.current = inst)}
-            loop={isInViewport}
+            onSwiper={(inst: SwiperClass) => {
+              swiperRef.current = inst;
+              if (!isInViewport || isNavigating) {
+                inst.autoplay?.stop();
+              }
+            }}
+            loop={true}
             centeredSlides
             initialSlide={initial}
             slidesPerView={"auto"}
@@ -149,13 +165,6 @@ const SuggestedCarousel: React.FC<SuggestedCarouselProps> = ({ items }) => {
               reverseDirection: false,
             }}
             speed={4000}
-            loopAdditionalSlides={5}
-            loopedSlides={10}
-            preloadImages={false}
-            lazy={{
-              loadPrevNext: true,
-              loadPrevNextAmount: 5,
-            }}
             watchSlidesProgress
             allowTouchMove
             grabCursor

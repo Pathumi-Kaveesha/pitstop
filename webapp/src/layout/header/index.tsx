@@ -139,7 +139,9 @@ const Header = (props: HeaderProps) => {
   const navigateWithLoading = useCallback((path: string) => {
     if (path === pathname) return;
     dispatch(setNavigationLoading(true));
-    navigate(path);
+    setTimeout(() => {
+      navigate(path);
+    }, 180);
   }, [pathname, navigate, dispatch]);
 
   const newRoutes = useMemo(() => {

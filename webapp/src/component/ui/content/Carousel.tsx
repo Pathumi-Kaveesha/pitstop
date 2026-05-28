@@ -22,6 +22,7 @@ import { alpha } from "@mui/material/styles";
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 
 import { ContentResponse } from "@/types/types";
+import { RootState, useAppSelector } from "@slices/store";
 
 import ComponentCard from "./Card";
 
@@ -57,6 +58,7 @@ const Carousel: React.FC<CarouselProps> = ({
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoScrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
+  const isNavigating = useAppSelector((state: RootState) => state.common.navigationLoading);
 
   const current = useMemo(() => (count ? index % count : 0), [index, count]);
 
@@ -85,7 +87,7 @@ const Carousel: React.FC<CarouselProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!autoScroll || count <= 1 || hover) return;
+    if (!autoScroll || count <= 1 || hover || isNavigating) return;
     const id = setInterval(() => {
       setIsTransitioning(true);
       setIndex((i) => (i + 1) % count);
@@ -96,7 +98,7 @@ const Carousel: React.FC<CarouselProps> = ({
       clearInterval(id);
       autoScrollTimerRef.current = null;
     };
-  }, [autoScroll, autoScrollInterval, count, hover, setTransitionTimeout]);
+  }, [autoScroll, autoScrollInterval, count, hover, setTransitionTimeout, isNavigating]);
 
   const onPrev = () => {
     if (count > 1 && !isTransitioning) {

@@ -43,6 +43,7 @@ const CustomerTestimonialSection: React.FC = () => {
   const testimonials = useAppSelector(selectCustomerTestimonials);
   const testimonialsState = useAppSelector(selectCustomerTestimonialState);
   const roles = useAppSelector((state: RootState) => state.auth.roles);
+  const isNavigating = useAppSelector((state: RootState) => state.common.navigationLoading);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
@@ -75,13 +76,13 @@ const CustomerTestimonialSection: React.FC = () => {
   // Control animation based on viewport visibility
   useEffect(() => {
     if (scrollContainerRef.current) {
-      if (isInViewport && !isPaused) {
+      if (isInViewport && !isPaused && !isNavigating) {
         scrollContainerRef.current.style.animationPlayState = 'running';
       } else {
         scrollContainerRef.current.style.animationPlayState = 'paused';
       }
     }
-  }, [isInViewport, isPaused]);
+  }, [isInViewport, isPaused, isNavigating]);
 
   if (!isAdmin && testimonials.length < 4) {
     return null;

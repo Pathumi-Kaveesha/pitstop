@@ -50,6 +50,7 @@ export declare let _paq: unknown[];
 function Home() {
   const route = useAppSelector((state: RootState) => state.route);
   const page = useAppSelector((state: RootState) => state.page);
+  const isNavigating = useAppSelector((state: RootState) => state.common.navigationLoading);
   const customerTestimonials = useAppSelector(
     (state: RootState) => state.customerTestimonials.items
   );
@@ -295,7 +296,7 @@ function Home() {
     <>
       <PreLoader isLoading={!isPageReady} />
 
-      {isPageReady && (
+      {isPageReady && !isNavigating && (
         <>
           <Grow in={true}>
             <HeroSection ref={heroRef}>
@@ -316,7 +317,7 @@ function Home() {
                       pointerEvents: "none",
                     }}
                   />
-                ) : mediaSource && mediaSource.type === 'video' ? (
+                ) : mediaSource && mediaSource.type === 'video' && !isNavigating ? (
                   <Box
                     component="video"
                     src={mediaSource.src}
