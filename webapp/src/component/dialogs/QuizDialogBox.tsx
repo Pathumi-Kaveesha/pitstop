@@ -218,7 +218,16 @@ const QuizDialogBox = ({
             size="small"
             required
             InputLabelProps={{ shrink: true }}
-            inputProps={{ min: new Date().toISOString().slice(0, 10) }}
+            inputProps={{
+              min: (() => {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const yyyy = tomorrow.getFullYear();
+                const mm = String(tomorrow.getMonth() + 1).padStart(2, "0");
+                const dd = String(tomorrow.getDate()).padStart(2, "0");
+                return `${yyyy}-${mm}-${dd}`;
+              })(),
+            }}
             sx={{ ...inputSx, maxWidth: 240 }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
