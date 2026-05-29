@@ -46,6 +46,7 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
   const [takingQuiz, setTakingQuiz] = useState(false);
   const [viewingResult, setViewingResult] = useState(false);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+  const [skipAttemptBlock, setSkipAttemptBlock] = useState(false);
 
   const syncQuizIdInUrl = useCallback(
     (quizId?: number) => {
@@ -75,8 +76,13 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
     const shouldOpenQuiz = parsedQuizId === quiz.quizId;
 
     if (!shouldOpenQuiz) {
-      setTakingQuiz(false);
+      setSkipAttemptBlock(false);
+      return;
+    }
+
+    if (skipAttemptBlock) {
       setBlockedMessage(null);
+      setTakingQuiz(false);
       return;
     }
 
@@ -88,7 +94,7 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
 
     setBlockedMessage("You have already completed this quiz.");
     setTakingQuiz(true);
-  }, [location.search, quiz.quizId, quiz.status]);
+  }, [location.search, quiz.quizId, quiz.status, skipAttemptBlock]);
 
   const handleViewResult = () => {
     dispatch(resetResult());
@@ -100,11 +106,13 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
   const handleStartQuiz = () => {
     setViewingResult(false);
     setBlockedMessage(null);
+    setSkipAttemptBlock(false);
     syncQuizIdInUrl(quiz.quizId);
     setTakingQuiz(true);
   };
 
   const handleSubmitted = () => {
+    setSkipAttemptBlock(true);
     syncQuizIdInUrl();
     setTakingQuiz(false);
     setViewingResult(true);
@@ -424,6 +432,7 @@ const QuizCard: React.FC<Props> = ({ quiz }) => {
           onClose={() => {
             setViewingResult(false);
             setBlockedMessage(null);
+            setSkipAttemptBlock(false);
             setTakingQuiz(false);
             syncQuizIdInUrl();
           }}
