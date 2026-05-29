@@ -194,14 +194,14 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
         if (!fullEmployee) {
           return;
         }
-        setPendingUsers((prev) => {
-          const alreadyPending = prev.some(
+        setPendingUsers((prev) =>
+          prev.some(
             (user) =>
               user.userId === fullEmployee.userId || user.workEmail === fullEmployee.workEmail,
-          );
-          if (alreadyPending) return prev;
-          return [...prev, fullEmployee];
-        });
+          )
+            ? prev
+            : [...prev, fullEmployee],
+        );
         setSearchQuery("");
         setSuggestions([]);
       })
