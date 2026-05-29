@@ -24,7 +24,6 @@ import {
   Avatar,
   Box,
   Button,
-  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -80,7 +79,6 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
     [],
   );
   const [pendingUsers, setPendingUsers] = useState<QuizAssignableEmployee[]>([]);
-  const [notifiedUserIds, setNotifiedUserIds] = useState<number[]>([]);
   const [timeLimit, setTimeLimit] = useState("");
   const [loadingAssigned, setLoadingAssigned] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -121,7 +119,6 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
     if (open) {
       refreshAssignedUsers();
       setPendingUsers([]);
-      setNotifiedUserIds([]);
       setTimeLimit("");
     }
   }, [open, refreshAssignedUsers]);
@@ -203,7 +200,6 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
               user.userId === fullEmployee.userId || user.workEmail === fullEmployee.workEmail,
           );
           if (alreadyPending) return prev;
-          setNotifiedUserIds((prevNotify) => [...prevNotify, fullEmployee.userId]);
           return [...prev, fullEmployee];
         });
         setSearchQuery("");
@@ -217,7 +213,6 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
   const handleRemoveUser = async (userId: number, isPending: boolean) => {
     if (isPending) {
       setPendingUsers((prev) => prev.filter((emp) => emp.userId !== userId));
-      setNotifiedUserIds((prev) => prev.filter((id) => id !== userId));
       return;
     }
 
@@ -256,7 +251,6 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
           quizId: quiz.quizId,
           userIds: allUserIds,
           timeLimitMinutes: parsedTimeLimit,
-          notifyUserIds: notifiedUserIds,
         }),
       ).unwrap();
       await dispatch(fetchAdminQuizzes());
@@ -272,7 +266,6 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
     dispatch(resetAssign());
     setPendingUsers([]);
     setCurrentlyAssignedUsers([]);
-    setNotifiedUserIds([]);
     setSearchQuery("");
     setSuggestions([]);
     onClose();
@@ -357,7 +350,7 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
           <Typography component="span" variant="body2" fontWeight={700} color="text.primary">
             {quiz?.title}
           </Typography>{" "}
-          to people from your HR directory. They'll get an email notification.
+          to employees. Selected employees will receive an email notification.
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2.5 }}>
           <TextField
@@ -606,76 +599,9 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
               }}
             >
               <Table size="small">
-                <TableHead>
-                  <TableRow
-                    sx={{
-                      backgroundColor:
-                        theme.palette.mode === "dark"
-                          ? alpha(theme.palette.common.white, 0.03)
-                          : theme.palette.grey[50],
-                    }}
-                  >
-                    <TableCell
-                      sx={{
-                        fontWeight: 600,
-                        py: 1,
-                        fontSize: "0.8rem",
-                        color: theme.palette.text.secondary,
-                        width: 80,
-                      }}
-                    >
-                      Notify
-                    </TableCell>
-                    <TableCell
-                      sx={{
-                        fontWeight: 600,
-                        py: 1,
-                        fontSize: "0.8rem",
-                        color: theme.palette.text.secondary,
-                      }}
-                    >
-                      Name
-                    </TableCell>
-                    <TableCell
-                      sx={{
-                        fontWeight: 600,
-                        py: 1,
-                        fontSize: "0.8rem",
-                        color: theme.palette.text.secondary,
-                      }}
-                    >
-                      Email
-                    </TableCell>
-                    <TableCell
-                      align="right"
-                      sx={{
-                        fontWeight: 600,
-                        py: 1,
-                        fontSize: "0.8rem",
-                        color: theme.palette.text.secondary,
-                        width: 60,
-                      }}
-                    >
-                      Remove
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
                 <TableBody>
                   {pendingUsers.map((emp) => (
                     <TableRow key={emp.userId} sx={{ "&:last-child td": { borderBottom: 0 } }}>
-                      <TableCell sx={{ py: 0.5 }}>
-                        <Checkbox
-                          checked={notifiedUserIds.includes(emp.userId)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setNotifiedUserIds((prev) => [...prev, emp.userId]);
-                            } else {
-                              setNotifiedUserIds((prev) => prev.filter((id) => id !== emp.userId));
-                            }
-                          }}
-                          size="small"
-                        />
-                      </TableCell>
                       <TableCell sx={{ py: 1 }}>
                         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                           <Avatar src={emp.employeeThumbnail} sx={{ width: 26, height: 26 }} />

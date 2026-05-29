@@ -527,8 +527,6 @@ public type AssignUsersPayload record {|
     int[] userIds;
     # Time limit (minutes). Used for email notification only
     int timeLimitMinutes;
-    # User IDs to notify by email
-    int[] notifyUserIds?;
 |};
 
 # Unassign users payload.

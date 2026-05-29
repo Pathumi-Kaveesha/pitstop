@@ -365,13 +365,12 @@ export const assignUsersToQuiz = createAsyncThunk(
       quizId,
       userIds,
       timeLimitMinutes,
-      notifyUserIds,
-    }: { quizId: number; userIds: number[]; timeLimitMinutes?: number; notifyUserIds?: number[] },
+    }: { quizId: number; userIds: number[]; timeLimitMinutes?: number },
     { dispatch },
   ) => {
     return new Promise<void>((resolve, reject) => {
       ApiService.getInstance()
-        .post(AppConfig.serviceUrls.assignUsersToQuiz(quizId), { userIds, timeLimitMinutes, notifyUserIds })
+        .post(AppConfig.serviceUrls.assignUsersToQuiz(quizId), { userIds, timeLimitMinutes })
         .then(() => {
           dispatch(
             enqueueSnackbarMessage({

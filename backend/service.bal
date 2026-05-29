@@ -2332,11 +2332,6 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         int[] assignedUserIds = currentAssignedUserIds;
         int[] newlyAssignedUserIds = payload.userIds.filter(userId => assignedUserIds.indexOf(userId) is ());
-        int[]? notifyUserIds = payload.notifyUserIds;
-        if notifyUserIds is int[] {
-            int[] notifyList = notifyUserIds;
-            newlyAssignedUserIds = newlyAssignedUserIds.filter(userId => notifyList.indexOf(userId) is int);
-        }
         int|error? result = database:assignUsersToQuiz(quizId, payload.userIds, userEmail);
         if result is error || result is () {
             string customError = "Error while assigning users to quiz";
