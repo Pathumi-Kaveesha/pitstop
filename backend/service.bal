@@ -132,6 +132,20 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + return - Internal Server Error, NotFound, or CombinedEmployeeResponse object
     resource function get employees/[string email](http:RequestContext ctx) returns json|http:NotFound|http:InternalServerError {
         
+        string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+        if userEmail is error {
+            log:printError("Failed to extract email from context", userEmail);
+            return <http:InternalServerError> { body: "Context header missing" };
+        }
+
+        // SECURITY VALIDATION: Prevent users from passing someone else's email in the URL bar
+        if userEmail != email {
+            log:printError(string `Unauthorized profile access attempt: ${userEmail} tried to query ${email}`);
+            return <http:InternalServerError> { 
+                body: "Unauthorized profile request path mismatch" 
+            };
+        }
+        
         // Extracting user claims profile directly from the request context which is set in the JWT interceptor after decoding the token.
         // This eliminates the slow external GraphQL HR network call (entity:getEmployee)
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
