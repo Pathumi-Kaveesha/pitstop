@@ -42,6 +42,8 @@ configurable types:AppInfo appInfo = {
     label: "Pitstop",
     id: "pitstop"
 }
+
+
 service http:InterceptableService / on new http:Listener(9090) {
 
     public function createInterceptors() returns [authorization:JwtInterceptor, ResponseInterceptor] =>
@@ -127,16 +129,29 @@ service http:InterceptableService / on new http:Listener(9090) {
     # Retrieve basic information of a employee.
     #
     # + email - Employee work email
-    # + return - Internal Server Error or Employee object
-    resource function get employees/[string email]() returns entity:Employee|http:NotFound|http:InternalServerError {
-        entity:Employee|error employee = entity:getEmployee(email);
-        if employee is error {
-            string customError = "Error while fetching employee details";
-            log:printError(customError, employee);
-            return <http:InternalServerError>{
-                body: customError
+    # + return - Internal Server Error, NotFound, or CombinedEmployeeResponse object
+    resource function get employees/[string email](http:RequestContext ctx) returns json|http:NotFound|http:InternalServerError {
+        
+        // Extracting user claims profile directly from the request context which is set in the JWT interceptor after decoding the token.
+        // This eliminates the slow external GraphQL HR network call (entity:getEmployee)
+        authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
+        if userProfile is error {
+            log:printError("Failed to extract token claims profile from request context", userProfile);
+            return <http:InternalServerError> { 
+                body: "Context tracking payload missing" 
             };
         }
+
+        // Mapping clean, consolidated strings straight out of local memory into the employee record layout
+        entity:Employee employee = {
+            workEmail: email,
+            firstName: userProfile.firstName,
+            lastName: userProfile.lastName,
+            department: userProfile.department,
+            team: userProfile.team,
+            subTeam: userProfile.subTeam,
+            employeeThumbnail: userProfile.employeeThumbnail
+        };
         
         error? addResult = database:addUser(employee);
         if addResult is error {
@@ -144,11 +159,28 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
         
         int|error? userIdResult = database:getUserIdByUserEmail(email);
-        if userIdResult is int {
-            employee.userId = userIdResult;
+        if userIdResult is error {
+            log:printError("Error occurred while executing local database mapping lookups", userIdResult);
+            return <http:InternalServerError> { 
+                body: "Database execution layer error" 
+            };
         }
 
-        return employee;
+        if userIdResult is () {
+            return <http:NotFound> { 
+                body: "User target identity layout mapping not found" 
+            };
+        }
+        return {
+            userId: userIdResult,
+            workEmail: email,
+            firstName: userProfile.firstName,
+            lastName: userProfile.lastName,
+            department: userProfile.department,
+            team: userProfile.team,
+            subTeam: userProfile.subTeam,
+            employeeThumbnail: userProfile.employeeThumbnail
+        };
     }
 
     # Search for employees by partial name or email for @mention autocomplete.
@@ -355,14 +387,27 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        entity:Employee|error employeeInfo = entity:getEmployee(userEmail);
-        if employeeInfo is error {
-            string customError = "Failed to get employee info";
-            log:printError(customError, employeeInfo);
-            return <http:InternalServerError>{
-                body: customError
+        // OPTIMIZATION: Extracting pre-decoded user profile claims from the context.
+        // Replaces the legacy, blocking external GraphQL HR service call (entity:getEmployee)
+        authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
+        if userProfile is error {
+            log:printError("Failed to extract token claims profile from request context", userProfile);
+            return <http:InternalServerError> { 
+                body: "Context tracking payload missing" 
             };
         }
+
+        entity:Employee employeeInfo = {
+            workEmail: userEmail,
+            firstName: userProfile.firstName,
+            lastName: userProfile.lastName,
+            department: userProfile.department,
+            team: userProfile.team,
+            subTeam: userProfile.subTeam,
+            employeeThumbnail: userProfile.employeeThumbnail
+        };
+        
+        
         error? user = database:addUser(employeeInfo);
         if user is error {
             string customError = "Error while adding user";
@@ -823,14 +868,25 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        entity:Employee|error employee = entity:getEmployee(userEmail);
-        if employee is error {
-            string customError = "Failed to get employee info";
-            log:printError(customError, employee);
-            return <http:InternalServerError>{
-                body: {message: customError}
+        // OPTIMIZATION: Extracting pre-decoded user profile claims from the context.
+        // Replaces the legacy, blocking external GraphQL HR service call (entity:getEmployee)
+        authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
+        if userProfile is error {
+            log:printError("Failed to extract token claims profile from request context", userProfile);
+            return <http:InternalServerError> { 
+                body: "Context tracking payload missing" 
             };
         }
+        
+        entity:Employee employee = {
+            workEmail: userEmail,
+            firstName: userProfile.firstName,
+            lastName: userProfile.lastName,
+            department: userProfile.department,
+            team: userProfile.team,
+            subTeam: userProfile.subTeam,
+            employeeThumbnail: userProfile.employeeThumbnail
+        };
 
         error? addUserErr = database:addUser(employee);
         if addUserErr is error {
@@ -928,14 +984,26 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        entity:Employee|error employee = entity:getEmployee(userEmail);
-        if employee is error {
-            string customErr = "Failed to get employee info";
-            log:printError(customErr, employee);
-            return <http:InternalServerError>{
-                body: customErr
+        // OPTIMIZATION: Extracting pre-decoded user profile claims from the context.
+        // Replaces the legacy, blocking external GraphQL HR service call (entity:getEmployee)
+
+        authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
+        if userProfile is error {
+            log:printError("Failed to extract token claims profile from request context", userProfile);
+            return <http:InternalServerError> { 
+                body: "Context tracking payload missing" 
             };
         }
+
+        entity:Employee employee = {
+            workEmail: userEmail,
+            firstName: userProfile.firstName,
+            lastName: userProfile.lastName,
+            department: userProfile.department,
+            team: userProfile.team,
+            subTeam: userProfile.subTeam,
+            employeeThumbnail: userProfile.employeeThumbnail
+        };
 
         error? result = database:addUser(employee);
         if result is error {
@@ -2289,6 +2357,16 @@ service http:InterceptableService / on new http:Listener(9090) {
             database:AssignUsersPayload payload)
         returns http:Ok|http:NotFound|http:Forbidden|http:InternalServerError|http:BadRequest {
 
+        // OPTIMIZATION: Extracting pre-decoded user profile claims from the context.
+        // Replaces the legacy, blocking external GraphQL HR service call (entity:getEmployee)
+        authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
+        if userProfile is error {
+            log:printError("Failed to extract token claims profile from request context", userProfile);
+            return <http:InternalServerError> { 
+                body: {message: "Context tracking payload missing"} 
+            };
+        }
+
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         if userEmail is error {
             log:printError(constants:GET_USER_ID_ERROR, userEmail);
@@ -2321,14 +2399,16 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        entity:Employee|error employeeInfo = entity:getEmployee(userEmail);
-        if employeeInfo is error {
-            string customError = "Failed to get employee info";
-            log:printError(customError, employeeInfo);
-            return <http:InternalServerError>{
-                body: customError
-            };
-        }
+        entity:Employee employeeInfo = {
+            workEmail: userEmail,
+            firstName: userProfile.firstName,
+            lastName: userProfile.lastName,
+            department: userProfile.department,
+            team: userProfile.team,
+            subTeam: userProfile.subTeam,
+            employeeThumbnail: userProfile.employeeThumbnail
+        };
+
 
         int[] assignedUserIds = currentAssignedUserIds;
         int[] newlyAssignedUserIds = payload.userIds.filter(userId => assignedUserIds.indexOf(userId) is ());

@@ -95,6 +95,20 @@ public isolated service class JwtInterceptor {
                 ctx.set(REQUESTED_BY_USER_EMAIL, userInfo.email);
                 ctx.set(REQUESTED_BY_USER_ROLES, userInfo.groups);
 
+                // OPTIMIZATION: Build a unified UserProfile using stringifyClaim().
+                // This converts dynamic claims (which Asgardeo emits as a string for single entries
+                // or string[] arrays for multiple entries) into safe, comma-separated strings.
+                // Downstream endpoints now extract this from memory instead of hitting the slow external GraphQL HR repo.
+                UserProfile userProfileData = {
+                    firstName: userInfo.given_name,
+                    lastName: userInfo.family_name,
+                    department: stringifyClaim(userInfo.team), // Assuming department info is stored in the 'team' claim, adjust if it's different
+                    team: stringifyClaim(userInfo.subTeam),
+                    subTeam: stringifyClaim(userInfo.unit),
+                    employeeThumbnail: userInfo.profile
+                };
+                ctx.set(REQUESTED_BY_USER_PROFILE, userProfileData);
+                
                 string|error timezoneOffset = req.getHeader(TIMEZONE_OFFSET_HEADER);
                 if timezoneOffset is string {
                     ctx.set(REQUESTED_BY_USER_TIMEZONE_OFFSET, timezoneOffset);
@@ -113,4 +127,21 @@ public isolated service class JwtInterceptor {
             }
         };
     }
+}
+
+
+
+# Converts a single string or an array of strings into a single consolidated string.
+#
+# + value - The dynamic claim value from the JWT
+# + return - Consolidate string layout
+isolated function stringifyClaim(string|string[]? value) returns string {
+    if value is () {
+        return "";
+    }
+    if value is string[] {
+        // If it's an array, join elements with commas: "Sales Team, Customer Success Team"
+        return ", ".join(...value);
+    }
+    return value;
 }

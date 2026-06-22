@@ -43,6 +43,19 @@ type AsgardeoJwt record {|
     string email;
     # Groups of the user
     string[] groups;
+
+    # First name of the user
+    string given_name;
+    # Last name of the user
+    string family_name;
+    # Team of the user
+    string|string[] team;
+    # Sub Team of the user
+    string|string[] subTeam;
+    # Unit of the user
+    string|string[] unit?;
+    # Profile thumbnail of the user
+    string profile?;
 |};
 
 # Application roles.
@@ -51,4 +64,13 @@ public type AppRoles record {|
     string adminRole;
     # Employee role name
     string employeeRole;
+|};
+
+public type UserProfile record {|
+    string firstName;
+    string lastName;
+    string department;
+    string team;
+    string subTeam;
+    string? employeeThumbnail;
 |};
