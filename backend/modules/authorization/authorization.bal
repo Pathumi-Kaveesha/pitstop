@@ -102,11 +102,12 @@ public isolated service class JwtInterceptor {
                 UserProfile userProfileData = {
                     firstName: userInfo.given_name,
                     lastName: userInfo.family_name,
-                    department: stringifyClaim(userInfo.team), // Assuming department info is stored in the 'team' claim, adjust if it's different
-                    team: stringifyClaim(userInfo.subTeam),
-                    subTeam: stringifyClaim(userInfo.unit),
-                    employeeThumbnail: userInfo.profile
+                    department: stringifyClaim(userInfo?.team), // Assuming department info is stored in the 'team' claim, adjust if it's different
+                    team: stringifyClaim(userInfo?.subTeam),
+                    subTeam: stringifyClaim(userInfo?.unit),
+                    employeeThumbnail: userInfo?.profile
                 };
+
                 ctx.set(REQUESTED_BY_USER_PROFILE, userProfileData);
                 
                 string|error timezoneOffset = req.getHeader(TIMEZONE_OFFSET_HEADER);

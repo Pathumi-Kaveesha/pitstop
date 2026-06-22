@@ -49,9 +49,9 @@ type AsgardeoJwt record {|
     # Last name of the user
     string family_name;
     # Team of the user
-    string|string[] team;
+    string|string[] team?;
     # Sub Team of the user
-    string|string[] subTeam;
+    string|string[] subTeam?;
     # Unit of the user
     string|string[] unit?;
     # Profile thumbnail of the user
