@@ -43,7 +43,6 @@ type AsgardeoJwt record {|
     string email;
     # Groups of the user
     string[] groups;
-
     # First name of the user
     string given_name;
     # Last name of the user
@@ -66,11 +65,18 @@ public type AppRoles record {|
     string employeeRole;
 |};
 
+# User profile details extracted from the JWT token.
 public type UserProfile record {|
+    # First name of the user
     string firstName;
+    # Last name of the user
     string lastName;
+    # Department of the user
     string department;
+    # Team of the user
     string team;
+    # Sub Team of the user
     string subTeam;
+    # Profile thumbnail of the user
     string? employeeThumbnail;
 |};

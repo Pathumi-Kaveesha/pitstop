@@ -44,7 +44,7 @@ public type Employee record {|
     # Sub Team 
     string subTeam?;
     # Employee Thumbnail URL
-    string? employeeThumbnail;
+    string? employeeThumbnail = ();
     json...;
 |};
 

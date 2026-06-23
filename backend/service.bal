@@ -43,7 +43,6 @@ configurable types:AppInfo appInfo = {
     id: "pitstop"
 }
 
-
 service http:InterceptableService / on new http:Listener(9090) {
 
     public function createInterceptors() returns [authorization:JwtInterceptor, ResponseInterceptor] =>
@@ -130,7 +129,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     #
     # + email - Employee work email
     # + return - Internal Server Error, NotFound, or CombinedEmployeeResponse object
-    resource function get employees/[string email](http:RequestContext ctx) returns json|http:NotFound|http:InternalServerError {
+    resource function get employees/[string email](http:RequestContext ctx) returns json|http:NotFound|http:Forbidden|http:InternalServerError {
         
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         if userEmail is error {
@@ -141,7 +140,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         // SECURITY VALIDATION: Prevent users from passing someone else's email in the URL bar
         if userEmail != email {
             log:printError(string `Unauthorized profile access attempt: ${userEmail} tried to query ${email}`);
-            return <http:InternalServerError> { 
+            return <http:Forbidden> { 
                 body: "Unauthorized profile request path mismatch" 
             };
         }
@@ -150,12 +149,12 @@ service http:InterceptableService / on new http:Listener(9090) {
         // This eliminates the slow external GraphQL HR network call (entity:getEmployee)
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
-            log:printError("Failed to extract token claims profile from request context", userProfile);
+            log:printError("Failed to extract user claims from request context", userProfile);
             return <http:InternalServerError> { 
-                body: "Context tracking payload missing" 
+                body: "Error occurred while reading user information"
             };
         }
-
+        
         // Mapping clean, consolidated strings straight out of local memory into the employee record layout
         entity:Employee employee = {
             workEmail: email,
@@ -176,13 +175,13 @@ service http:InterceptableService / on new http:Listener(9090) {
         if userIdResult is error {
             log:printError("Error occurred while executing local database mapping lookups", userIdResult);
             return <http:InternalServerError> { 
-                body: "Database execution layer error" 
+                body: "Error occurred while fetching user" 
             };
         }
 
         if userIdResult is () {
             return <http:NotFound> { 
-                body: "User target identity layout mapping not found" 
+                body: "Requested user is not found" 
             };
         }
         return {
@@ -407,7 +406,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         if userProfile is error {
             log:printError("Failed to extract token claims profile from request context", userProfile);
             return <http:InternalServerError> { 
-                body: "Context tracking payload missing" 
+                body: "Error occurred while reading user information"
             };
         }
 
@@ -888,7 +887,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         if userProfile is error {
             log:printError("Failed to extract token claims profile from request context", userProfile);
             return <http:InternalServerError> { 
-                body: "Context tracking payload missing" 
+                body: "Error occurred while reading user information"
             };
         }
         
@@ -1005,7 +1004,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         if userProfile is error {
             log:printError("Failed to extract token claims profile from request context", userProfile);
             return <http:InternalServerError> { 
-                body: "Context tracking payload missing" 
+                body: "Error occurred while reading user information"
             };
         }
 
@@ -2377,7 +2376,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         if userProfile is error {
             log:printError("Failed to extract token claims profile from request context", userProfile);
             return <http:InternalServerError> { 
-                body: {message: "Context tracking payload missing"} 
+                body: {message: "Error occurred while reading user information"} 
             };
         }
 

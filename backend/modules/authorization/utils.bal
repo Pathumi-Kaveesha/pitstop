@@ -27,3 +27,18 @@ public isolated function hasPermission(string[] requiredRoles, string[] userRole
     final string[] & readonly userRolesReadOnly = userRoles.cloneReadOnly();
     return requiredRoles.every(role => userRolesReadOnly.indexOf(role) !is ());
 }
+
+# Converts a single string or an array of strings into a single consolidated string.
+#
+# + value - The dynamic claim value from the JWT
+# + return - Consolidate string layout
+isolated function stringifyClaim(string|string[]? value) returns string {
+    if value is () {
+        return "";
+    }
+    if value is string[] {
+        // If it's an array, join elements with commas: "Sales Team, Customer Success Team"
+        return ", ".join(...value);
+    }
+    return value;
+}
