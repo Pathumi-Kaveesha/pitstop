@@ -134,15 +134,15 @@ service http:InterceptableService / on new http:Listener(9090) {
         
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         if userEmail is error {
-            log:printError("Failed to extract email from context", userEmail);
-            return <http:InternalServerError> { body: "An unexpected error occurred while processing your request" };
+            log:printError(constants:USER_INFO_HEADER_NOT_FOUND, userEmail);
+            return <http:InternalServerError> { body: constants:USER_INFO_HEADER_NOT_FOUND };
         }
 
         // SECURITY VALIDATION: Prevent users from passing someone else's email in the URL bar
         if userEmail != email {
             log:printError(string `Unauthorized profile access attempt: ${userEmail} tried to query ${email}`);
             return <http:Forbidden> { 
-                body: "Access denied. You do not have permission to view this profile." 
+                body: constants:USER_INFO_HEADER_NOT_FOUND
             };
         }
         
@@ -150,9 +150,9 @@ service http:InterceptableService / on new http:Listener(9090) {
         // This eliminates the slow external GraphQL HR network call (entity:getEmployee)
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
-            log:printError("Failed to extract user claims from request context", userProfile);
+            log:printError(constants:GET_USER_PROFILE_ERROR, userProfile);
             return <http:InternalServerError> { 
-                body: "Error occurred while reading user information"
+                body: constants:USER_PROFILE_READ_ERROR
             };
         }
         
@@ -398,9 +398,9 @@ service http:InterceptableService / on new http:Listener(9090) {
         // Replaces the legacy, blocking external GraphQL HR service call (entity:getEmployee)
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
-            log:printError("Failed to extract token claims profile from request context", userProfile);
+            log:printError(constants:GET_USER_PROFILE_ERROR, userProfile);
             return <http:InternalServerError> { 
-                body: "Error occurred while reading user information"
+                body: constants:USER_PROFILE_READ_ERROR
             };
         }
 
@@ -879,9 +879,9 @@ service http:InterceptableService / on new http:Listener(9090) {
         // Replaces the legacy, blocking external GraphQL HR service call (entity:getEmployee)
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
-            log:printError("Failed to extract token claims profile from request context", userProfile);
+            log:printError(constants:GET_USER_PROFILE_ERROR, userProfile);
             return <http:InternalServerError> { 
-                body: "Error occurred while reading user information"
+                body: constants:USER_PROFILE_READ_ERROR
             };
         }
         
@@ -996,9 +996,9 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
-            log:printError("Failed to extract token claims profile from request context", userProfile);
+            log:printError(constants:GET_USER_PROFILE_ERROR, userProfile);
             return <http:InternalServerError> { 
-                body: "Error occurred while reading user information"
+                body: constants:USER_PROFILE_READ_ERROR
             };
         }
 
@@ -2368,9 +2368,9 @@ service http:InterceptableService / on new http:Listener(9090) {
         // Replaces the legacy, blocking external GraphQL HR service call (entity:getEmployee)
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
-            log:printError("Failed to extract token claims profile from request context", userProfile);
+            log:printError(constants:GET_USER_PROFILE_ERROR, userProfile);
             return <http:InternalServerError> { 
-                body: {message: "Error occurred while reading user information"} 
+                body: constants:USER_PROFILE_READ_ERROR
             };
         }
 
