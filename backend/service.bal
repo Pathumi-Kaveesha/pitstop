@@ -129,19 +129,20 @@ service http:InterceptableService / on new http:Listener(9090) {
     #
     # + email - Employee work email
     # + return - Internal Server Error, NotFound, or CombinedEmployeeResponse object
-    resource function get employees/[string email](http:RequestContext ctx) returns json|http:NotFound|http:Forbidden|http:InternalServerError {
+    resource function get employees/[string email](http:RequestContext ctx) 
+        returns entity:Employee|http:NotFound|http:Forbidden|http:InternalServerError {
         
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         if userEmail is error {
             log:printError("Failed to extract email from context", userEmail);
-            return <http:InternalServerError> { body: "Context header missing" };
+            return <http:InternalServerError> { body: "An unexpected error occurred while processing your request" };
         }
 
         // SECURITY VALIDATION: Prevent users from passing someone else's email in the URL bar
         if userEmail != email {
             log:printError(string `Unauthorized profile access attempt: ${userEmail} tried to query ${email}`);
             return <http:Forbidden> { 
-                body: "Unauthorized profile request path mismatch" 
+                body: "Access denied. You do not have permission to view this profile." 
             };
         }
         
@@ -184,16 +185,9 @@ service http:InterceptableService / on new http:Listener(9090) {
                 body: "Requested user is not found" 
             };
         }
-        return {
-            userId: userIdResult,
-            workEmail: email,
-            firstName: userProfile.firstName,
-            lastName: userProfile.lastName,
-            department: userProfile.department,
-            team: userProfile.team,
-            subTeam: userProfile.subTeam,
-            employeeThumbnail: userProfile.employeeThumbnail
-        };
+        employee.userId = userIdResult;
+
+        return employee;
     }
 
     # Search for employees by partial name or email for @mention autocomplete.
