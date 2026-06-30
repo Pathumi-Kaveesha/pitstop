@@ -60,7 +60,7 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const userThumbnail = useAppSelector(
-    (state: RootState) => state.employee.employeeInfo?.employeeThumbnail
+    (state: RootState) => state.auth.employeeThumbnail
   );
   const currentUserEmail = useAppSelector(
     (state: RootState) => state.auth.userInfo?.email ?? ""
@@ -332,7 +332,7 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
                   startAdornment: (
                     <InputAdornment position="start" sx={{ mr: 1, display: "flex", alignItems: "center" }}>
                       <Avatar
-                        src={userThumbnail}
+                        src={userThumbnail || ""}
                         sx={{
                           width: 32,
                           height: 32,
@@ -426,7 +426,7 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
                     border: `2px solid ${alpha(theme.palette.primary.main, 0.3)}`,
                     flexShrink: 0,
                   }}
-                  src={userThumbnail}
+                  src={userThumbnail || ""}
                 />
                 <Box sx={{ flex: 1 }}>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>

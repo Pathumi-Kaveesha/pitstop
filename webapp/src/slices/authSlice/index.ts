@@ -20,7 +20,14 @@ import { getUserPrivileges } from "@utils/auth";
 import { createSlice, PayloadAction, createAsyncThunk } from "@reduxjs/toolkit";
 import { EMPLOYEE_PRIVILEGE_ID, SALES_ADMIN_PRIVILEGE_ID } from "@config/constant";
 
-const initialState: AuthState = {
+interface ExtendedAuthState extends AuthState {
+  department: string | null;
+  team: string | null;
+  subTeam: string | null;
+  employeeThumbnail: string | null; 
+}
+
+const initialState: ExtendedAuthState = {
   isAuthenticated: false,
   status: "idle",
   mode: "active",
@@ -33,6 +40,10 @@ const initialState: AuthState = {
   userPrivileges: null,
   errorMessage: null,
   authFlowState: "start",
+  department: null,
+  team: null,
+  subTeam: null,
+  employeeThumbnail: null, 
 };
 
 export const authSlice = createSlice({
@@ -42,7 +53,21 @@ export const authSlice = createSlice({
     setUserAuthData: (state, action: PayloadAction<AuthData>) => {
       state.userInfo = action.payload.userInfo;
       state.idToken = action.payload.idToken;
-      state.decodedIdToken = action.payload.decodedIdToken;
+      
+      const decoded = action.payload.decodedIdToken as any;
+      state.decodedIdToken = decoded;
+
+      state.department = decoded?.team ?? "";          // 'team' maps to department
+      state.team = decoded?.subTeam ?? "";            // 'subTeam' maps to team
+      state.subTeam = decoded?.unit ?? "";            // 'unit' maps to subTeam
+      state.employeeThumbnail = decoded?.profile ?? ""; // 'profile' maps to thumbnail URL
+
+      console.log("LIVE ASGARDEO FRONTEND DATA:", {
+    department: state.department,
+    team: state.team,
+    subTeam: state.subTeam,
+    thumbnail: state.employeeThumbnail
+  });
     },
   },
 

@@ -138,12 +138,17 @@ service http:InterceptableService / on new http:Listener(9090) {
             return <http:InternalServerError> { body: constants:USER_INFO_HEADER_NOT_FOUND };
         }
 
-        // SECURITY VALIDATION: Prevent users from passing someone else's email in the URL bar
-        if userEmail != email {
-            log:printError(string `Unauthorized profile access attempt: ${userEmail} tried to query ${email}`);
-            return <http:Forbidden> { 
-                body: constants:USER_INFO_HEADER_NOT_FOUND
+        string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
+        if userGroups is error {
+            log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
+            return <http:InternalServerError>{
+                body: constants:GET_USER_ROLE_ERROR
             };
+        }
+
+        if !authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
+            log:printError(constants:UNAUTHORIZED_ACCESS_ERROR);
+            return http:FORBIDDEN;
         }
         
         // Extracting user claims profile directly from the request context which is set in the JWT interceptor after decoding the token.

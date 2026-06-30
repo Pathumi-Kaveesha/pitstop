@@ -56,14 +56,15 @@ function loadMatomoFromCloud(
 
 export default function MatomoTracker() {
   const auth = useAppSelector((s: RootState) => s.auth);
-  const employeeInfo = useAppSelector((s: RootState) => s.employee);
+  // REMOVED: employeeInfo state selector is gone since we read data from auth now
   const route = useAppSelector((s: RootState) => s.route);
   const location = useLocation();
   const lastUrl = useRef("");
 
   useEffect(() => {
     if (!window.config?.IS_MATOMO_ENABLED) return;
-    if (!auth.userInfo?.email || !employeeInfo.employeeInfo) return;
+    // CHANGED: Only checking if auth has loaded the user's details
+    if (!auth.userInfo?.email) return;
 
     // Skip OIDC redirect moments (prevents '0 Action' visits)
     const sp = new URLSearchParams(window.location.search);
@@ -84,22 +85,26 @@ export default function MatomoTracker() {
       const _paq = (window as Window & { _paq?: unknown[] })._paq as unknown[];
 
       _paq.push(["setUserId", auth.userInfo?.email]);
+      
+      // CHANGED: Grabbing first and last name from the token payload
       _paq.push([
         "setCustomDimension",
         1,
-        `${employeeInfo.employeeInfo?.firstName || ""} ${
-          employeeInfo.employeeInfo?.lastName || ""
+        `${auth.userInfo?.givenName || ""} ${
+          auth.userInfo?.familyName || ""
         }`.trim(),
       ]);
+      
+      // CHANGED: Reading department and team from new auth state mappings
       _paq.push([
         "setCustomDimension",
         2,
-        employeeInfo.employeeInfo?.department || "",
+        auth.department || "",
       ]);
       _paq.push([
         "setCustomDimension",
         3,
-        employeeInfo.employeeInfo?.team || "",
+        auth.team || "",
       ]);
 
       _paq.push(["setCustomUrl", url]);
@@ -108,7 +113,10 @@ export default function MatomoTracker() {
     })();
   }, [
     auth.userInfo?.email,
-    employeeInfo.employeeInfo,
+    auth.userInfo?.givenName,
+    auth.userInfo?.familyName,
+    auth.department,
+    auth.team,
     location.pathname,
     location.search,
     route.label,
