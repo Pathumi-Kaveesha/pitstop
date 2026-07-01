@@ -51,10 +51,9 @@ export const authSlice = createSlice({
   initialState,
   reducers: {
     setUserAuthData: (state, action: PayloadAction<AuthData>) => {
-      state.userInfo = action.payload.userInfo;
       state.idToken = action.payload.idToken;
-
       state.decodedIdToken = action.payload.decodedIdToken;
+      
       const decoded = action.payload.decodedIdToken as Record<string, unknown> | null;
 
       const stringifyClaim = (value: unknown): string | null => {
@@ -64,10 +63,17 @@ export const authSlice = createSlice({
         return typeof value === "string" && value.trim() !== "" ? value : null;
       };
 
-      state.department = stringifyClaim(decoded?.team);        // 'team' maps to department
-      state.team = stringifyClaim(decoded?.subTeam);          // 'subTeam' maps to team
-      state.subTeam = stringifyClaim(decoded?.unit);          // 'unit' maps to subTeam
-      state.employeeThumbnail = stringifyClaim(decoded?.profile); // 'profile' maps to thumbnail URL
+      if (action.payload.userInfo) {
+        state.userInfo = {
+          ...action.payload.userInfo,
+          department: stringifyClaim(decoded?.team),
+          team: stringifyClaim(decoded?.subTeam),
+          subTeam: stringifyClaim(decoded?.unit),
+          employeeThumbnail: stringifyClaim(decoded?.profile),
+        };
+      } else {
+        state.userInfo = null;
+      }
     },   
   },
 

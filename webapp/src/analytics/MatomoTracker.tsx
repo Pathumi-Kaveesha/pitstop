@@ -98,12 +98,12 @@ export default function MatomoTracker() {
       _paq.push([
         "setCustomDimension",
         2,
-        auth.department || "",
+        auth.userInfo?.department || "",
       ]);
       _paq.push([
         "setCustomDimension",
         3,
-        auth.team || "",
+        auth.userInfo?.team || "",
       ]);
 
       _paq.push(["setCustomUrl", url]);
@@ -114,8 +114,8 @@ export default function MatomoTracker() {
     auth.userInfo?.email,
     auth.userInfo?.givenName,
     auth.userInfo?.familyName,
-    auth.department,
-    auth.team,
+    auth.userInfo?.department,
+    auth.userInfo?.team,
     location.pathname,
     location.search,
     route.label,
