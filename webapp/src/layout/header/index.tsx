@@ -565,7 +565,7 @@ const Header = (props: HeaderProps) => {
                           borderColor: "primary.main",
                         }}
                         alt={userInfo?.name}
-                        src={auth.employeeThumbnail || ""}
+                        src={auth.userInfo?.employeeThumbnail || ""}
                       />
                     </IconButton>
 
@@ -598,7 +598,7 @@ const Header = (props: HeaderProps) => {
                               borderColor: "primary.main",
                             }}
                             alt={userInfo?.name}
-                            src={auth.employeeThumbnail || ""}
+                            src={auth.userInfo?.employeeThumbnail || ""}
                           />
                           <Box sx={{ minWidth: 0 }}>
                             <Typography
