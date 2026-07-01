@@ -72,4 +72,6 @@ public const USER_INFO_HEADER_NOT_FOUND = "User information header not found";
 public const GET_TRENDING_CONTENT_ERROR = "Error while fetching trending contents";
 public const GET_SUGGESTED_CONTENT_ERROR = "Error while getting suggested contents";
 public const COMMENT_ID_MISMATCH_ERROR = "Comment ID mismatch between path and payload";
+public const GET_USER_PROFILE_ERROR = "Failed to extract user claims from request context.";
+public const USER_PROFILE_READ_ERROR = "Failed to load user profile information.";
 public final regexp:RegExp URL = re `^(https?|ftp|smtp)://(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/\S*)?$`;

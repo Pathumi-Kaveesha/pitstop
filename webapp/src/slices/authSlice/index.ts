@@ -20,7 +20,14 @@ import { getUserPrivileges } from "@utils/auth";
 import { createSlice, PayloadAction, createAsyncThunk } from "@reduxjs/toolkit";
 import { EMPLOYEE_PRIVILEGE_ID, SALES_ADMIN_PRIVILEGE_ID } from "@config/constant";
 
-const initialState: AuthState = {
+interface ExtendedAuthState extends AuthState {
+  department: string | null;
+  team: string | null;
+  subTeam: string | null;
+  employeeThumbnail: string | null; 
+}
+
+const initialState: ExtendedAuthState = {
   isAuthenticated: false,
   status: "idle",
   mode: "active",
@@ -33,6 +40,10 @@ const initialState: AuthState = {
   userPrivileges: null,
   errorMessage: null,
   authFlowState: "start",
+  department: null,
+  team: null,
+  subTeam: null,
+  employeeThumbnail: null, 
 };
 
 export const authSlice = createSlice({
@@ -40,10 +51,30 @@ export const authSlice = createSlice({
   initialState,
   reducers: {
     setUserAuthData: (state, action: PayloadAction<AuthData>) => {
-      state.userInfo = action.payload.userInfo;
       state.idToken = action.payload.idToken;
       state.decodedIdToken = action.payload.decodedIdToken;
-    },
+      
+      const decoded = action.payload.decodedIdToken as Record<string, unknown> | null;
+
+      const stringifyClaim = (value: unknown): string | null => {
+        if (Array.isArray(value)) {
+          return value.filter((item): item is string => typeof item === "string").join(", ");
+        }
+        return typeof value === "string" && value.trim() !== "" ? value : null;
+      };
+
+      if (action.payload.userInfo) {
+        state.userInfo = {
+          ...action.payload.userInfo,
+          department: stringifyClaim(decoded?.team),
+          team: stringifyClaim(decoded?.subTeam),
+          subTeam: stringifyClaim(decoded?.unit),
+          employeeThumbnail: stringifyClaim(decoded?.profile),
+        };
+      } else {
+        state.userInfo = null;
+      }
+    },   
   },
 
   extraReducers: (builder) => {

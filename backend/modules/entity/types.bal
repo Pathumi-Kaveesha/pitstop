@@ -37,6 +37,12 @@ public type Employee record {|
     string lastName;
     # WSO2 Email
     string workEmail;
+    # Department 
+    string department?;
+    # Team 
+    string team?;
+    # Sub Team 
+    string subTeam?;
     # Employee Thumbnail URL
     string? employeeThumbnail = ();
     json...;

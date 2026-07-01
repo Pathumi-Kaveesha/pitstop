@@ -131,7 +131,7 @@ const Header = (props: HeaderProps) => {
   const theme = useTheme();
   const routes = useAppSelector((state: RootState) => state.route.routes);
   const authorizedRoles: Role[] = useAppSelector((state: RootState) => state.auth.roles);
-  const user = useAppSelector((state: RootState) => state.employee.employeeInfo);
+  const auth = useAppSelector((state: RootState) => state.auth);
 
   const scrollButtonRef = useRef<HTMLButtonElement>(null);
   const publiclyVisibleRoutes = useMemo(() => filterPubliclyVisibleRoutes(routes), [routes]);
@@ -565,7 +565,7 @@ const Header = (props: HeaderProps) => {
                           borderColor: "primary.main",
                         }}
                         alt={userInfo?.name}
-                        src={user?.employeeThumbnail}
+                        src={auth.employeeThumbnail || ""}
                       />
                     </IconButton>
 
@@ -598,7 +598,7 @@ const Header = (props: HeaderProps) => {
                               borderColor: "primary.main",
                             }}
                             alt={userInfo?.name}
-                            src={user?.employeeThumbnail}
+                            src={auth.employeeThumbnail || ""}
                           />
                           <Box sx={{ minWidth: 0 }}>
                             <Typography

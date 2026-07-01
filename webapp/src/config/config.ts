@@ -49,7 +49,7 @@ export const AsgardioConfig: BaseURLAuthClientConfig = {
   signOutRedirectURL: window.config?.AUTH_SIGN_OUT_REDIRECT_URL ?? "",
   clientID: window.config?.ASGARDEO_CLIENT_ID ?? "",
   baseUrl: window.config?.ASGARDEO_BASE_URL ?? "",
-  scope: ["openid", "email", "groups"],
+  scope: ["openid", "email", "groups", "profile"],
 };
 
 export const ServiceBaseUrl = window.config?.CHOREO_BACKEND_BASE_URL ?? "";

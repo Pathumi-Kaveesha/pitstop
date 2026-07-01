@@ -15,10 +15,9 @@
 // under the License.
 
 import { setUserAuthData, loadPrivileges } from "@slices/authSlice";
-import { RootState, useAppDispatch, useAppSelector } from "@slices/store";
+import { useAppDispatch } from "@slices/store";
 import StatusWithAction from "@components/ui/StatusWithAction";
 import PreLoader from "@components/common/PreLoader";
-import { getEmployeeInfo } from "@slices/employeeSlice/employee";
 import { getRoutesInfo } from "@slices/routeSlice/route";
 import React, { useContext, useEffect, useState } from "react";
 import { Button } from "@mui/material";
@@ -43,8 +42,6 @@ const AppAuthProvider = (props: { children: React.ReactNode }) => {
   const [appState, setAppState] = useState<AppState>("loading");
 
   const dispatch = useAppDispatch();
-  const auth = useAppSelector((state: RootState) => state.auth);
-  const employeeInfo = useAppSelector((state: RootState) => state.employee);
 
   const {
     signIn,
@@ -103,19 +100,15 @@ const AppAuthProvider = (props: { children: React.ReactNode }) => {
   }, [state.isAuthenticated]);
 
   useEffect(() => {
-    if (appState === "active") {
-      if (state.isAuthenticated) {
-        if (auth.userInfo?.email && employeeInfo.state !== "loading") {
-          dispatch(
-            getEmployeeInfo(auth.userInfo?.email ? auth.userInfo?.email : "")
-          );
-        }
-      } else {
-        signIn();
-      }
+    const isSignInInitiated =
+      localStorage.getItem("signInInitiated") === "true";
+
+    if (appState === "active" && !state.isAuthenticated && !isSignInInitiated) {
+      localStorage.setItem("signInInitiated", "true");
+      signIn();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.userInfo]);
+  }, [state.isAuthenticated, appState]);
 
   const refreshToken = () => {
     return new Promise<{ idToken: string }>((resolve) => {

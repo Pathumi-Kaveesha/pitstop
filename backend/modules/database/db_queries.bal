@@ -886,7 +886,7 @@ isolated function getUserIdQuery(string userEmail) returns sql:ParameterizedQuer
 # + employee - User details
 # + return - SQL parameterized query
 isolated function addUserQuery(entity:Employee employee) returns sql:ParameterizedQuery => `
-    INSERT IGNORE INTO
+    INSERT INTO
         user(email, thumbnail, first_name, last_name)
     VALUES(
         ${employee.workEmail},
@@ -894,6 +894,10 @@ isolated function addUserQuery(entity:Employee employee) returns sql:Parameteriz
         ${employee.firstName},
         ${employee.lastName}
     )
+    ON DUPLICATE KEY UPDATE
+        thumbnail = ${employee.employeeThumbnail},
+        first_name = ${employee.firstName},
+        last_name = ${employee.lastName};
 `;
 
 # Query to get comments by content ID.
@@ -902,10 +906,10 @@ isolated function addUserQuery(entity:Employee employee) returns sql:Parameteriz
 # + return - SQL parameterized query
 isolated function getCommentsByContentIdQuery(int contentId) returns sql:ParameterizedQuery => `
     SELECT
-        comment_id as commentId,
-                comment,
-                created_on as createdOn,
-        CONCAT(u.first_name," ",u.last_name) as userName,
+        c.comment_id as commentId,
+        c.comment,
+        c.created_on as createdOn,
+        CONCAT(u.first_name, ' ', u.last_name) as userName,
         u.email as userEmail,
         u.thumbnail as userThumbnail
     FROM 
@@ -913,7 +917,7 @@ isolated function getCommentsByContentIdQuery(int contentId) returns sql:Paramet
     LEFT JOIN user u 
     ON u.user_id = c.user_id 
     WHERE
-        content_id =${contentId} AND is_deleted = false;
+        c.content_id = ${contentId} AND c.is_deleted = false;
 `;
 
 # Query to get required details of all content for report.
