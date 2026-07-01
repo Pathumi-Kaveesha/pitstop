@@ -60,7 +60,7 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const userThumbnail = useAppSelector(
-    (state: RootState) => state.auth.employeeThumbnail
+    (state: RootState) => state.auth.userInfo?.employeeThumbnail
   );
   const currentUserEmail = useAppSelector(
     (state: RootState) => state.auth.userInfo?.email ?? ""
