@@ -56,7 +56,6 @@ function loadMatomoFromCloud(
 
 export default function MatomoTracker() {
   const auth = useAppSelector((s: RootState) => s.auth);
-  // REMOVED: employeeInfo state selector is gone since we read data from auth now
   const route = useAppSelector((s: RootState) => s.route);
   const location = useLocation();
   const lastUrl = useRef("");

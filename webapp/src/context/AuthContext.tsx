@@ -100,7 +100,11 @@ const AppAuthProvider = (props: { children: React.ReactNode }) => {
   }, [state.isAuthenticated]);
 
   useEffect(() => {
-    if (appState === "active" && !state.isAuthenticated) {
+    const isSignInInitiated =
+      localStorage.getItem("signInInitiated") === "true";
+
+    if (appState === "active" && !state.isAuthenticated && !isSignInInitiated) {
+      localStorage.setItem("signInInitiated", "true");
       signIn();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

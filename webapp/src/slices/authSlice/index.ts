@@ -53,22 +53,22 @@ export const authSlice = createSlice({
     setUserAuthData: (state, action: PayloadAction<AuthData>) => {
       state.userInfo = action.payload.userInfo;
       state.idToken = action.payload.idToken;
-      
-      const decoded = action.payload.decodedIdToken as any;
-      state.decodedIdToken = decoded;
 
-      state.department = decoded?.team ?? "";          // 'team' maps to department
-      state.team = decoded?.subTeam ?? "";            // 'subTeam' maps to team
-      state.subTeam = decoded?.unit ?? "";            // 'unit' maps to subTeam
-      state.employeeThumbnail = decoded?.profile ?? ""; // 'profile' maps to thumbnail URL
+      state.decodedIdToken = action.payload.decodedIdToken;
+      const decoded = action.payload.decodedIdToken as Record<string, unknown> | null;
 
-      console.log("LIVE ASGARDEO FRONTEND DATA:", {
-    department: state.department,
-    team: state.team,
-    subTeam: state.subTeam,
-    thumbnail: state.employeeThumbnail
-  });
-    },
+      const stringifyClaim = (value: unknown): string | null => {
+        if (Array.isArray(value)) {
+          return value.filter((item): item is string => typeof item === "string").join(", ");
+        }
+        return typeof value === "string" && value.trim() !== "" ? value : null;
+      };
+
+      state.department = stringifyClaim(decoded?.team);        // 'team' maps to department
+      state.team = stringifyClaim(decoded?.subTeam);          // 'subTeam' maps to team
+      state.subTeam = stringifyClaim(decoded?.unit);          // 'unit' maps to subTeam
+      state.employeeThumbnail = stringifyClaim(decoded?.profile); // 'profile' maps to thumbnail URL
+    },   
   },
 
   extraReducers: (builder) => {
