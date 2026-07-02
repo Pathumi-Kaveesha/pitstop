@@ -23,7 +23,7 @@ final graphql:Client employeeGqlClient = check initializeEmployeeServiceClient()
 #
 # + workEmail - WSO2 Email
 # + return - Employee Info
-public isolated function getEmployee(string workEmail) returns Employee|error {
+public isolated function getEmployee(string workEmail) returns Employee|error? {
 
     //GraphQL query to fetch employee information
     string document = string `
@@ -47,11 +47,7 @@ public isolated function getEmployee(string workEmail) returns Employee|error {
         return handleGraphQlResultError(employeeData);
     }
 
-    Employee? employee = employeeData.data.employee;
-
-    return employee is ()
-        ? error(string `No matching employee found for ${workEmail}`)
-        : employee;
+    return employeeData.data.employee;
 }
 
 # Search for employees by name or email.

@@ -141,56 +141,37 @@ service http:InterceptableService / on new http:Listener(9090) {
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
         if userGroups is error {
             log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
-            return <http:InternalServerError>{
-                body: constants:GET_USER_ROLE_ERROR
-            };
+            return <http:InternalServerError> { body: constants:GET_USER_ROLE_ERROR };
         }
 
         if !authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
             log:printError(constants:UNAUTHORIZED_ACCESS_ERROR);
             return http:FORBIDDEN;
         }
+
+        entity:Employee|error? employee = entity:getEmployee(email);
         
-        // Extracting user claims profile directly from the request context which is set in the JWT interceptor after decoding the token.
-        // This eliminates the slow external GraphQL HR network call (entity:getEmployee)
-        authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
-        if userProfile is error {
-            log:printError(constants:GET_USER_PROFILE_ERROR, userProfile);
-            return <http:InternalServerError> { 
-                body: constants:USER_PROFILE_READ_ERROR
-            };
+        if employee is error {
+            string customError = "Error while fetching employee details";
+            log:printError(customError, employee);
+            return <http:InternalServerError> { body: customError };
         }
-        
-        // Mapping clean, consolidated strings straight out of local memory into the employee record layout
-        entity:Employee employee = {
-            workEmail: email,
-            firstName: userProfile.firstName,
-            lastName: userProfile.lastName,
-            department: userProfile.department,
-            team: userProfile.team,
-            subTeam: userProfile.subTeam,
-            employeeThumbnail: userProfile.employeeThumbnail
-        };
+
+        if employee is () {
+            return <http:NotFound> { body: "Requested employee is not found" };
+        }
         
         error? addResult = database:addUser(employee);
         if addResult is error {
-            log:printError("Error occurred while adding user", addResult);
+            log:printError("Error occurred while syncing user to local database", addResult);
         }
         
         int|error? userIdResult = database:getUserIdByUserEmail(email);
-        if userIdResult is error {
-            log:printError("Error occurred while executing local database mapping lookups", userIdResult);
-            return <http:InternalServerError> { 
-                body: "Error occurred while fetching user" 
-            };
+        if userIdResult is int {
+            employee.userId = userIdResult;
+        } else if userIdResult is error {
+            log:printError("Error occurred while fetching local application database mapping ID", userIdResult);
         }
-
-        if userIdResult is () {
-            return <http:NotFound> { 
-                body: "Requested user is not found" 
-            };
-        }
-        employee.userId = userIdResult;
 
         return employee;
     }
@@ -400,7 +381,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         // OPTIMIZATION: Extracting pre-decoded user profile claims from the context.
-        // Replaces the legacy, blocking external GraphQL HR service call (entity:getEmployee)
+        // Replaces the legacy, blocking external GraphQL HR service call (entity:)
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
             log:printError(constants:GET_USER_PROFILE_ERROR, userProfile);
