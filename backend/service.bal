@@ -152,7 +152,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         entity:Employee|error employee = entity:getEmployee(email);
         
         if employee is error {
-            if employee.message().includes("not found") {
+            if employee.message().includes("No matching employee found") {
                 return <http:NotFound> { body: "Employee profile not found in HR system" };
             }
             
