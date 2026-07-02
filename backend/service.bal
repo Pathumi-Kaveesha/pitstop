@@ -152,13 +152,13 @@ service http:InterceptableService / on new http:Listener(9090) {
         entity:Employee|error? employee = entity:getEmployee(email);
         
         if employee is error {
-            string customError = "Error while fetching employee details from HR subsystem";
+            string customError = "Error while fetching employee details";
             log:printError(customError, employee);
             return <http:InternalServerError> { body: customError };
         }
 
         if employee is () {
-            return <http:NotFound> { body: "Employee profile not found in HR system" };
+            return <http:NotFound> { body: "Requested employee is not found" };
         }
         
         error? addResult = database:addUser(employee);
