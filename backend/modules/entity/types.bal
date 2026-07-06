@@ -38,11 +38,11 @@ public type Employee record {|
     # WSO2 Email
     string workEmail;
     # Department 
-    string department?;
+    string? department?;
     # Team 
-    string team?;
+    string? team?;
     # Sub Team 
-    string subTeam?;
+    string? subTeam?;
     # Employee Thumbnail URL
     string? employeeThumbnail = ();
     json...;
