@@ -43,8 +43,8 @@ interface EmployeeInfoInterface {
   firstName: string;
   lastName: string;
   workEmail: string;
-  department: string;
-  team: string;
+  department: string | null;
+  team: string | null;
   location: string;
   employeeThumbnail: string;
 }
@@ -61,8 +61,13 @@ export const getEmployeeInfo = createAsyncThunk(
         .get(AppConfig.serviceUrls.getEmployeeInfo + employeeEmail)
         .then((resp) => {
           if (resp.status == 200) {
+            const data = resp.data;
             resolve({
-              employeeInfo: resp.data,
+              employeeInfo: {
+                ...data,
+                department: data.department || "—",
+                team: data.team || "—",
+              },
             });
           }
         })
