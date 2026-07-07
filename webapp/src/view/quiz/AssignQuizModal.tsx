@@ -120,15 +120,16 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
       refreshAssignedUsers();
       setPendingUsers([]);
       if (quiz?.quizId) {
+      try {
         const savedTimeLimit = localStorage.getItem(`quiz_time_limit_${quiz.quizId}`);
-        if (savedTimeLimit) {
-          setTimeLimit(savedTimeLimit); 
-        } else {
-          setTimeLimit(""); 
-        }
-      } else {
+        setTimeLimit(savedTimeLimit ?? "");
+      } catch (error) {
+        console.warn("localStorage access denied by browser configurations:", error);
         setTimeLimit("");
       }
+    } else {
+      setTimeLimit("");
+    }
     }
   }, [open, quiz, refreshAssignedUsers]);
 
