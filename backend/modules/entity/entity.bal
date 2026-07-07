@@ -57,7 +57,10 @@ public isolated function getEmployee(string workEmail) returns Employee|error? {
 public isolated function searchEmployees(string searchQuery) returns Employee[]|error {
     string document = string `
         query searchEmployees($searchQuery: String!) {
-            employees(filter: { emailSearchString: $searchQuery }) {
+            employees(filter: { 
+                emailSearchString: $searchQuery,
+                employeeStatus: ["Active", "Marked leaver"]
+            }) {
                 workEmail,
                 firstName,
                 lastName,
@@ -77,11 +80,5 @@ public isolated function searchEmployees(string searchQuery) returns Employee[]|
     if employees is () {
         return <Employee[]>[];
     }
-
-    Employee[] activeEmployees = from var emp in employees
-        let string? status = emp?.employeeStatus
-        where status != Left
-        select emp;
-
-    return activeEmployees;
+    return employees;
 }
