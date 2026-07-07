@@ -57,11 +57,15 @@ public isolated function getEmployee(string workEmail) returns Employee|error? {
 public isolated function searchEmployees(string searchQuery) returns Employee[]|error {
     string document = string `
         query searchEmployees($searchQuery: String!) {
-            employees(filter: { emailSearchString: $searchQuery }) {
+            employees(filter: { 
+                emailSearchString: $searchQuery,
+                employeeStatus: ["Active", "Marked leaver"]
+            }) {
                 workEmail,
                 firstName,
                 lastName,
                 employeeThumbnail,
+                employeeStatus
             }
         }
     `;
@@ -73,5 +77,8 @@ public isolated function searchEmployees(string searchQuery) returns Employee[]|
     }
 
     Employee[]? employees = employeeData.data.employees;
-    return employees is () ? <Employee[]>[] : employees;
+    if employees is () {
+        return <Employee[]>[];
+    }
+    return employees;
 }

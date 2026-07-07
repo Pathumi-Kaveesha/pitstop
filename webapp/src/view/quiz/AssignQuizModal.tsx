@@ -119,9 +119,18 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
     if (open) {
       refreshAssignedUsers();
       setPendingUsers([]);
+      if (quiz?.quizId) {
+      try {
+        const savedTimeLimit = localStorage.getItem(`quiz_time_limit_${quiz.quizId}`);
+        setTimeLimit(savedTimeLimit ?? "");
+      } catch (error) {
+        setTimeLimit("");
+      }
+    } else {
       setTimeLimit("");
     }
-  }, [open, refreshAssignedUsers]);
+    }
+  }, [open, quiz, refreshAssignedUsers]);
 
   useEffect(() => {
     return () => {
@@ -239,6 +248,10 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
     if (!quiz || isQuizOverdue || !isValidTimeLimit) return;
     setIsAssigning(true);
     try {
+      if (timeLimit && quiz?.quizId) {
+        localStorage.setItem(`quiz_time_limit_${quiz.quizId}`, timeLimit);
+      }
+
       const allUserIds = [
         ...currentlyAssignedUsers.map((u) => u.userId),
         ...pendingUsers.map((u) => u.userId),
@@ -352,6 +365,23 @@ const AssignQuizModal: React.FC<Props> = ({ open, quiz, onClose }) => {
           </Typography>{" "}
           to employees. Selected employees will receive an email notification.
         </Typography>
+
+        {isQuizOverdue && (
+          <Box 
+            sx={{ 
+              backgroundColor: theme.palette.mode === "dark" ? alpha(theme.palette.error.main, 0.15) : alpha(theme.palette.error.main, 0.05),
+              border: `1px solid ${theme.palette.error.main}`,
+              borderRadius: "8px",
+              p: 1.5,
+              mb: 3,
+            }}
+          >
+            <Typography variant="body2" sx={{ color: theme.palette.error.main, fontWeight: 600 }}>
+              This quiz has passed its due date. You can no longer make changes or submit responses.
+            </Typography>
+          </Box>
+        )}
+
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2.5 }}>
           <TextField
             label="Time limit (minutes)"
