@@ -62,6 +62,7 @@ public isolated function searchEmployees(string searchQuery) returns Employee[]|
                 firstName,
                 lastName,
                 employeeThumbnail,
+                employeeStatus
             }
         }
     `;
@@ -73,5 +74,14 @@ public isolated function searchEmployees(string searchQuery) returns Employee[]|
     }
 
     Employee[]? employees = employeeData.data.employees;
-    return employees is () ? <Employee[]>[] : employees;
+    if employees is () {
+        return <Employee[]>[];
+    }
+
+    Employee[] activeEmployees = from var emp in employees
+        let string? status = emp?.employeeStatus
+        where status != Left
+        select emp;
+
+    return activeEmployees;
 }

@@ -125,10 +125,16 @@ const QuizAdminDashboard: React.FC = () => {
   }, [adminQuizzesFilter]);
 
   const handleOpenAnalytics = (quizId: number, title: string) => {
+    const quiz = adminQuizzes.find((q) => q.quizId === quizId);
+    if (quiz?.dueDate) {
+      const parsedDueDate = parseDateAsUtc(quiz.dueDate);
+      if (parsedDueDate && parsedDueDate < new Date()) {
+        localStorage.removeItem(`quiz_time_limit_${quizId}`);
+      }
+    }
     setAnalyticsQuizId(quizId);
     setAnalyticsQuizTitle(title);
     dispatch(fetchQuizAnalytics(quizId));
-    const quiz = adminQuizzes.find((q) => q.quizId === quizId);
     const userIds: number[] = (quiz?.assignedUserIds ?? []).slice();
     if (userIds.length > 0) {
       dispatch(fetchAssignedQuizUsers(userIds))
