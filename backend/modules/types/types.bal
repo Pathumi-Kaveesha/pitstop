@@ -19,6 +19,7 @@ import pitstop.constants;
 import ballerina/constraint;
 import ballerina/sql;
 import ballerina/time;
+import ballerina/http;
 
 # Route payload.
 public type RoutePayload record {|
@@ -598,4 +599,19 @@ public type AppInfo record {|
 public type EmployeeSearchPayload record {|
    # Search query for employee search
    string searchQuery;
+|};
+
+# Preview status details.
+public type PreviewStatus record {|
+    # Status classification.
+    string status;
+    # Detailed explanation reason.
+    string reason;
+|};
+
+# HTTP 200 OK wrapper for preview status.
+public type PreviewStatusResponse record {|
+    *http:Ok;
+    # The payload body.
+    PreviewStatus body;
 |};

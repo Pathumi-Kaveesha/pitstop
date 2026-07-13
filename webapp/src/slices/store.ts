@@ -22,6 +22,7 @@ import sectionReducer from "@slices/sectionSlice/section";
 import commonReducer from "@slices/commonSlice/common";
 import customButtonReducer from "@slices/customButtonSlice/customButton";
 import customerTestimonialsReducer from "@slices/customerTestimonialSlice/customerTestimonial";
+import previewReducer from "@slices/previewSlice/preview";
 
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
@@ -41,6 +42,7 @@ export const store = configureStore({
     customButton: customButtonReducer,
     customerTestimonials: customerTestimonialsReducer,
     quiz: quizReducer,
+    preview: previewReducer,
   },
 });
 

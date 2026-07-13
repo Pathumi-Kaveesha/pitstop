@@ -15,7 +15,7 @@
 // under the License.
 
 import { IframeViewerDialogBoxProps } from "@/types/types";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import {
   Dialog,
   IconButton,
@@ -28,8 +28,10 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import LinkOffIcon from "@mui/icons-material/LinkOff";
 import { useAppDispatch, useAppSelector, RootState } from "@slices/store";
 import { getBlockedIframeUrls } from "@slices/pageSlice/page";
+import { verifyLinkPreview, resetPreviewStatus } from "@slices/previewSlice/preview";
 import { CONTENT_STATE_IDLE, CONTENT_STATE_FAILED } from "@config/constant";
 import { isGoogleDriveFolderLink } from "@utils/utils";
 import { FILETYPE, CONTENT_SUBTYPE } from "@utils/types";
@@ -48,19 +50,14 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
   contentType,
   contentSubtype,
 }) => {
-  const [iframeError, setIframeError] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const loadAttemptedRef = useRef(false);
   const theme = useTheme();
   const dispatch = useAppDispatch();
-  const blockedUrls = useAppSelector(
-    (state: RootState) => state.page.blockedIframeUrls,
-  );
-  const blockedUrlsState = useAppSelector(
-    (state: RootState) => state.page.blockedUrlsState,
+  
+  const blockedUrls = useAppSelector((state: RootState) => state.page.blockedIframeUrls);
+  const blockedUrlsState = useAppSelector((state: RootState) => state.page.blockedUrlsState);
+  
+  const { state: backendState, previewInfo } = useAppSelector(
+    (state: RootState) => state.preview
   );
 
   const isBlockedUrl = (url: string): boolean => {
@@ -120,7 +117,7 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
   };
 
   const isGoogleDriveFolder = isGoogleDriveFolderLink(link);
-  const isBlocked = isBlockedUrl(link);
+  const isLocalBlocked = isBlockedUrl(link);
   const shouldCropIframe = contentType === FILETYPE.External_Link && (contentSubtype === CONTENT_SUBTYPE.Pdf || contentSubtype === CONTENT_SUBTYPE.Video);
 
   useEffect(() => {
@@ -133,76 +130,203 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
   }, [dispatch, blockedUrlsState]);
 
   useEffect(() => {
-    if (open) {
-      if (isGoogleDriveFolder || isBlocked) {
-        setIframeError(true);
-        setIsLoading(false);
-        return;
+    if (open && link) {
+      if (!isGoogleDriveFolder && !isLocalBlocked) {
+        dispatch(verifyLinkPreview(link));
       }
-
-      setIframeError(false);
-      setIsLoading(true);
-      loadAttemptedRef.current = false;
-      errorTimeoutRef.current = setTimeout(() => {
-        if (!loadAttemptedRef.current) {
-          setIframeError(true);
-          setIsLoading(false);
-        }
-      }, 5000);
-
-      return () => {
-        if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
-        if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-      };
-    } else {
-      setIframeError(false);
-      setIsLoading(true);
-      loadAttemptedRef.current = false;
     }
-  }, [open, link, isGoogleDriveFolder, isBlocked, blockedUrls]);
+    return () => {
+      if (!open) {
+        dispatch(resetPreviewStatus());
+      }
+    };
+  }, [open, link, isGoogleDriveFolder, isLocalBlocked, dispatch]);
 
   const handleOpenInNewTab = () => {
     window.open(originalUrl, "_blank", "noopener, noreferrer");
   };
 
-  const handleIframeLoad = () => {
-    if (loadTimeoutRef.current) {
-      clearTimeout(loadTimeoutRef.current);
+  const renderContent = () => {
+    if (backendState === "loading") {
+      return (
+        <Box
+          sx={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: theme.palette.background.default,
+            zIndex: 10,
+          }}
+        >
+          <CircularProgress />
+        </Box>
+      );
     }
-    if (errorTimeoutRef.current) {
-      clearTimeout(errorTimeoutRef.current);
-    }
 
-    loadAttemptedRef.current = true;
+    const isGoogleDriveFile = link?.includes("drive.google.com");
 
-    loadTimeoutRef.current = setTimeout(() => {
-      setIsLoading(false);
+    // Path A: The URL is live, but framing is restricted by rules or security protections (including file storage wrappers)
+    const isRestrictedState = 
+      isGoogleDriveFolder || 
+      isLocalBlocked || 
+      previewInfo?.status === "RESTRICTED" ||
+      (previewInfo?.status === "BROKEN" && isGoogleDriveFile);
 
-      try {
-        const iframeDoc = iframeRef.current?.contentDocument;
-        const bodyText = iframeDoc?.body?.innerText || "";
-
-        if (
-          bodyText.toLowerCase().includes("refused to connect") ||
-          bodyText.toLowerCase().includes("cannot be displayed") ||
-          bodyText.toLowerCase().includes("this page can't be displayed")
-        ) {
-          setIframeError(true);
-        } else {
-          setIframeError(false);
-        }
-      } catch {
-        setIframeError(false);
+    if (isRestrictedState) {
+      let errorMessage = "This content cannot be displayed in an embedded preview. Click the button below to open it in a new window.";
+      
+      if (isGoogleDriveFolder || isGoogleDriveFile) {
+        errorMessage = "Google Drive items cannot be previewed directly inside this embedded frame. Click the button below to safely open the resource in a new window.";
+      } else if (isLocalBlocked || previewInfo?.status === "RESTRICTED") {
+        errorMessage = "This content cannot be embedded due to security restrictions. Click the button below to open it in a new window.";
       }
-    }, 300);
-  };
 
-  const handleIframeError = () => {
-    setIframeError(true);
-    setIsLoading(false);
+      return (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100%",
+            gap: 3,
+            padding: 4,
+            textAlign: "center",
+          }}
+        >
+          <ErrorOutlineIcon
+            sx={{
+              fontSize: 64,
+              color: theme.palette.warning.main,
+            }}
+          />
+          <Typography
+            variant="h6"
+            sx={{
+              color: theme.palette.text.primary,
+              fontWeight: 500,
+            }}
+          >
+            Can't open in preview
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              color: theme.palette.text.secondary,
+              maxWidth: "400px",
+            }}
+          >
+            {errorMessage}
+          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={<OpenInNewIcon />}
+            onClick={handleOpenInNewTab}
+            sx={{
+              mt: 2,
+              px: 4,
+              py: 1.5,
+              textTransform: "none",
+              fontSize: "1rem",
+              color: theme.palette.common.white,
+            }}
+          >
+            Open in New Window
+          </Button>
+        </Box>
+      );
+    }
 
-    if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-    if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+    // Path B: The URL link layout is entirely dead or invalid (excluding structural file configurations)
+    const isBrokenState = (previewInfo?.status === "BROKEN" && !isGoogleDriveFile) || backendState === "failed";
+    if (isBrokenState) {
+      return (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100%",
+            gap: 3,
+            padding: 4,
+            textAlign: "center",
+          }}
+        >
+          <LinkOffIcon
+            sx={{
+              fontSize: 64,
+              color: theme.palette.error.main,
+            }}
+          />
+          <Typography
+            variant="h6"
+            sx={{
+              color: theme.palette.text.primary,
+              fontWeight: 500,
+            }}
+          >
+            Invalid Link Layout Detected
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              color: theme.palette.text.secondary,
+              maxWidth: "400px",
+            }}
+          >
+            The website link provided appears to be broken, incorrect, or temporarily offline. Please verify the URL layout and try again.
+          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={handleClose}
+            sx={{
+              mt: 2,
+              px: 4,
+              py: 1.5,
+              textTransform: "none",
+              fontSize: "1rem",
+              backgroundColor: theme.palette.error.main,
+              color: theme.palette.common.white,
+              "&:hover": {
+                backgroundColor: theme.palette.error.dark,
+              },
+            }}
+          >
+            Go Back
+          </Button>
+        </Box>
+      );
+    }
+
+    // Path C: The validation succeeded cleanly
+    if (previewInfo?.status === "SUCCESS") {
+      return (
+        <iframe
+          title="Content Preview"
+          src={link}
+          sandbox="allow-same-origin allow-scripts allow-presentation allow-forms"
+          style={{
+            border: "none",
+            display: "block",
+            width: shouldCropIframe ? "110%" : "100%",
+            height: "100%",
+            position: "absolute",
+            top: 0,
+            left: shouldCropIframe ? "-5%" : 0,
+          }}
+        />
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -283,104 +407,7 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
             overflow: "hidden",
           }}
         >
-          {isLoading && !iframeError && (
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: theme.palette.background.default,
-                zIndex: 10,
-              }}
-            >
-              <CircularProgress />
-            </Box>
-          )}
-
-          {iframeError ? (
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                gap: 3,
-                padding: 4,
-                textAlign: "center",
-              }}
-            >
-              <ErrorOutlineIcon
-                sx={{
-                  fontSize: 64,
-                  color: theme.palette.warning.main,
-                }}
-              />
-              <Typography
-                variant="h6"
-                sx={{
-                  color: theme.palette.text.primary,
-                  fontWeight: 500,
-                }}
-              >
-                Can't open in preview
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: theme.palette.text.secondary,
-                  maxWidth: "400px",
-                }}
-              >
-                {isGoogleDriveFolder
-                  ? "Google Drive folder links cannot be previewed. Click the button below to open it in a new window."
-                  : isBlocked
-                    ? "This content cannot be embedded due to security restrictions. Click the button below to open it in a new window."
-                    : "This content cannot be displayed in an embedded preview. Click the button below to open it in a new window."}
-              </Typography>
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<OpenInNewIcon />}
-                onClick={handleOpenInNewTab}
-                sx={{
-                  mt: 2,
-                  px: 4,
-                  py: 1.5,
-                  textTransform: "none",
-                  fontSize: "1rem",
-                  color: theme.palette.common.white,
-                }}
-              >
-                Open in New Window
-              </Button>
-            </Box>
-          ) : !isGoogleDriveFolder && !isBlocked ? (
-              <iframe
-                ref={iframeRef}
-                title="Content Preview"
-                src={link}
-                sandbox="allow-same-origin allow-scripts allow-presentation allow-forms"
-                onLoad={handleIframeLoad}
-                onError={handleIframeError}
-                style={{
-                  border: "none",
-                  display: "block",
-                  opacity: isLoading ? 0 : 1,
-                  transition: "opacity 0.3s ease-in-out",
-                  width: shouldCropIframe ? "110%" : "100%",
-                  height: "100%",
-                  position: "absolute",
-                  top: 0,
-                  left: shouldCropIframe ? "-5%" : 0,
-                }}
-              />
-          ) : null}
+          {renderContent()}
         </Box>
       </Box>
     </Dialog>
