@@ -3357,7 +3357,7 @@ service http:InterceptableService / on new http:Listener(9090) {
                 body: { status: "BROKEN", reason: "Target Application Code Crashed (500)" }
             };
         } 
-        else if (statusCode != 200) {
+        else if (statusCode >= 400) {
             return <types:PreviewStatusResponse>{
                 body: { status: "BROKEN", reason: "Unexpected Server Status: " + statusCode.toString() }
             };
