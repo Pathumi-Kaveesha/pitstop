@@ -120,6 +120,7 @@ export const AppConfig = {
     getUserDrillDown: (quizId: number, userId: number) => ServiceBaseUrl + "/quizzes/" + quizId + "/submissions/" + userId,
     assignUsersToQuiz: (quizId: number) => ServiceBaseUrl + "/quizzes/" + quizId + "/assignees",
     unassignUsersFromQuiz: (quizId: number) => ServiceBaseUrl + "/quizzes/" + quizId + "/assignees",
+    verifyLinkPreview: () => ServiceBaseUrl + "/verify-preview",
     
   },
 };

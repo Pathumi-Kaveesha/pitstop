@@ -3306,4 +3306,87 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         return result;
     }
+
+    # Validates an external URL for security, availability, and embed layout safety.
+    #
+    # + url - The target website link sent as a query parameter from the React frontend
+    # + return - Returns a 200 OK containing the link analysis report, or a 400 Bad Request if syntax is invalid
+    resource function get verify\-preview(string url) returns types:PreviewStatusResponse|http:BadRequest {
+
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            return <http:BadRequest>{
+                body: { message: "Invalid scheme layout. URL must start with http:// or https://" }
+            };
+        }
+
+        http:Client|error targetClient = new (url, {
+            timeout: 15.0
+        });
+
+        if targetClient is error {
+            return <types:PreviewStatusResponse>{
+                body: { status: "BROKEN", reason: "Client Initialization Failure (ClientInitializationError)" }
+            };
+        }
+
+        http:Response|error response = targetClient->head("");
+
+        if response is error {
+            response = targetClient->get("");
+        } else if (response.statusCode == 405 || response.statusCode == 400) {
+            response = targetClient->get("");
+        }
+
+        if response is error {
+            if response is http:IdleTimeoutError {
+                return <types:PreviewStatusResponse>{
+                    body: { status: "BROKEN", reason: "InitializationInboundConnectTimeoutError - Remote Host Offline (Timeout)" }
+                };
+            } else {
+                return <types:PreviewStatusResponse>{
+                    body: { status: "BROKEN", reason: "RemoteConnectError/Network Error: " + response.message() }
+                };
+            }
+        }
+
+        int statusCode = response.statusCode;
+        if (statusCode == 404) {
+            return <types:PreviewStatusResponse>{
+                body: { status: "BROKEN", reason: "Resource Path Not Found (404)" }
+            };
+        } 
+        else if (statusCode >= 500) {
+            return <types:PreviewStatusResponse>{
+                body: { status: "BROKEN", reason: "Target Application Code Crashed (500)" }
+            };
+        } 
+        else if (statusCode >= 400) {
+            return <types:PreviewStatusResponse>{
+                body: { status: "BROKEN", reason: "Unexpected Server Status: " + statusCode.toString() }
+            };
+        }
+
+        string|error xFrameOptions = response.getHeader("X-Frame-Options");
+        if xFrameOptions is string {
+            string upperHeader = xFrameOptions.toUpperAscii();
+            if (upperHeader == "DENY" || upperHeader == "SAMEORIGIN") {
+                return <types:PreviewStatusResponse>{
+                    body: { status: "RESTRICTED", reason: "Embedding blocked via X-Frame-Options: " + xFrameOptions }
+                };
+            }
+        }
+
+        string|error csp = response.getHeader("Content-Security-Policy");
+        if csp is string {
+            if (csp.includes("frame-ancestors")) {
+                return <types:PreviewStatusResponse>{
+                    body: { status: "RESTRICTED", reason: "Embedding restricted via Content-Security-Policy rules" }
+                };
+            }
+        }
+
+        return <types:PreviewStatusResponse>{
+            body: { status: "SUCCESS", reason: "URL is healthy and safe to embed" }
+        };
+    }
 }
