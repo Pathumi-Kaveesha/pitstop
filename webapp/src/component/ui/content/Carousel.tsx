@@ -39,7 +39,7 @@ const SIDE_OFFSET_X = 80;
 const SIDE_SCALE = 0.85;
 const CENTER_SCALE = 1.0;
 const ARROW_SIZE = 38;
-const ARROW_INSET = 2;
+const ARROW_OUTSET = -50; 
 
 const Carousel: React.FC<CarouselProps> = ({
   contentData,
@@ -78,7 +78,7 @@ const Carousel: React.FC<CarouselProps> = ({
     return () => {
       isMountedRef.current = false;
       if (transitionTimerRef.current) {
-        clearTimeout(transitionTimerRef.current);
+         clearTimeout(transitionTimerRef.current);
       }
       if (autoScrollTimerRef.current) {
         clearTimeout(autoScrollTimerRef.current);
@@ -214,7 +214,7 @@ const Carousel: React.FC<CarouselProps> = ({
             sx={{
               position: "absolute",
               top: `calc(${CARD_H / 2}px)`,
-              left: ARROW_INSET,
+              left: ARROW_OUTSET, 
               transform: "translateY(-50%)",
               width: ARROW_SIZE,
               height: ARROW_SIZE,
@@ -229,11 +229,11 @@ const Carousel: React.FC<CarouselProps> = ({
                 bgcolor: alpha(theme.palette.background.paper, 0.98),
                 transform: "translateY(-50%) scale(1.1)",
               },
-              "&:disabled": {
-                opacity: 0.5,
+              "&:disabled": { 
+                opacity: 0.5, 
               },
-              transition:
-                "opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease",
+              transition: 
+              "opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease",
             }}
           >
             <ArrowBackIosIcon fontSize="small" sx={{ ml: 0.5 }} />
@@ -247,7 +247,7 @@ const Carousel: React.FC<CarouselProps> = ({
             sx={{
               position: "absolute",
               top: `calc(${CARD_H / 2}px)`,
-              right: ARROW_INSET,
+              right: ARROW_OUTSET, 
               transform: "translateY(-50%)",
               width: ARROW_SIZE,
               height: ARROW_SIZE,
@@ -262,11 +262,11 @@ const Carousel: React.FC<CarouselProps> = ({
                 bgcolor: alpha(theme.palette.background.paper, 0.98),
                 transform: "translateY(-50%) scale(1.1)",
               },
-              "&:disabled": {
-                opacity: 0.5,
+              "&:disabled": { 
+                opacity: 0.5, 
               },
-              transition:
-                "opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease",
+              transition: 
+              "opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease",
             }}
           >
             <ArrowForwardIosIcon fontSize="small" />
@@ -303,16 +303,16 @@ const Carousel: React.FC<CarouselProps> = ({
                 height: i === current ? 12 : 10,
                 borderRadius: "50%",
                 cursor: isTransitioning ? "not-allowed" : "pointer",
-                bgcolor:
-                  i === current
-                    ? theme.palette.primary.main
-                    : alpha(theme.palette.text.primary, 0.28),
+                bgcolor: 
+                i === current 
+                  ? theme.palette.primary.main 
+                  : alpha(theme.palette.text.primary, 0.28),
                 transition: "all 0.3s ease",
                 "&:hover": {
-                  bgcolor:
-                    i === current
-                      ? theme.palette.primary.main
-                      : alpha(theme.palette.text.primary, 0.45),
+                  bgcolor: 
+                    i === current 
+                    ? theme.palette.primary.main 
+                    : alpha(theme.palette.text.primary, 0.45),
                   transform: "scale(1.15)",
                 },
               }}
