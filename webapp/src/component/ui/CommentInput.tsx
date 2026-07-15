@@ -216,14 +216,14 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
 
   const handleRemoveMention = (email: string) => {
     const targetUser = mentionedUsers.find((u) => u.email === email);
-    
+
     if (targetUser) {
       const mentionString = `@${targetUser.name}`;
       setText((prevText) => {
-        return prevText.replace(mentionString, "").replace(/\s+/g, " ").trimStart();
+        return prevText.replace(mentionString, "").replace(/^ +/, "");
       });
     }
-
+    
     setMentionedUsers((prev: MentionedUser[]) =>
       prev.filter((u: MentionedUser) => u.email !== email)
     );

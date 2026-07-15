@@ -39,6 +39,7 @@ const SIDE_OFFSET_X = 80;
 const SIDE_SCALE = 0.85;
 const CENTER_SCALE = 1.0;
 const ARROW_SIZE = 38;
+const ARROW_INSET = 2;   
 const ARROW_OUTSET = -50; 
 
 const Carousel: React.FC<CarouselProps> = ({
@@ -214,7 +215,10 @@ const Carousel: React.FC<CarouselProps> = ({
             sx={{
               position: "absolute",
               top: `calc(${CARD_H / 2}px)`,
-              left: ARROW_OUTSET, 
+              left: {
+                xs: ARROW_INSET,  
+                md: ARROW_OUTSET, 
+              }, 
               transform: "translateY(-50%)",
               width: ARROW_SIZE,
               height: ARROW_SIZE,
@@ -247,7 +251,10 @@ const Carousel: React.FC<CarouselProps> = ({
             sx={{
               position: "absolute",
               top: `calc(${CARD_H / 2}px)`,
-              right: ARROW_OUTSET, 
+              right: {
+                xs: ARROW_INSET,  
+                md: ARROW_OUTSET, 
+              }, 
               transform: "translateY(-50%)",
               width: ARROW_SIZE,
               height: ARROW_SIZE,
