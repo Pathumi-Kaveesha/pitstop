@@ -135,12 +135,13 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
         dispatch(verifyLinkPreview(link));
       }
     }
-    return () => {
-      if (!open) {
-        dispatch(resetPreviewStatus());
-      }
-    };
   }, [open, link, isGoogleDriveFolder, isLocalBlocked, dispatch]);
+
+  useEffect(() => {
+    if (!open) {
+      dispatch(resetPreviewStatus());
+    }
+  }, [open, dispatch]);
 
   const handleOpenInNewTab = () => {
     window.open(originalUrl, "_blank", "noopener, noreferrer");
@@ -272,7 +273,7 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
               fontWeight: 500,
             }}
           >
-            Invalid Link Layout Detected
+            Link can't be opened
           </Typography>
           <Typography
             variant="body2"
@@ -281,7 +282,7 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
               maxWidth: "400px",
             }}
           >
-            The website link provided appears to be broken, incorrect, or temporarily offline. Please verify the URL layout and try again.
+            This link looks broken or the site is temporarily unavailable. Please check the URL and try again.
           </Typography>
           <Button
             variant="contained"
