@@ -77,7 +77,10 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
   const handleCommentChange = useCallback(
     (newText: string) => {
       setText(newText);
-
+      setMentionedUsers((prev) =>
+        prev.filter((user) => newText.toLowerCase().includes(`@${user.name.toLowerCase()}`))
+      );
+      
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -122,14 +125,16 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
   const selectMention = useCallback(
     (suggestion: EmployeeSuggestion) => {
       const textWithoutQuery = text.replace(/@[\w]*$/, "");
-      const displayName = `${suggestion.firstName} ${suggestion.lastName} `;
-      const newText = textWithoutQuery + displayName;
+      const rawName = `${suggestion.firstName} ${suggestion.lastName}`;
+      const newText = textWithoutQuery + `@${rawName} `; 
 
       const mentionedUser: MentionedUser = {
-        name: `${suggestion.firstName} ${suggestion.lastName}`,
+        name: rawName,
         email: suggestion.workEmail,
         thumbnail: suggestion.employeeThumbnail,
       };
+
+      setText(newText);
 
       setMentionedUsers((prev) => {
         if (!prev.some((u) => u.email === mentionedUser.email)) {
@@ -138,7 +143,6 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
         return prev;
       });
 
-      setText(newText);
       setSuggestions([]);
     },
     [text]
@@ -211,6 +215,15 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
   };
 
   const handleRemoveMention = (email: string) => {
+    const targetUser = mentionedUsers.find((u) => u.email === email);
+    
+    if (targetUser) {
+      const mentionString = `@${targetUser.name}`;
+      setText((prevText) => {
+        return prevText.replace(mentionString, "").replace(/\s+/g, " ").trimStart();
+      });
+    }
+
     setMentionedUsers((prev: MentionedUser[]) =>
       prev.filter((u: MentionedUser) => u.email !== email)
     );
@@ -510,7 +523,7 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
                 </Box>
               ) : (
                 <>
-                  {/* subtle heading */}
+                {/* subtle heading */}
                   <Box sx={{ px: 1.5, pt: 0.75, pb: 0.5 }}>
                     <Typography
                       sx={{
