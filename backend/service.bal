@@ -3320,7 +3320,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         http:Client|error targetClient = new (url, {
-            timeout: 10.0
+            timeout: 15.0
         });
 
         if targetClient is error {
