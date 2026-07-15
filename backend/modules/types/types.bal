@@ -601,10 +601,13 @@ public type EmployeeSearchPayload record {|
    string searchQuery;
 |};
 
+# Previewtatus states.
+public type PreviewStatusType "SUCCESS"|"BROKEN"|"RESTRICTED";
+
 # Preview status details.
 public type PreviewStatus record {|
     # Status classification.
-    string status;
+    PreviewStatusType status;
     # Detailed explanation reason.
     string reason;
 |};
