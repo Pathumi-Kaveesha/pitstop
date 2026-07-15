@@ -3329,17 +3329,20 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        http:Response|error response = targetClient->get("");
+        http:Response|error response = targetClient->head("");
 
         if response is error {
-            // Checked against http:IdleTimeoutError first to isolate latency issues
+            response = targetClient->get("");
+        } else if (response.statusCode == 405 || response.statusCode == 400) {
+            response = targetClient->get("");
+        }
+
+        if response is error {
             if response is http:IdleTimeoutError {
                 return <types:PreviewStatusResponse>{
                     body: { status: "BROKEN", reason: "InitializationInboundConnectTimeoutError - Remote Host Offline (Timeout)" }
                 };
-            } 
-            // Handles DNS structural drops, socket connections refused, or firewall restrictions
-            else {
+            } else {
                 return <types:PreviewStatusResponse>{
                     body: { status: "BROKEN", reason: "RemoteConnectError/Network Error: " + response.message() }
                 };
