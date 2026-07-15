@@ -55,7 +55,9 @@ export const verifyLinkPreview = createAsyncThunk(
             resolve({
               previewInfo: resp.data,
             });
+            return;
           }
+          reject(new Error(`Unexpected response status: ${resp.status}`));
         })
         .catch((error: Error) => {
           reject(error);
