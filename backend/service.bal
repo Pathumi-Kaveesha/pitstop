@@ -2304,6 +2304,25 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
+        // Block publishing if the target quiz is overdue
+        if payload.status != () && payload.status.toString() == "PUBLISHED" {
+            database:Quiz|error completeQuiz = database:getQuizById(quizId);
+            if completeQuiz is database:Quiz {
+                string? dueDateStr = completeQuiz.dueDate;
+                if dueDateStr is string && dueDateStr.trim() != "" {
+                    time:Utc|error dueUtc = time:utcFromString(dueDateStr);
+                    if dueUtc is time:Utc {
+                        decimal diff = time:utcDiffSeconds(dueUtc, time:utcNow());
+                        if diff < 0d {
+                            return <http:BadRequest>{
+                                body: {message: "Cannot publish an overdue quiz. Please update the due date first."}
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
         // If PUBLISHED — only allow status changes in the payload, block everything else
         if currentStatus.toString() == database:PUBLISHED {
             boolean hasOtherFields =
