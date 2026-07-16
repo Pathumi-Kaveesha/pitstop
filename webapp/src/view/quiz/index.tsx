@@ -737,31 +737,48 @@ const QuizAdminDashboard: React.FC = () => {
                             </Button>
                           )}
                           {quiz.status !== "PUBLISHED" && (
-                            <Tooltip title={quiz.totalQuestions === 0 ? "Add questions to publish" : ""} arrow placement="top">
-                              <span>
-                                <Button
-                                  size="small"
-                                  variant="contained"
-                                  disabled={quiz.totalQuestions === 0}
-                                  onClick={() => handlePublish(quiz.quizId)}
-                                  sx={{
-                                    textTransform: "none",
-                                    borderRadius: 3,
-                                    backgroundColor: theme.palette.primary.main,
-                                    color: theme.palette.common.white,
-                                    "&:hover": {
-                                      backgroundColor: theme.palette.primary.dark,
-                                    },
-                                    "&.Mui-disabled": {
-                                      backgroundColor: theme.palette.action.disabledBackground,
-                                      color: theme.palette.action.disabled,
-                                    },
-                                  }}
+                            (() => {
+                              const parsedDue = parseDateAsUtc(quiz.dueDate);
+                              const isQuizOverdue = !!parsedDue && parsedDue < new Date();
+
+                              return (
+                                <Tooltip 
+                                  title={
+                                    quiz.totalQuestions === 0 
+                                      ? "Add questions to publish" 
+                                      : isQuizOverdue 
+                                        ? "This quiz is overdue. Please change the due date to publish." 
+                                        : ""
+                                  } 
+                                  arrow 
+                                  placement="top"
                                 >
-                                  Publish
-                                </Button>
-                              </span>
-                            </Tooltip>
+                                  <span>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      disabled={quiz.totalQuestions === 0 || isQuizOverdue}
+                                      onClick={() => handlePublish(quiz.quizId)}
+                                      sx={{
+                                        textTransform: "none",
+                                        borderRadius: 3,
+                                        backgroundColor: theme.palette.primary.main,
+                                        color: theme.palette.common.white,
+                                        "&:hover": {
+                                          backgroundColor: theme.palette.primary.dark,
+                                        },
+                                        "&.Mui-disabled": {
+                                          backgroundColor: theme.palette.action.disabledBackground,
+                                          color: theme.palette.action.disabled,
+                                        },
+                                      }}
+                                    >
+                                      Publish
+                                    </Button>
+                                  </span>
+                                </Tooltip>
+                              );
+                            })()
                           )}
                           {quiz.status !== "PUBLISHED" && (
                             <Button

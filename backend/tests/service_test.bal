@@ -87,3 +87,55 @@ public function postCollectionsTest() returns error? {
         test:assertFail("Assertion Failed! : Malformed response");
     }
 }
+
+
+# Test patch quizzes validation for overdue items.
+#
+# + return - Error if so
+@test:Config
+public function patchQuizOverdueValidationTest() returns error? {
+    // Missing Authorization Header Test.
+    http:Response errorResponse = check testClient->/quizzes/[1].patch(
+        message = {
+            "dueDate": "2000-01-01T00:00:00Z",
+            "status": "PUBLISHED"
+        }
+    );
+    test:assertEquals(
+        errorResponse.statusCode, 
+        http:STATUS_INTERNAL_SERVER_ERROR, 
+        "Assertion Failed! : patch quiz HeaderTest"
+    );
+
+    // Overdue Block Path (Valid Auth, Expired Due Date).
+    http:Response validationResponse = check testClient->/quizzes/[1].patch(
+        message = {
+            "dueDate": "2000-01-01T00:00:00Z",
+            "status": "PUBLISHED"
+        },
+        headers = {"x-jwt-assertion": jwtKey}
+    );
+    test:assertEquals(
+        validationResponse.statusCode,
+        http:STATUS_BAD_REQUEST,
+        string `Assertion Failed! : ${(check validationResponse.getJsonPayload()).toString()}`
+    );
+
+    // Response Validation.
+    json|error responseData = validationResponse.getJsonPayload();
+    if responseData is error {
+        test:assertFail("Assertion Failed! : JSON response expected");
+    }
+
+    // Verify specific domain error body rule.
+    json|error messageField = responseData.message;
+    if messageField is json {
+        test:assertEquals(
+            messageField.toString(), 
+            "Cannot publish an overdue quiz. Please update the due date to a future time first.",
+            "Assertion Failed! : Unexpected error message payload description returned"
+        );
+    } else {
+        test:assertFail("Assertion Failed! : Expected a 'message' field in error payload response");
+    }
+}

@@ -2304,7 +2304,46 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        // If PUBLISHED — only allow status changes in the payload, block everything else
+        // Block publishing if the target quiz is overdue
+        if payload.status != () && payload.status.toString() == database:PUBLISHED.toString() {
+            string? targetDueDateStr = ();
+            
+            if payload.dueDate != () {
+                targetDueDateStr = payload.dueDate;
+            } else {
+                database:Quiz|error completeQuiz = database:getQuizById(quizId);
+                if completeQuiz is database:Quiz {
+                    targetDueDateStr = completeQuiz.dueDate;
+                } else {
+                    string dbError = "Error while fetching quiz details for validation";
+                    log:printError(dbError, completeQuiz);
+                    return <http:InternalServerError>{
+                        body: {message: dbError}
+                    };
+                }
+            }
+
+            if targetDueDateStr is string && targetDueDateStr.trim() != "" {
+                time:Utc|error dueUtc = time:utcFromString(targetDueDateStr);
+                
+                if dueUtc is error {
+                    string parseError = "Invalid due date format. Please update the due date first.";
+                    log:printError(parseError, dueUtc);
+                    return <http:BadRequest>{
+                        body: {message: parseError}
+                    };
+                }
+
+                decimal diff = time:utcDiffSeconds(dueUtc, time:utcNow());
+                if diff <= 0d {
+                    return <http:BadRequest>{
+                        body: {message: "Cannot publish an overdue quiz. Please update the due date to a future time first."}
+                    };
+                }
+            }
+        }
+
+        // If currently PUBLISHED — only allow status changes in the payload, block everything else
         if currentStatus.toString() == database:PUBLISHED {
             boolean hasOtherFields =
                     payload.title != () ||
