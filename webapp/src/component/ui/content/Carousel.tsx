@@ -39,7 +39,7 @@ const SIDE_OFFSET_X = 80;
 const SIDE_SCALE = 0.85;
 const CENTER_SCALE = 1.0;
 const ARROW_SIZE = 38;
-const ARROW_INSET = 2;
+const ARROW_OUTSET_DESKTOP = -50;
 
 const Carousel: React.FC<CarouselProps> = ({
   contentData,
@@ -178,6 +178,8 @@ const Carousel: React.FC<CarouselProps> = ({
     <Box
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onTouchStart={() => setHover(true)}
+      onTouchEnd={() => setTimeout(() => setHover(false), 2000)}
       sx={{ position: "relative", width: CARD_W, overflow: "visible" }}
     >
       <Box
@@ -213,8 +215,14 @@ const Carousel: React.FC<CarouselProps> = ({
             disabled={isTransitioning}
             sx={{
               position: "absolute",
-              top: `calc(${CARD_H / 2}px)`,
-              left: ARROW_INSET,
+              top: {
+                xs: `calc(${CARD_H / 2}px - 70px)`, 
+                md: `calc(${CARD_H / 2}px)`
+              },
+              left: {
+                xs: 6,
+                md: ARROW_OUTSET_DESKTOP
+              }, 
               transform: "translateY(-50%)",
               width: ARROW_SIZE,
               height: ARROW_SIZE,
@@ -229,11 +237,11 @@ const Carousel: React.FC<CarouselProps> = ({
                 bgcolor: alpha(theme.palette.background.paper, 0.98),
                 transform: "translateY(-50%) scale(1.1)",
               },
-              "&:disabled": {
-                opacity: 0.5,
+              "&:disabled": { 
+                opacity: 0.5, 
               },
-              transition:
-                "opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease",
+              transition: 
+              "opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease",
             }}
           >
             <ArrowBackIosIcon fontSize="small" sx={{ ml: 0.5 }} />
@@ -246,8 +254,14 @@ const Carousel: React.FC<CarouselProps> = ({
             disabled={isTransitioning}
             sx={{
               position: "absolute",
-              top: `calc(${CARD_H / 2}px)`,
-              right: ARROW_INSET,
+              top: {
+                xs: `calc(${CARD_H / 2}px - 70px)`, 
+                md: `calc(${CARD_H / 2}px)`
+              },
+              right: {
+                xs: 6,
+                md: ARROW_OUTSET_DESKTOP
+              }, 
               transform: "translateY(-50%)",
               width: ARROW_SIZE,
               height: ARROW_SIZE,
@@ -262,11 +276,11 @@ const Carousel: React.FC<CarouselProps> = ({
                 bgcolor: alpha(theme.palette.background.paper, 0.98),
                 transform: "translateY(-50%) scale(1.1)",
               },
-              "&:disabled": {
-                opacity: 0.5,
+              "&:disabled": { 
+                opacity: 0.5, 
               },
-              transition:
-                "opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease",
+              transition: 
+              "opacity 0.3s ease, visibility 0.3s ease, transform 0.2s ease, background-color 0.2s ease",
             }}
           >
             <ArrowForwardIosIcon fontSize="small" />
@@ -303,16 +317,16 @@ const Carousel: React.FC<CarouselProps> = ({
                 height: i === current ? 12 : 10,
                 borderRadius: "50%",
                 cursor: isTransitioning ? "not-allowed" : "pointer",
-                bgcolor:
-                  i === current
-                    ? theme.palette.primary.main
-                    : alpha(theme.palette.text.primary, 0.28),
+                bgcolor: 
+                i === current 
+                  ? theme.palette.primary.main 
+                  : alpha(theme.palette.text.primary, 0.28),
                 transition: "all 0.3s ease",
                 "&:hover": {
-                  bgcolor:
-                    i === current
-                      ? theme.palette.primary.main
-                      : alpha(theme.palette.text.primary, 0.45),
+                  bgcolor: 
+                    i === current 
+                    ? theme.palette.primary.main 
+                    : alpha(theme.palette.text.primary, 0.45),
                   transform: "scale(1.15)",
                 },
               }}
