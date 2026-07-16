@@ -223,8 +223,8 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
       setText((prevText) => {
         const withSpace = `${mentionString} `;
         return prevText.includes(withSpace)
-          ? prevText.replace(withSpace, "").trimStart()
-          : prevText.replace(mentionString, "").trimStart();
+          ? prevText.replace(withSpace, "")
+          : prevText.replace(mentionString, "");
       });
     }
     

@@ -40,7 +40,6 @@ const SIDE_SCALE = 0.85;
 const CENTER_SCALE = 1.0;
 const ARROW_SIZE = 38;
 const ARROW_OUTSET_DESKTOP = -50;
-const ARROW_OUTSET_MOBILE = 20; 
 
 const Carousel: React.FC<CarouselProps> = ({
   contentData,
@@ -79,7 +78,7 @@ const Carousel: React.FC<CarouselProps> = ({
     return () => {
       isMountedRef.current = false;
       if (transitionTimerRef.current) {
-         clearTimeout(transitionTimerRef.current);
+        clearTimeout(transitionTimerRef.current);
       }
       if (autoScrollTimerRef.current) {
         clearTimeout(autoScrollTimerRef.current);
@@ -179,6 +178,8 @@ const Carousel: React.FC<CarouselProps> = ({
     <Box
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onTouchStart={() => setHover(true)}
+      onTouchEnd={() => setTimeout(() => setHover(false), 2000)}
       sx={{ position: "relative", width: CARD_W, overflow: "visible" }}
     >
       <Box
@@ -215,11 +216,11 @@ const Carousel: React.FC<CarouselProps> = ({
             sx={{
               position: "absolute",
               top: {
-                xs: `calc(${CARD_H / 2}px - 60px)`, 
+                xs: `calc(${CARD_H / 2}px - 70px)`, 
                 md: `calc(${CARD_H / 2}px)`
               },
               left: {
-                xs: -ARROW_OUTSET_MOBILE,
+                xs: 6,
                 md: ARROW_OUTSET_DESKTOP
               }, 
               transform: "translateY(-50%)",
@@ -230,8 +231,8 @@ const Carousel: React.FC<CarouselProps> = ({
               bgcolor: alpha(theme.palette.background.paper, 0.9),
               backdropFilter: "blur(6px)",
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-              opacity: { xs: 0.8, md: hover ? 1 : 0 },
-              visibility: "visible",
+              opacity: hover ? 1 : 0,
+              visibility: hover ? "visible" : "hidden",
               "&:hover": {
                 bgcolor: alpha(theme.palette.background.paper, 0.98),
                 transform: "translateY(-50%) scale(1.1)",
@@ -254,11 +255,11 @@ const Carousel: React.FC<CarouselProps> = ({
             sx={{
               position: "absolute",
               top: {
-                xs: `calc(${CARD_H / 2}px - 60px)`, 
+                xs: `calc(${CARD_H / 2}px - 70px)`, 
                 md: `calc(${CARD_H / 2}px)`
               },
               right: {
-                xs: -ARROW_OUTSET_MOBILE,
+                xs: 6,
                 md: ARROW_OUTSET_DESKTOP
               }, 
               transform: "translateY(-50%)",
@@ -269,8 +270,8 @@ const Carousel: React.FC<CarouselProps> = ({
               bgcolor: alpha(theme.palette.background.paper, 0.9),
               backdropFilter: "blur(6px)",
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-              opacity: { xs: 0.8, md: hover ? 1 : 0 },
-              visibility: "visible",
+              opacity: hover ? 1 : 0,
+              visibility: hover ? "visible" : "hidden",
               "&:hover": {
                 bgcolor: alpha(theme.palette.background.paper, 0.98),
                 transform: "translateY(-50%) scale(1.1)",
