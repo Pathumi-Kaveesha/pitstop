@@ -2305,7 +2305,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         // Block publishing if the target quiz is overdue
-        if payload.status != () && payload.status.toString() == "PUBLISHED" {
+        if payload.status != () && payload.status.toString() == database:PUBLISHED.toString() {
             string? targetDueDateStr = ();
             
             if payload.dueDate != () {
@@ -2314,18 +2314,31 @@ service http:InterceptableService / on new http:Listener(9090) {
                 database:Quiz|error completeQuiz = database:getQuizById(quizId);
                 if completeQuiz is database:Quiz {
                     targetDueDateStr = completeQuiz.dueDate;
+                } else {
+                    string dbError = "Error while fetching quiz details for validation";
+                    log:printError(dbError, completeQuiz);
+                    return <http:InternalServerError>{
+                        body: {message: dbError}
+                    };
                 }
             }
 
             if targetDueDateStr is string && targetDueDateStr.trim() != "" {
                 time:Utc|error dueUtc = time:utcFromString(targetDueDateStr);
-                if dueUtc is time:Utc {
-                    decimal diff = time:utcDiffSeconds(dueUtc, time:utcNow());
-                    if diff < 0d {
-                        return <http:BadRequest>{
-                            body: {message: "Cannot publish an overdue quiz. Please update the due date first."}
-                        };
-                    }
+                
+                if dueUtc is error {
+                    string parseError = "Invalid due date format. Please update the due date first.";
+                    log:printError(parseError, dueUtc);
+                    return <http:BadRequest>{
+                        body: {message: parseError}
+                    };
+                }
+
+                decimal diff = time:utcDiffSeconds(dueUtc, time:utcNow());
+                if diff <= 0d {
+                    return <http:BadRequest>{
+                        body: {message: "Cannot publish an overdue quiz. Please update the due date to a future time first."}
+                    };
                 }
             }
         }
