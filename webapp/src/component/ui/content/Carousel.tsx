@@ -39,8 +39,8 @@ const SIDE_OFFSET_X = 80;
 const SIDE_SCALE = 0.85;
 const CENTER_SCALE = 1.0;
 const ARROW_SIZE = 38;
-const ARROW_INSET = 2;   
-const ARROW_OUTSET = -50; 
+const ARROW_OUTSET_DESKTOP = -50;
+const ARROW_OUTSET_MOBILE = 20; 
 
 const Carousel: React.FC<CarouselProps> = ({
   contentData,
@@ -214,10 +214,13 @@ const Carousel: React.FC<CarouselProps> = ({
             disabled={isTransitioning}
             sx={{
               position: "absolute",
-              top: `calc(${CARD_H / 2}px)`,
+              top: {
+                xs: `calc(${CARD_H / 2}px - 60px)`, 
+                md: `calc(${CARD_H / 2}px)`
+              },
               left: {
-                xs: ARROW_INSET,  
-                md: ARROW_OUTSET, 
+                xs: -ARROW_OUTSET_MOBILE,
+                md: ARROW_OUTSET_DESKTOP
               }, 
               transform: "translateY(-50%)",
               width: ARROW_SIZE,
@@ -227,8 +230,8 @@ const Carousel: React.FC<CarouselProps> = ({
               bgcolor: alpha(theme.palette.background.paper, 0.9),
               backdropFilter: "blur(6px)",
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-              opacity: hover ? 1 : 0,
-              visibility: hover ? "visible" : "hidden",
+              opacity: { xs: 0.8, md: hover ? 1 : 0 },
+              visibility: "visible",
               "&:hover": {
                 bgcolor: alpha(theme.palette.background.paper, 0.98),
                 transform: "translateY(-50%) scale(1.1)",
@@ -250,10 +253,13 @@ const Carousel: React.FC<CarouselProps> = ({
             disabled={isTransitioning}
             sx={{
               position: "absolute",
-              top: `calc(${CARD_H / 2}px)`,
+              top: {
+                xs: `calc(${CARD_H / 2}px - 60px)`, 
+                md: `calc(${CARD_H / 2}px)`
+              },
               right: {
-                xs: ARROW_INSET,  
-                md: ARROW_OUTSET, 
+                xs: -ARROW_OUTSET_MOBILE,
+                md: ARROW_OUTSET_DESKTOP
               }, 
               transform: "translateY(-50%)",
               width: ARROW_SIZE,
@@ -263,8 +269,8 @@ const Carousel: React.FC<CarouselProps> = ({
               bgcolor: alpha(theme.palette.background.paper, 0.9),
               backdropFilter: "blur(6px)",
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-              opacity: hover ? 1 : 0,
-              visibility: hover ? "visible" : "hidden",
+              opacity: { xs: 0.8, md: hover ? 1 : 0 },
+              visibility: "visible",
               "&:hover": {
                 bgcolor: alpha(theme.palette.background.paper, 0.98),
                 transform: "translateY(-50%) scale(1.1)",
