@@ -23,6 +23,10 @@ const Size = Quill.import("formats/size");
 Size.whitelist = ["14px", "16px", "18px", "20px"];
 Quill.register(Size, true);
 
+const Font = Quill.import("formats/font");
+Font.whitelist = ["roboto", "open-sans", "lato", "serif", "monospace", "cursive"];
+Quill.register(Font, true);
+
 interface RichTextEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -46,13 +50,16 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     () => ({
       toolbar: {
         container: [
+          [{ header: [1, 2, 3, false] }], 
+          [{ font: ["roboto", "open-sans", "lato", "serif", "monospace", "cursive"] }], 
           ...(showSizeSelector ? [[{ size: ["14px", "16px", "18px", "20px"] }]] : []),
           ["bold", "italic", "underline", "strike"],
           [{ color: [] }, { background: [] }],
-          [{ align: [] }], 
+          [{ align: [] }],
           [{ script: "sub" }, { script: "super" }],
           [{ list: "ordered" }, { list: "bullet" }],
-          ["blockquote"],
+          [{ indent: "-1" }, { indent: "+1" }], 
+          ["blockquote", "link", "clean"], 
         ],
       },
     }),
@@ -60,6 +67,8 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   );
 
   const formats = [
+    "header",
+    "font",
     "size",
     "bold",
     "italic",
@@ -67,10 +76,13 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     "strike",
     "color",
     "background",
-    "align", 
+    "align",
     "script",
     "list",
+    "indent",
     "blockquote",
+    "link",
+    "clean",
   ];
 
   return (
@@ -137,6 +149,24 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           "& .ql-editor .ql-size-20px": {
             fontSize: "20px !important",
           },
+          "& .ql-font-roboto": {
+            fontFamily: "'Roboto', sans-serif !important",
+          },
+          "& .ql-font-open-sans": {
+            fontFamily: "'Open Sans', sans-serif !important",
+          },
+          "& .ql-font-lato": {
+            fontFamily: "'Lato', sans-serif !important",
+          },
+          "& .ql-font-serif": {
+            fontFamily: "Georgia, 'Times New Roman', serif !important",
+          },
+          "& .ql-font-monospace": {
+            fontFamily: "Monaco, 'Courier New', monospace !important",
+          },
+          "& .ql-font-cursive": {
+            fontFamily: "'Comic Sans MS', 'Brush Script MT', cursive !important",
+          },
           // Color picker styling
           "& .ql-picker-label": {
             cursor: "pointer",
@@ -144,6 +174,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           "& .ql-picker-options": {
             backgroundColor: theme.palette.background.paper,
             border: `1px solid ${theme.palette.divider}`,
+            zIndex: 10,
           },
           // Toolbar button and icon colors for dark mode
           "& .ql-toolbar .ql-stroke": {
@@ -162,6 +193,32 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           "& .ql-toolbar button.ql-active": {
             color: theme.palette.primary.main,
           },
+          // Custom header picker labels
+          "& .ql-header .ql-picker-label::before": {
+            content: '"Normal"',
+          },
+          "& .ql-header .ql-picker-label[data-value='1']::before": {
+            content: '"Heading 1"',
+          },
+          "& .ql-header .ql-picker-label[data-value='2']::before": {
+            content: '"Heading 2"',
+          },
+          "& .ql-header .ql-picker-label[data-value='3']::before": {
+            content: '"Heading 3"',
+          },
+          "& .ql-header .ql-picker-item[data-value='1']::before": {
+            content: '"Heading 1"',
+          },
+          "& .ql-header .ql-picker-item[data-value='2']::before": {
+            content: '"Heading 2"',
+          },
+          "& .ql-header .ql-picker-item[data-value='3']::before": {
+            content: '"Heading 3"',
+          },
+          "& .ql-header .ql-picker-item:not([data-value])::before": {
+            content: '"Normal"',
+          },
+          // Custom size picker labels
           "& .ql-size .ql-picker-label": {
             "&::before": {
               content: '"Size"',
@@ -183,6 +240,24 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           "& .ql-size .ql-picker-item[data-value='20px']::before": {
             content: '"20px"',
           },
+
+          // Custom font family picker dropdown labels
+          "& .ql-font .ql-picker-label::before": {
+            content: '"Font"',
+          },
+          "& .ql-font .ql-picker-label[data-value='roboto']::before": { content: '"Roboto"' },
+          "& .ql-font .ql-picker-label[data-value='open-sans']::before": { content: '"Open Sans"' },
+          "& .ql-font .ql-picker-label[data-value='lato']::before": { content: '"Lato"' },
+          "& .ql-font .ql-picker-label[data-value='serif']::before": { content: '"Serif"' },
+          "& .ql-font .ql-picker-label[data-value='monospace']::before": { content: '"Monospace"' },
+          "& .ql-font .ql-picker-label[data-value='cursive']::before": { content: '"Cursive"' },
+
+          "& .ql-font .ql-picker-item[data-value='roboto']::before": { content: '"Roboto"' },
+          "& .ql-font .ql-picker-item[data-value='open-sans']::before": { content: '"Open Sans"' },
+          "& .ql-font .ql-picker-item[data-value='lato']::before": { content: '"Lato"' },
+          "& .ql-font .ql-picker-item[data-value='serif']::before": { content: '"Serif"' },
+          "& .ql-font .ql-picker-item[data-value='monospace']::before": { content: '"Monospace"' },
+          "& .ql-font .ql-picker-item[data-value='cursive']::before": { content: '"Cursive"' },
         }}
       >
         <ReactQuill
