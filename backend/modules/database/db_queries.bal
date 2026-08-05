@@ -828,7 +828,7 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
     return sql:queryConcat(query, `
         )
         SELECT 
-            CAST(SUM(CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN 1 ELSE 0 END) AS SIGNED) as totalViews,
+            CAST(COALESCE(SUM(CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN 1 ELSE 0 END), 0) AS SIGNED) as totalViews,
             CAST(COUNT(DISTINCT CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN user_email END) AS SIGNED) as totalUniqueViews,
             CAST(COALESCE((SELECT SUM(maxDuration) FROM DeduplicatedSessionTimes), 0) AS SIGNED) as totalTimeSpentSeconds,
             CAST(COUNT(*) AS SIGNED) as totalEngagements
