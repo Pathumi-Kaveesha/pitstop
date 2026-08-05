@@ -329,7 +329,7 @@ isolated function getContentIdQuery(string? contentLink, string? contentType, in
 # + return - SQL parameterized query
 isolated function logUserActivityQuery(types:AnalyticsEvent event)
     returns sql:ParameterizedQuery => `
-        INSERT IGNORE INTO user_activity_logs (
+        INSERT INTO user_activity_logs (
             user_email,
             user_name,
             department,
