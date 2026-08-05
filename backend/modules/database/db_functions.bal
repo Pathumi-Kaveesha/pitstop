@@ -141,6 +141,107 @@ public isolated function deleteContentById(int contentId) returns int|error? {
     return result.affectedRowCount;
 }
 
+# Log a user activity event.
+#
+# + event - Analytics event payload details
+# + return - Error or nil
+public isolated function logUserActivity(types:AnalyticsEvent event) returns error? {
+    _ = check dbClient->execute(logUserActivityQuery(event));
+}
+
+# Fetch Top Content Performance metrics directly from the database.
+#
+# + filter - Applied time range, region, user email, and page route filters
+# + return - Array of ContentPerformanceMetric records or database error
+public isolated function getTopContentMetrics(types:AnalyticsFilter filter) returns types:ContentPerformanceMetric[]|error {
+    stream<types:ContentPerformanceMetric, sql:Error?> contentStream = dbClient->query(getTopContentQuery(filter));
+    types:ContentPerformanceMetric[] metrics = check from types:ContentPerformanceMetric item in contentStream
+        select item;
+    check contentStream.close();
+    return metrics;
+}
+
+# Fetch User Leaderboard activity metrics directly from the database.
+#
+# + filter - Applied time range, region, user email, and page route filters
+# + return - Array of UserLeaderboardEntry records or database error
+public isolated function getUserLeaderboardMetrics(types:AnalyticsFilter filter) returns types:UserLeaderboardEntry[]|error {
+    stream<types:UserLeaderboardEntry, sql:Error?> leaderboardStream = dbClient->query(getUserLeaderboardQuery(filter));
+    types:UserLeaderboardEntry[] entries = check from types:UserLeaderboardEntry item in leaderboardStream
+        select item;
+    check leaderboardStream.close();
+    return entries;
+}
+
+# Fetch Regional Time Spent metrics directly from the database.
+#
+# + filter - Applied time range, region, and user email filters
+# + return - Array of RegionalTimeMetric records or database error
+public isolated function getRegionalTimeMetrics(types:AnalyticsFilter filter) returns types:RegionalTimeMetric[]|error {
+    stream<types:RegionalTimeMetric, error?> regionalStream = dbClient->query(getRegionalTimeSpentQuery(filter));
+    return check from var item in regionalStream select item;
+}
+
+# Fetch Peak Traffic Activity Windows directly from the database.
+#
+# + filter - Applied time range, region, and user email filters
+# + return - Array of TrafficPeakMetric records or database error
+public isolated function getPeakActivityMetrics(types:AnalyticsFilter filter) returns types:TrafficPeakMetric[]|error {
+    stream<types:TrafficPeakMetric, error?> peakStream = dbClient->query(getPeakActivityTimesQuery(filter));
+    types:TrafficPeakMetric[] metrics = check from var item in peakStream select item;
+    check peakStream.close();
+    return metrics;
+}
+
+# Fetch Top Search Terms directly from the database.
+#
+# + filter - Applied time range, region, and user email filters
+# + return - Array of SearchMetric records or database error
+public isolated function getTopSearchesMetrics(types:AnalyticsFilter filter) returns types:SearchMetric[]|error {
+    stream<types:SearchMetric, error?> searchStream = dbClient->query(getTopSearchesQuery(filter));
+    return check from var item in searchStream select item;
+}
+
+# Retrieves comprehensive platform analytics summary by aggregating overall metrics.
+#
+# + filter - Applied time range, region, and user email filters
+# + return - Comprehensive Analytics Summary record or database error
+public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter) 
+    returns types:ComprehensiveAnalyticsSummary|error {
+    
+    types:ContentPerformanceMetric[] topContent = check getTopContentMetrics(filter);
+    types:UserLeaderboardEntry[] leaderboard = check getUserLeaderboardMetrics(filter);
+    types:RegionalTimeMetric[] regionalTimeSpent = check getRegionalTimeMetrics(filter);
+    types:SearchMetric[] topSearches = check getTopSearchesMetrics(filter);
+    types:TrafficPeakMetric[] peakActivityTimes = check getPeakActivityMetrics(filter);
+
+    int totalViews = 0;
+    int totalUniqueViews = 0;
+    foreach var item in topContent {
+        totalViews += item.totalViews;
+        totalUniqueViews += item.uniqueViews;
+    }
+
+    int totalTimeSpent = 0;
+    int totalEngagements = 0;
+    foreach var u in leaderboard {
+        totalTimeSpent += u.timeSpentSeconds;
+        totalEngagements += u.totalEngagements;
+    }
+
+    return {
+        totalViews: totalViews,
+        totalUniqueViews: totalUniqueViews,
+        totalTimeSpentSeconds: totalTimeSpent,
+        totalEngagements: totalEngagements,
+        topContent: topContent,
+        leaderboard: leaderboard,
+        regionalTimeSpent: regionalTimeSpent,
+        topSearches: topSearches,
+        peakActivityTimes: peakActivityTimes
+    };
+}
+
 # Delete section under a given ID.
 #
 # + sectionId - Section ID
@@ -281,6 +382,15 @@ public isolated function getPageDetails(string routePath) returns types:PageResp
     }
 
     return {...pageRest, routeId: routeId, customPageTheme: convertedTheme, routeContents: routeContents};
+}
+
+# Get top-level main routes.
+#
+# + return - Route list or error
+public isolated function getMainRoutes() returns types:Route[]|error {
+    stream<types:Route, sql:Error?> resultStream = dbClient->query(getMainRoutesQuery());
+    return from types:Route result in resultStream
+        select result;
 }
 
 # Update content.

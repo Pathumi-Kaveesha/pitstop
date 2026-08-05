@@ -98,6 +98,143 @@ public type ContentPayload record {|
     boolean isReused = false;
 |};
 
+
+
+# Analytics event payload sent from the React frontend
+public type AnalyticsEvent record {|
+    # User email
+    string userEmail;
+    # User name
+    string? userName = ();
+    # User department
+    string? department = ();
+    # User region
+    string? region = ();
+    # Type of interaction
+    string eventType;      // "VIEW", "SEARCH", "COMPLETION", "ENGAGEMENT", "SESSION_TIME"
+    # Id of target content 
+    int? contentId = ();
+    # Unique session identifier
+    string? sessionId = ();
+    # Additional dynamic attributes
+    json? metadata = ();   // Dynamic JSON for extra details (e.g. watch %, scroll depth)
+|};
+
+# Standard HTTP response for analytics ingestion
+public type AnalyticsResponse record {|
+    # Result message
+    string message;
+    # Success status flag
+    boolean success;
+|};
+
+# Filter parameters for analytics queries.
+public type AnalyticsFilter record {|
+    # Optional start date (ISO string YYYY-MM-DD)
+    string? startDate = ();
+    # Optional end date (ISO string YYYY-MM-DD)
+    string? endDate = ();
+    # Optional region filter
+    string? region = ();
+    # Optional individual user email filter
+    string? userEmail = ();
+    # Optional page route filter
+    string? pageRoute = ();
+    # Optional sorting field for top content queries
+    string? sortBy = "totalViews";
+|};
+
+# Content performance metrics.
+public type ContentPerformanceMetric record {|
+    # Unique identifier of the content
+    int contentId;
+    # Title or name of the content
+    string title;
+    # Type of content (e.g. video, document, slide)
+    string contentType;
+    # Number of times preview button was clickeds
+    int previewClicks;
+    # Number of times outlink button was clicked
+    int outlinkClicks;
+    # Total count of view events
+    int totalViews;
+    # Count of distinct user views
+    int uniqueViews;
+    # Count of full completions (e.g., video watched 100% or full document read)
+    int fullCompletions;
+|};
+
+# User activity leaderboard entry.
+public type UserLeaderboardEntry record {|
+    # Email address of the user
+    string userEmail;
+    # Full name of the user
+    string userName;
+    # Department of the user
+    string department;
+    # Region or sub-team of the user
+    string region;
+    # Total interaction count performed by the user
+    int totalEngagements;
+    # Total time spent on the platform in seconds
+    int timeSpentSeconds;
+    # Dynamically calculated platform activity score
+    int activityScore;
+|};
+
+# Regional time spent metric.
+public type RegionalTimeMetric record {|
+    # Region or team name
+    string region;
+    # Total cumulative time spent in seconds
+    int totalTimeSpentSeconds;
+    # Count of active users in this region
+    int activeUsersCount;
+|};
+
+# Most searched query metric.
+public type SearchMetric record {|
+    # Term or query typed in the search bar
+    string searchTerm;
+    # Number of times the term was searched
+    int searchCount;
+    # Number of distinct users who searched for this term
+    int uniqueSearchCount;
+|};
+
+# Traffic and peak time distribution metric.
+public type TrafficPeakMetric record {|
+    # Hour of the day when activity peaked (0-23)
+    int peakHour;
+    # Day of the week (Monday - Sunday)
+    string dayOfWeek;
+    # Number of visits during the peak time
+    int visitCount;
+|};
+
+# Comprehensive Admin Analytics Summary.
+public type ComprehensiveAnalyticsSummary record {|
+    # Total views across all content
+    int totalViews;
+    # Total unique views across all content
+    int totalUniqueViews;
+    # Total cumulative time spent by users in seconds
+    int totalTimeSpentSeconds;
+    # Total platform engagement interactions
+    int totalEngagements;
+    # List of top performing content items
+    ContentPerformanceMetric[] topContent;
+    # Ranked list of active users
+    UserLeaderboardEntry[] leaderboard;
+    # Regional breakdown of time spent
+    RegionalTimeMetric[] regionalTimeSpent;
+    # List of most searched queries
+    SearchMetric[] topSearches;
+    # Peak activity times breakdown
+    TrafficPeakMetric[] peakActivityTimes;
+|};
+
+
 # Comment payload.
 public type CommentPayload record {|
     # Id of the content
