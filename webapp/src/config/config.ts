@@ -121,6 +121,8 @@ export const AppConfig = {
     assignUsersToQuiz: (quizId: number) => ServiceBaseUrl + "/quizzes/" + quizId + "/assignees",
     unassignUsersFromQuiz: (quizId: number) => ServiceBaseUrl + "/quizzes/" + quizId + "/assignees",
     verifyLinkPreview: () => ServiceBaseUrl + "/verify-preview",
-    
+    logAnalyticsEvent: () => ServiceBaseUrl + "/analytics/events",
+    getAnalyticsSummary: () => ServiceBaseUrl + "/analytics/summary",
+    getMainRoutes: () => ServiceBaseUrl + "/analytics/routes",
   },
 };

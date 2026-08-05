@@ -109,3 +109,11 @@ export enum MyBoardPanelTypes {
   PINNED = "pinned",
   ESSENTIAL = "essential",
 }
+
+export enum AnalyticsEventType {
+  VIEW = "VIEW",              
+  SEARCH = "SEARCH",               
+  COMPLETION = "COMPLETION",      
+  SESSION_TIME = "SESSION_TIME",     
+  ENGAGEMENT = "ENGAGEMENT",
+}
