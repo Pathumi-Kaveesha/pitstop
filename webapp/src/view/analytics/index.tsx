@@ -40,6 +40,7 @@ import {
   Popover,
   ToggleButton,
   ToggleButtonGroup,
+  Snackbar,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import BarChartIcon from "@mui/icons-material/BarChart";
@@ -72,6 +73,16 @@ import { UserEmailAutocomplete } from "../../component/common/UserEmailAutocompl
 interface MainRouteOption {
   route_path: string;
   label: string;
+}
+
+interface RawRouteResponse {
+  routePath?: string;
+  route_path?: string;
+  path?: string;
+  menuItem?: string;
+  menu_item?: string;
+  title?: string;
+  label?: string;
 }
 
 interface CardFilterPopoverProps {
@@ -260,6 +271,21 @@ const AnalyticsAdminDashboard: React.FC = () => {
   // Main Routes State for Dropdown Filters
   const [mainRoutes, setMainRoutes] = useState<MainRouteOption[]>([]);
 
+  // Snackbar Notification State
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: "error" | "warning" | "info" | "success";
+  }>({
+    open: false,
+    message: "",
+    severity: "error",
+  });
+
+  const handleCloseSnackbar = () => {
+    setSnackbar((prev) => ({ ...prev, open: false }));
+  };
+
   const summary = useAppSelector((state) => state.analytics.summary);
   const status = useAppSelector((state) => state.analytics.summaryStatus);
   const topContent = useAppSelector((state) => state.analytics.topContent);
@@ -318,21 +344,26 @@ const AnalyticsAdminDashboard: React.FC = () => {
           AppConfig.serviceUrls.getMainRoutes()
         );
 
-        const rawData = Array.isArray(response.data)
+        const rawData: RawRouteResponse[] = Array.isArray(response.data)
           ? response.data
           : response.data?.body && Array.isArray(response.data.body)
           ? response.data.body
           : [];
 
         if (rawData.length > 0) {
-          const routes: MainRouteOption[] = rawData.map((r: any) => ({
-            route_path: r.route_path || r.routePath || r.path || "",
-            label: r.menu_item || r.menuItem || r.title || r.label || r.route_path || r.routePath || "Unnamed Page",
+          const routes: MainRouteOption[] = rawData.map((r) => ({
+            route_path: r.routePath || r.route_path || r.path || "",
+            label: r.menuItem || r.menu_item || r.title || r.label || "Unnamed Page",
           }));
           setMainRoutes(routes);
         }
       } catch (err) {
         console.error("Failed to load main routes for analytics filters", err);
+        setSnackbar({
+          open: true,
+          message: "Failed to load page routes for analytics filters.",
+          severity: "error",
+        });
       }
     };
 
@@ -419,7 +450,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
-            
+
             <TextField
               label="Global Start Date"
               type="date"
@@ -1085,6 +1116,18 @@ const AnalyticsAdminDashboard: React.FC = () => {
           </Box>
         )}
       </Container>
+
+      {/* Snackbar for error feedback */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: "100%" }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
