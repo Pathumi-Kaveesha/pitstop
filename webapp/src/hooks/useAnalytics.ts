@@ -94,7 +94,12 @@ export const useAnalytics = () => {
             ...metadata,
           },
         })
-      ).unwrap();
+      )
+        .unwrap()
+        .catch((err) => {
+          console.warn("Analytics event dispatch failed:", err);
+          return null;
+        });
     },
     [dispatch, userEmail]
   );
