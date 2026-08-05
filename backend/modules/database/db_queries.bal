@@ -323,6 +323,27 @@ isolated function getContentIdQuery(string? contentLink, string? contentType, in
     return query;
 }
 
+# Construct parameterized SQL predicates for date range filtering.
+#
+# + startDate - Optional start date string (YYYY-MM-DD)
+# + endDate - Optional end date string (YYYY-MM-DD)
+# + return - Constructed parameterized SQL query fragment
+isolated function buildDateRangePredicates(string? startDate, string? endDate) 
+    returns sql:ParameterizedQuery {
+    
+    sql:ParameterizedQuery query = ``;
+
+    if startDate is string && startDate != "" {
+        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${startDate}`);
+    }
+
+    if endDate is string && endDate != "" {
+        query = sql:queryConcat(query, ` AND l.event_timestamp < DATE_ADD(${endDate}, INTERVAL 1 DAY)`);
+    }
+
+    return query;
+}
+
 # Query to insert a user activity log into the user_activity_logs table with deduplication support.
 #
 # + event - Analytics event payload
@@ -382,12 +403,7 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
           AND COALESCE(c.is_deleted, 0) = 0
     `;
 
-    if filter.startDate is string && filter.startDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
-    }
-    if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
     }
@@ -448,12 +464,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             WHERE 1=1
     `;
 
-    if filter.startDate is string && filter.startDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
-    }
-    if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
     }
@@ -549,12 +560,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
             WHERE UPPER(l.event_type) = 'SESSION_TIME'
     `;
 
-    if filter.startDate is string && filter.startDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
-    }
-    if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
     }
@@ -630,12 +636,7 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
             WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
     `);
 
-    if filter.startDate is string && filter.startDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
-    }
-    if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
     }
@@ -674,12 +675,7 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
         WHERE UPPER(l.event_type) = 'SEARCH' AND JSON_EXTRACT(l.metadata, '$.query') IS NOT NULL
     `;
 
-    if filter.startDate is string && filter.startDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
-    }
-    if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
     }
@@ -722,12 +718,7 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             WHERE UPPER(l.event_type) = 'SESSION_TIME'
     `;
 
-    if filter.startDate is string && filter.startDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
-    }
-    if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
     }
@@ -760,12 +751,7 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             WHERE 1=1
     `);
 
-    if filter.startDate is string && filter.startDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
-    }
-    if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
     }
