@@ -386,7 +386,7 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
         query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
     }
     if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= ${filter.endDate}`);
+        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
     }
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
@@ -452,7 +452,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
         query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
     }
     if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= ${filter.endDate}`);
+        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
     }
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
@@ -553,7 +553,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
         query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
     }
     if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= ${filter.endDate}`);
+        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
     }
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
@@ -634,7 +634,7 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
         query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
     }
     if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= ${filter.endDate}`);
+        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
     }
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
@@ -678,7 +678,7 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
         query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
     }
     if filter.endDate is string && filter.endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp <= ${filter.endDate}`);
+        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
     }
     if filter.region is string && filter.region != "" {
         query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
@@ -700,6 +700,99 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
     return sql:queryConcat(query, ` GROUP BY searchTerm ORDER BY searchCount DESC LIMIT 10`);
 }
 
+# Query to fetch platform-wide summary totals (unbounded by top-10 limits).
+#
+# + filter - Analytics filter parameters including dates, region, page route, and user email
+# + return - Constructed SQL parameterized query
+isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
+    sql:ParameterizedQuery query = `
+        WITH DeduplicatedSessionTimes AS (
+            SELECT 
+                l.user_email,
+                COALESCE(
+                    JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
+                    CAST(l.id AS CHAR)
+                ) as dedupeEventId,
+                MAX(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS UNSIGNED)) as maxDuration
+            FROM user_activity_logs l
+            LEFT JOIN content c ON c.content_id = l.content_id
+            LEFT JOIN section s ON s.section_id = c.section_id
+            LEFT JOIN route r ON r.route_id = s.route_id
+            LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
+            WHERE UPPER(l.event_type) = 'SESSION_TIME'
+    `;
+
+    if filter.startDate is string && filter.startDate != "" {
+        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
+    }
+    if filter.endDate is string && filter.endDate != "" {
+        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
+    }
+    if filter.region is string && filter.region != "" {
+        query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
+    }
+    if filter.userEmail is string && filter.userEmail != "" {
+        query = sql:queryConcat(query, ` AND LOWER(TRIM(l.user_email)) = LOWER(TRIM(${filter.userEmail}))`);
+    }
+    if filter.pageRoute is string && filter.pageRoute != "" {
+        query = sql:queryConcat(query, ` AND (
+            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
+            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
+            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
+            OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
+            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.pageRoute')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
+            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
+        )`);
+    }
+
+    query = sql:queryConcat(query, `
+            GROUP BY l.user_email, dedupeEventId
+        ),
+        PlatformEventLogs AS (
+            SELECT 
+                l.event_type,
+                l.user_email
+            FROM user_activity_logs l
+            LEFT JOIN content c ON c.content_id = l.content_id
+            LEFT JOIN section s ON s.section_id = c.section_id
+            LEFT JOIN route r ON r.route_id = s.route_id
+            LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
+            WHERE 1=1
+    `);
+
+    if filter.startDate is string && filter.startDate != "" {
+        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${filter.startDate}`);
+    }
+    if filter.endDate is string && filter.endDate != "" {
+        query = sql:queryConcat(query, ` AND l.event_timestamp <= CONCAT(${filter.endDate}, ' 23:59:59')`);
+    }
+    if filter.region is string && filter.region != "" {
+        query = sql:queryConcat(query, ` AND LOWER(TRIM(l.region)) = LOWER(TRIM(${filter.region}))`);
+    }
+    if filter.userEmail is string && filter.userEmail != "" {
+        query = sql:queryConcat(query, ` AND LOWER(TRIM(l.user_email)) = LOWER(TRIM(${filter.userEmail}))`);
+    }
+    if filter.pageRoute is string && filter.pageRoute != "" {
+        query = sql:queryConcat(query, ` AND (
+            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
+            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
+            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
+            OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
+            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.pageRoute')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
+            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
+        )`);
+    }
+
+    return sql:queryConcat(query, `
+        )
+        SELECT 
+            CAST(SUM(CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN 1 ELSE 0 END) AS SIGNED) as totalViews,
+            CAST(COUNT(DISTINCT CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN user_email END) AS SIGNED) as totalUniqueViews,
+            CAST(COALESCE((SELECT SUM(maxDuration) FROM DeduplicatedSessionTimes), 0) AS SIGNED) as totalTimeSpentSeconds,
+            CAST(COUNT(*) AS SIGNED) as totalEngagements
+        FROM PlatformEventLogs
+    `);
+}
 
 # Query to get section ID for given section details.
 #

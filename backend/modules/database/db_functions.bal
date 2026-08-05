@@ -219,25 +219,22 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
     types:SearchMetric[] topSearches = check getTopSearchesMetrics(filter);
     types:TrafficPeakMetric[] peakActivityTimes = check getPeakActivityMetrics(filter);
 
-    int totalViews = 0;
-    int totalUniqueViews = 0;
-    foreach var item in topContent {
-        totalViews += item.totalViews;
-        totalUniqueViews += item.uniqueViews;
-    }
+    stream<types:AnalyticsTotals, sql:Error?> totalsStream = dbClient->query(getAnalyticsTotalsQuery(filter));
+    types:AnalyticsTotals[] totalsList = check from var item in totalsStream select item;
+    check totalsStream.close();
 
-    int totalTimeSpent = 0;
-    int totalEngagements = 0;
-    foreach var u in leaderboard {
-        totalTimeSpent += u.timeSpentSeconds;
-        totalEngagements += u.totalEngagements;
-    }
+    types:AnalyticsTotals totals = totalsList.length() > 0 ? totalsList[0] : {
+        totalViews: 0,
+        totalUniqueViews: 0,
+        totalTimeSpentSeconds: 0,
+        totalEngagements: 0
+    };
 
     return {
-        totalViews: totalViews,
-        totalUniqueViews: totalUniqueViews,
-        totalTimeSpentSeconds: totalTimeSpent,
-        totalEngagements: totalEngagements,
+        totalViews: totals.totalViews,
+        totalUniqueViews: totals.totalUniqueViews,
+        totalTimeSpentSeconds: totals.totalTimeSpentSeconds,
+        totalEngagements: totals.totalEngagements,
         topContent: topContent,
         leaderboard: leaderboard,
         regionalTimeSpent: regionalTimeSpent,

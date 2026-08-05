@@ -144,6 +144,19 @@ public type AnalyticsFilter record {|
     string? sortBy = "totalViews";
 |};
 
+# Holds platform-wide aggregate totals for analytics summary metrics.
+public type AnalyticsTotals record {|
+    # Total number of content views
+    int totalViews;
+    #otal number of distinct users who viewed content
+    int totalUniqueViews;
+    # Total cumulative user active time spent in seconds
+    int totalTimeSpentSeconds;
+    # Total overall platform interaction events
+    int totalEngagements;
+|};
+
+
 # Content performance metrics.
 public type ContentPerformanceMetric record {|
     # Unique identifier of the content
