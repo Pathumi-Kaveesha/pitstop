@@ -273,10 +273,15 @@ export const analyticsSlice = createSlice({
       state.summaryStatus = "idle";
       state.summary = null;
       state.topContent = [];
+      state.topContentStatus = "idle";
       state.leaderboard = [];
+      state.leaderboardStatus = "idle";
       state.regionalTimeSpent = [];
+      state.regionalStatus = "idle";
       state.peakActivityTimes = [];
+      state.peakStatus = "idle";
       state.topSearches = [];
+      state.searchesStatus = "idle";
       state.error = null;
     },
   },
@@ -292,43 +297,102 @@ export const analyticsSlice = createSlice({
           state.summaryStatus = "success";
           state.summary = action.payload;
           state.topContent = action.payload?.topContent || [];
+          state.topContentStatus = "success";
           state.leaderboard = action.payload?.leaderboard || [];
+          state.leaderboardStatus = "success";
           state.regionalTimeSpent = action.payload?.regionalTimeSpent || [];
+          state.regionalStatus = "success";
           state.peakActivityTimes = action.payload?.peakActivityTimes || [];
+          state.peakStatus = "success";
           state.topSearches = action.payload?.topSearches || [];
+          state.searchesStatus = "success";
         }
       )
       .addCase(fetchAnalyticsSummary.rejected, (state, action) => {
         state.summaryStatus = "failed";
         state.summary = null;
         state.topContent = [];
+        state.topContentStatus = "failed";
         state.leaderboard = [];
+        state.leaderboardStatus = "failed";
         state.regionalTimeSpent = [];
+        state.regionalStatus = "failed";
         state.peakActivityTimes = [];
+        state.peakStatus = "failed";
         state.topSearches = [];
-        state.error = action.payload as string;
+        state.searchesStatus = "failed";
+        state.error = (action.payload as string) || action.error.message || "Failed to fetch summary";
       })
 
       // Section-specific reducers
+      // Top Content
+      .addCase(fetchTopContent.pending, (state) => {
+        state.topContentStatus = "loading";
+      })
       .addCase(fetchTopContent.fulfilled, (state, action) => {
         state.topContent = action.payload || [];
         state.topContentStatus = "success";
+      })
+      .addCase(fetchTopContent.rejected, (state, action) => {
+        state.topContent = [];
+        state.topContentStatus = "failed";
+        state.error = (action.payload as string) || action.error.message || "Failed to fetch top content";
+      })
+
+      // Leaderboard
+      .addCase(fetchLeaderboard.pending, (state) => {
+        state.leaderboardStatus = "loading";
       })
       .addCase(fetchLeaderboard.fulfilled, (state, action) => {
         state.leaderboard = action.payload || [];
         state.leaderboardStatus = "success";
       })
+      .addCase(fetchLeaderboard.rejected, (state, action) => {
+        state.leaderboard = [];
+        state.leaderboardStatus = "failed";
+        state.error = (action.payload as string) || action.error.message || "Failed to fetch leaderboard";
+      })
+
+      // Regional Time Spent
+      .addCase(fetchRegionalTimeSpent.pending, (state) => {
+        state.regionalStatus = "loading";
+      })
       .addCase(fetchRegionalTimeSpent.fulfilled, (state, action) => {
         state.regionalTimeSpent = action.payload || [];
         state.regionalStatus = "success";
+      })
+      .addCase(fetchRegionalTimeSpent.rejected, (state, action) => {
+        state.regionalTimeSpent = [];
+        state.regionalStatus = "failed";
+        state.error = (action.payload as string) || action.error.message || "Failed to fetch regional time spent";
+      })
+
+      // Peak Activity Times
+      .addCase(fetchPeakActivityTimes.pending, (state) => {
+        state.peakStatus = "loading";
       })
       .addCase(fetchPeakActivityTimes.fulfilled, (state, action) => {
         state.peakActivityTimes = action.payload || [];
         state.peakStatus = "success";
       })
+      .addCase(fetchPeakActivityTimes.rejected, (state, action) => {
+        state.peakActivityTimes = [];
+        state.peakStatus = "failed";
+        state.error = (action.payload as string) || action.error.message || "Failed to fetch peak activity times";
+      })
+
+      // Top Searches
+      .addCase(fetchTopSearches.pending, (state) => {
+        state.searchesStatus = "loading";
+      })
       .addCase(fetchTopSearches.fulfilled, (state, action) => {
         state.topSearches = action.payload || [];
         state.searchesStatus = "success";
+      })
+      .addCase(fetchTopSearches.rejected, (state, action) => {
+        state.topSearches = [];
+        state.searchesStatus = "failed";
+        state.error = (action.payload as string) || action.error.message || "Failed to fetch top searches";
       });
   },
 });
