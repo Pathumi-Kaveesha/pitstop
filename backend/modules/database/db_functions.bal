@@ -179,8 +179,15 @@ public isolated function getUserLeaderboardMetrics(types:AnalyticsFilter filter)
 # + return - Array of RegionalTimeMetric records or database error
 public isolated function getRegionalTimeMetrics(types:AnalyticsFilter filter) returns types:RegionalTimeMetric[]|error {
     stream<types:RegionalTimeMetric, sql:Error?> regionalStream = dbClient->query(getRegionalTimeSpentQuery(filter));
-    types:RegionalTimeMetric[] metrics = check from var item in regionalStream select item;
-    check regionalStream.close();
+    types:RegionalTimeMetric[]|error metrics = from var item in regionalStream select item;
+    error? closeErr = regionalStream.close();
+    if metrics is error {
+        return metrics;
+    }
+    if closeErr is error {
+        return closeErr;
+    }
+    
     return metrics;
 }
 
@@ -190,8 +197,15 @@ public isolated function getRegionalTimeMetrics(types:AnalyticsFilter filter) re
 # + return - Array of TrafficPeakMetric records or database error
 public isolated function getPeakActivityMetrics(types:AnalyticsFilter filter) returns types:TrafficPeakMetric[]|error {
     stream<types:TrafficPeakMetric, sql:Error?> peakStream = dbClient->query(getPeakActivityTimesQuery(filter));
-    types:TrafficPeakMetric[] metrics = check from var item in peakStream select item;
-    check peakStream.close();
+    types:TrafficPeakMetric[]|error metrics = from var item in peakStream select item;
+    error? closeErr = peakStream.close();
+    if metrics is error {
+        return metrics;
+    }
+    if closeErr is error {
+        return closeErr;
+    }
+    
     return metrics;
 }
 
@@ -201,8 +215,15 @@ public isolated function getPeakActivityMetrics(types:AnalyticsFilter filter) re
 # + return - Array of SearchMetric records or database error
 public isolated function getTopSearchesMetrics(types:AnalyticsFilter filter) returns types:SearchMetric[]|error {
     stream<types:SearchMetric, sql:Error?> searchStream = dbClient->query(getTopSearchesQuery(filter));
-    types:SearchMetric[] metrics = check from var item in searchStream select item;
-    check searchStream.close();
+    types:SearchMetric[]|error metrics = from var item in searchStream select item;
+    error? closeErr = searchStream.close();
+    if metrics is error {
+        return metrics;
+    }
+    if closeErr is error {
+        return closeErr;
+    }
+    
     return metrics;
 }
 
