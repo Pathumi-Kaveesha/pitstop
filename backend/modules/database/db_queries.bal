@@ -613,11 +613,14 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
 
 # Dynamic query to fetch the peak activity hour for each day of the week.
 # Scopes content to matching page routes when a filter is supplied, preserving all traffic when unfiltered.
+# Converts UTC event timestamps using the viewer's requested timezone offset.
 #
-# + filter - Analytics filter parameters including dates, region, user email, and page route
+# + filter - Analytics filter parameters including dates, region, user email, page route, and timezone offset
 # + return - Constructed SQL parameterized query
 isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
     sql:ParameterizedQuery query = ``;
+
+    int tzOffset = filter.timezoneOffsetMinutes ?: 330;
 
     string? pageRoute = filter.pageRoute;
     boolean hasPageRoute = pageRoute is string && pageRoute != "";
@@ -640,13 +643,13 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
             ),
             HourlyStats AS (
                 SELECT 
-                    DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayOfWeek,
-                    DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayNum,
-                    HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as peakHour,
+                    DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as dayOfWeek,
+                    DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as dayNum,
+                    HOUR(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as peakHour,
                     CAST(COUNT(*) AS SIGNED) as visitCount,
                     ROW_NUMBER() OVER (
-                        PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) 
-                        ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) ASC
+                        PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) 
+                        ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) ASC
                     ) as rank_num
                 FROM user_activity_logs l
                 INNER JOIN RouteFilteredContent rfc ON rfc.content_id = l.content_id
@@ -656,13 +659,13 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
         query = sql:queryConcat(query, `
             WITH HourlyStats AS (
                 SELECT 
-                    DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayOfWeek,
-                    DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayNum,
-                    HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as peakHour,
+                    DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as dayOfWeek,
+                    DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as dayNum,
+                    HOUR(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as peakHour,
                     CAST(COUNT(*) AS SIGNED) as visitCount,
                     ROW_NUMBER() OVER (
-                        PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) 
-                        ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) ASC
+                        PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) 
+                        ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) ASC
                     ) as rank_num
                 FROM user_activity_logs l
                 WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')

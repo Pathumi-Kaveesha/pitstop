@@ -89,6 +89,7 @@ export interface AnalyticsFilterParams {
   userEmail?: string;
   pageRoute?: string;
   sortBy?: "totalViews" | "uniqueViews";
+  timezoneOffsetMinutes?: number;
 }
 
 interface AnalyticsState {
@@ -146,6 +147,12 @@ const buildQueryString = (params: AnalyticsFilterParams) => {
   if (params.userEmail) queryParams.append("userEmail", params.userEmail);
   if (params.pageRoute) queryParams.append("pageRoute", params.pageRoute);
   if (params.sortBy) queryParams.append("sortBy", params.sortBy);
+
+  // Standardize timezone offset: -new Date().getTimezoneOffset() converts browser offset to standard UTC offset (+330 for UTC+5:30)
+  const tzOffset =
+    params.timezoneOffsetMinutes ?? -new Date().getTimezoneOffset();
+  queryParams.append("timezoneOffsetMinutes", tzOffset.toString());
+
   const q = queryParams.toString();
   return q ? `?${q}` : "";
 };

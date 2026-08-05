@@ -142,6 +142,8 @@ public type AnalyticsFilter record {|
     string? pageRoute = ();
     # Optional sorting field for top content queries
     string? sortBy = "totalViews";
+    # Viewer timezone offset in minutes (e.g. 330 for +05:30)
+    int? timezoneOffsetMinutes = ();
 |};
 
 # Holds platform-wide aggregate totals for analytics summary metrics.
