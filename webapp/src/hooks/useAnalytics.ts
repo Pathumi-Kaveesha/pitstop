@@ -44,23 +44,19 @@ export const getOrCreateSessionId = (): string => {
 export const useAnalytics = () => {
   const dispatch = useAppDispatch();
 
-  const authState = useAppSelector((state: RootState) => state.auth as any);
-  const userEmail =
-    authState?.user?.email ||
-    authState?.userInfo?.email ||
-    authState?.email ||
-    "";
+  // Select only the userEmail string to keep hook state identity stable
+  const userEmail = useAppSelector((state: RootState) => {
+    const auth = (state as any).auth;
+    return auth?.user?.email || auth?.userInfo?.email || auth?.email || "";
+  });
 
-  // Constructs authorization headers using ApiService.getIdToken() with authState fallback
+  // Constructs authorization headers using ApiService.getIdToken()
   const getFreshAuthHeader = useCallback((): Record<string, string> => {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
-    const token =
-      ApiService.getIdToken() ||
-      authState?.idToken ||
-      authState?.accessToken;
+    const token = ApiService.getIdToken();
 
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
@@ -72,7 +68,7 @@ export const useAnalytics = () => {
     }
 
     return headers;
-  }, [authState, userEmail]);
+  }, [userEmail]);
 
   const trackEvent = useCallback(
     async (
