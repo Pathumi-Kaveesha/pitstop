@@ -178,8 +178,10 @@ public isolated function getUserLeaderboardMetrics(types:AnalyticsFilter filter)
 # + filter - Applied time range, region, and user email filters
 # + return - Array of RegionalTimeMetric records or database error
 public isolated function getRegionalTimeMetrics(types:AnalyticsFilter filter) returns types:RegionalTimeMetric[]|error {
-    stream<types:RegionalTimeMetric, error?> regionalStream = dbClient->query(getRegionalTimeSpentQuery(filter));
-    return check from var item in regionalStream select item;
+    stream<types:RegionalTimeMetric, sql:Error?> regionalStream = dbClient->query(getRegionalTimeSpentQuery(filter));
+    types:RegionalTimeMetric[] metrics = check from var item in regionalStream select item;
+    check regionalStream.close();
+    return metrics;
 }
 
 # Fetch Peak Traffic Activity Windows directly from the database.
@@ -187,7 +189,7 @@ public isolated function getRegionalTimeMetrics(types:AnalyticsFilter filter) re
 # + filter - Applied time range, region, and user email filters
 # + return - Array of TrafficPeakMetric records or database error
 public isolated function getPeakActivityMetrics(types:AnalyticsFilter filter) returns types:TrafficPeakMetric[]|error {
-    stream<types:TrafficPeakMetric, error?> peakStream = dbClient->query(getPeakActivityTimesQuery(filter));
+    stream<types:TrafficPeakMetric, sql:Error?> peakStream = dbClient->query(getPeakActivityTimesQuery(filter));
     types:TrafficPeakMetric[] metrics = check from var item in peakStream select item;
     check peakStream.close();
     return metrics;
@@ -198,8 +200,10 @@ public isolated function getPeakActivityMetrics(types:AnalyticsFilter filter) re
 # + filter - Applied time range, region, and user email filters
 # + return - Array of SearchMetric records or database error
 public isolated function getTopSearchesMetrics(types:AnalyticsFilter filter) returns types:SearchMetric[]|error {
-    stream<types:SearchMetric, error?> searchStream = dbClient->query(getTopSearchesQuery(filter));
-    return check from var item in searchStream select item;
+    stream<types:SearchMetric, sql:Error?> searchStream = dbClient->query(getTopSearchesQuery(filter));
+    types:SearchMetric[] metrics = check from var item in searchStream select item;
+    check searchStream.close();
+    return metrics;
 }
 
 # Retrieves comprehensive platform analytics summary by aggregating overall metrics.
