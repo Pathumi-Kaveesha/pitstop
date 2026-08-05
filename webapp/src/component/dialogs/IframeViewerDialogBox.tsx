@@ -15,7 +15,7 @@
 // under the License.
 
 import { IframeViewerDialogBoxProps } from "@/types/types";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   Dialog,
   IconButton,
@@ -59,6 +59,9 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
 }) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
+
+  // Reference to correlate the active preview request with the current link
+  const activeRequestedLinkRef = useRef<string | null>(null);
 
   const blockedUrls = useAppSelector((state: RootState) => state.page.blockedIframeUrls);
   const blockedUrlsState = useAppSelector((state: RootState) => state.page.blockedUrlsState);
@@ -139,6 +142,7 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   useEffect(() => {
     if (open && link) {
       if (!isGoogleDriveFolder && !isLocalBlocked) {
+        activeRequestedLinkRef.current = link;
         dispatch(verifyLinkPreview(link));
       }
     }
@@ -146,16 +150,20 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
 
   useEffect(() => {
     if (!open) {
+      activeRequestedLinkRef.current = null;
       dispatch(resetPreviewStatus());
     }
   }, [open, dispatch]);
 
-  // Trigger onPreviewReady only when the dialog is open and preview status resolves to SUCCESS
+  // Trigger onPreviewReady only when the dialog is open, status resolves to SUCCESS,
+  // and the success correlates to the active request for the current link
   useEffect(() => {
-    if (open && previewInfo?.status === "SUCCESS" && onPreviewReady) {
+    const isCurrentRequest = activeRequestedLinkRef.current === link;
+
+    if (open && previewInfo?.status === "SUCCESS" && isCurrentRequest && onPreviewReady) {
       onPreviewReady();
     }
-  }, [open, previewInfo?.status, onPreviewReady]);
+  }, [open, previewInfo?.status, link, onPreviewReady]);
 
   const handleOpenInNewTabClick = () => {
     if (onOpenInNewTab) {
