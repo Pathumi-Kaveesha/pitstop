@@ -597,9 +597,13 @@ service http:InterceptableService / on new http:Listener(9090) {
             return <http:InternalServerError> { body: constants:GET_USER_ROLE_ERROR };
         }
 
-        // Validate payload email against authenticated JWT user email if sent from frontend
-        if eventPayload.userEmail != "" && eventPayload.userEmail != userEmail {
-            string customError = "Email mismatch between request payload and authenticated user";
+        // Strict email validation against authenticated JWT user email.
+        // Rejects empty, missing, or mismatched emails to prevent identity spoofing.
+        string reqEmail = eventPayload.userEmail.trim().toLowerAscii();
+        string authEmail = userEmail.trim().toLowerAscii();
+
+        if reqEmail == "" || reqEmail != authEmail {
+            string customError = "Email mismatch or missing email in request payload for authenticated user";
             log:printError(customError);
             return <http:BadRequest> { body: customError };
         }
