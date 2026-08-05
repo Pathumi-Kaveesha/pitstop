@@ -43,6 +43,7 @@ if (typeof window !== "undefined" && typeof _paq === "undefined") {
 
 interface ExtendedIframeViewerDialogBoxProps extends IframeViewerDialogBoxProps {
   onOpenInNewTab?: () => void;
+  onPreviewReady?: () => void;
 }
 
 const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
@@ -54,6 +55,7 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   contentType,
   contentSubtype,
   onOpenInNewTab,
+  onPreviewReady,
 }) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
@@ -147,6 +149,13 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
       dispatch(resetPreviewStatus());
     }
   }, [open, dispatch]);
+
+  // Trigger onPreviewReady only when the dialog is open and preview status resolves to SUCCESS
+  useEffect(() => {
+    if (open && previewInfo?.status === "SUCCESS" && onPreviewReady) {
+      onPreviewReady();
+    }
+  }, [open, previewInfo?.status, onPreviewReady]);
 
   const handleOpenInNewTabClick = () => {
     if (onOpenInNewTab) {

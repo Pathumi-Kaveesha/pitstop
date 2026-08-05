@@ -235,6 +235,32 @@ const ComponentCard = ({
         break;
     }
   };
+
+  const handlePreviewReady = useCallback(() => {
+    if (previewLoggedRef.current || viewTimerRef.current) return;
+
+    // Start 10-second verification timer ONLY after content confirmed ready
+    viewTimerRef.current = window.setTimeout(() => {
+      previewLoggedRef.current = true;
+      trackEvent(AnalyticsEventType.VIEW, contentId, {
+        title: description,
+        contentType,
+        contentSubtype,
+        contentLink,
+        source: "card_preview_button",
+        verifiedView: true,
+      });
+    }, 10000); // 10 seconds
+  }, [contentId, description, contentType, contentSubtype, contentLink, trackEvent]);
+
+  const handleClosePreviewModal = () => {
+    if (viewTimerRef.current) {
+      clearTimeout(viewTimerRef.current);
+      viewTimerRef.current = null;
+    }
+    setIsPreviewModalOpen(false);
+  };
+
   const customButtonsFromStore = useAppSelector(
     (state: RootState) => state.customButton.buttonsByContentId[contentId.toString()] || [],
   );
@@ -903,23 +929,11 @@ const ComponentCard = ({
                     // Clear any existing timer & reset preview logged ref
                     if (viewTimerRef.current) {
                       clearTimeout(viewTimerRef.current);
+                      viewTimerRef.current = null;
                     }
                     previewLoggedRef.current = false; 
 
                     setIsPreviewModalOpen(true);
-
-                    // Start 10-second verification timer before sending event
-                    viewTimerRef.current = setTimeout(() => {
-                      previewLoggedRef.current = true; 
-                      trackEvent(AnalyticsEventType.VIEW, contentId, {
-                        title: description,
-                        contentType,
-                        contentSubtype,
-                        contentLink,
-                        source: "card_preview_button",
-                        verifiedView: true,
-                      });
-                    }, 10000); // 10 seconds
 
                     if (window.config?.IS_MATOMO_ENABLED) {
                       _paq.push([
@@ -1480,13 +1494,8 @@ const ComponentCard = ({
           description={description}
           contentType={contentType}
           contentSubtype={contentSubtype}
-          handleClose={() => {
-            if (viewTimerRef.current) {
-              clearTimeout(viewTimerRef.current);
-              viewTimerRef.current = null;
-            }
-            setIsPreviewModalOpen(false);
-          }}
+          handleClose={handleClosePreviewModal}
+          onPreviewReady={handlePreviewReady}
           onOpenInNewTab={() => {
             // Cancel the 10-second preview modal timer immediately
             if (viewTimerRef.current) {
