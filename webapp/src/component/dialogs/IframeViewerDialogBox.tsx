@@ -41,7 +41,11 @@ if (typeof window !== "undefined" && typeof _paq === "undefined") {
   (window as Window & { _paq?: unknown[] })._paq = [];
 }
 
-const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
+interface ExtendedIframeViewerDialogBoxProps extends IframeViewerDialogBoxProps {
+  onOpenInNewTab?: () => void;
+}
+
+const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   link,
   originalUrl,
   open,
@@ -49,13 +53,14 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
   description,
   contentType,
   contentSubtype,
+  onOpenInNewTab,
 }) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
-  
+
   const blockedUrls = useAppSelector((state: RootState) => state.page.blockedIframeUrls);
   const blockedUrlsState = useAppSelector((state: RootState) => state.page.blockedUrlsState);
-  
+
   const { state: backendState, previewInfo } = useAppSelector(
     (state: RootState) => state.preview
   );
@@ -65,19 +70,19 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
       const urlObj = new URL(url);
       const hostname = urlObj.hostname;
       const pathname = urlObj.pathname;
-      
+
       return blockedUrls.some((blockedUrl: string) => {
         let blockedHostname: string;
         let blockedPath: string | null = null;
-        
+
         try {
           const blockedUrlObj = new URL(blockedUrl);
           blockedHostname = blockedUrlObj.hostname;
           blockedPath = blockedUrlObj.pathname;
         } catch {
           const trimmed = blockedUrl.trim();
-          const pathStartIndex = trimmed.indexOf('/');
-          
+          const pathStartIndex = trimmed.indexOf("/");
+
           if (pathStartIndex > 0) {
             blockedHostname = trimmed.substring(0, pathStartIndex);
             blockedPath = trimmed.substring(pathStartIndex);
@@ -85,15 +90,15 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
             blockedHostname = trimmed;
           }
         }
-        
-        const hostnameMatches = 
+
+        const hostnameMatches =
           hostname === blockedHostname ||
           hostname.endsWith(`.${blockedHostname}`);
-        
+
         if (!hostnameMatches) {
           return false;
         }
-        
+
         if (blockedPath && blockedPath !== "/") {
           const normalizedBlockedPath =
             blockedPath.endsWith("/") && blockedPath.length > 1
@@ -108,7 +113,7 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
             normalizedPathname.startsWith(`${normalizedBlockedPath}/`)
           );
         }
-        
+
         return true;
       });
     } catch {
@@ -143,7 +148,10 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
     }
   }, [open, dispatch]);
 
-  const handleOpenInNewTab = () => {
+  const handleOpenInNewTabClick = () => {
+    if (onOpenInNewTab) {
+      onOpenInNewTab();
+    }
     window.open(originalUrl, "_blank", "noopener, noreferrer");
   };
 
@@ -172,15 +180,15 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
     const isGoogleDriveFile = link?.includes("drive.google.com");
 
     // Path A: The URL is live, but framing is restricted by rules or security protections (including file storage wrappers)
-    const isRestrictedState = 
-      isGoogleDriveFolder || 
-      isLocalBlocked || 
+    const isRestrictedState =
+      isGoogleDriveFolder ||
+      isLocalBlocked ||
       previewInfo?.status === "RESTRICTED" ||
       (previewInfo?.status === "BROKEN" && isGoogleDriveFile);
 
     if (isRestrictedState) {
       let errorMessage = "This content cannot be displayed in an embedded preview. Click the button below to open it in a new window.";
-      
+
       if (isGoogleDriveFolder || isGoogleDriveFile) {
         errorMessage = "Google Drive items cannot be previewed directly inside this embedded frame. Click the button below to safely open the resource in a new window.";
       } else if (isLocalBlocked || previewInfo?.status === "RESTRICTED") {
@@ -228,7 +236,7 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
             variant="contained"
             size="large"
             startIcon={<OpenInNewIcon />}
-            onClick={handleOpenInNewTab}
+            onClick={handleOpenInNewTabClick}
             sx={{
               mt: 2,
               px: 4,
@@ -383,7 +391,7 @@ const IframeViewerDialogBox: React.FC<IframeViewerDialogBoxProps> = ({
           </Typography>
           <Box sx={{ display: "flex", gap: 1 }}>
             <IconButton
-              onClick={handleOpenInNewTab}
+              onClick={handleOpenInNewTabClick}
               sx={{ color: theme.palette.grey[100] }}
               aria-label="open in new tab"
               title="Open in new tab"

@@ -78,6 +78,8 @@ import CardTitle from "./CardTitle";
 import CardNote from "./CardNote";
 import CardTags from "./CardTags";
 import LikesModal from "./LikesModal";
+import { useAnalytics } from "../../../hooks/useAnalytics";
+import { AnalyticsEventType } from "@utils/types";
 
 interface ComponentCardProps {
   contentId: number;
@@ -138,6 +140,7 @@ const ComponentCard = ({
   onContentUnpinned,
   isInPinnedSection,
 }: ComponentCardProps) => {
+  const { trackEvent } = useAnalytics();
   const authorizedRoles: Role[] = useAppSelector((state: RootState) => state.auth.roles);
   const location = useLocation();
   const [like, setLike] = useState(status);
@@ -168,6 +171,18 @@ const ComponentCard = ({
 
   const cardRef = useRef<HTMLDivElement>(null);
   const contentBodyRef = useRef<HTMLDivElement>(null);
+
+  const viewTimerRef = useRef<number | null>(null);
+  const previewLoggedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    return () => {
+      if (viewTimerRef.current) {
+        clearTimeout(viewTimerRef.current);
+      }
+    };
+  }, []);
+
   const [hasOverflow, setHasOverflow] = useState(false);
   const [isOverflowExpanded, setIsOverflowExpanded] = useState(false);
 
@@ -884,7 +899,28 @@ const ComponentCard = ({
                   aria-label="open-preview-modal"
                   onClick={(e) => {
                     e.stopPropagation();
+
+                    // Clear any existing timer & reset preview logged ref
+                    if (viewTimerRef.current) {
+                      clearTimeout(viewTimerRef.current);
+                    }
+                    previewLoggedRef.current = false; 
+
                     setIsPreviewModalOpen(true);
+
+                    // Start 10-second verification timer before sending event
+                    viewTimerRef.current = setTimeout(() => {
+                      previewLoggedRef.current = true; 
+                      trackEvent(AnalyticsEventType.VIEW, contentId, {
+                        title: description,
+                        contentType,
+                        contentSubtype,
+                        contentLink,
+                        source: "card_preview_button",
+                        verifiedView: true,
+                      });
+                    }, 10000); // 10 seconds
+
                     if (window.config?.IS_MATOMO_ENABLED) {
                       _paq.push([
                         "trackEvent",
@@ -1440,11 +1476,47 @@ const ComponentCard = ({
           link={getEmbedUrl(contentType as FILETYPE, contentLink, contentSubtype)}
           originalUrl={contentLink}
           open={isPreviewModalOpen}
-          handleClose={() => setIsPreviewModalOpen(false)}
           contentId={contentId}
           description={description}
           contentType={contentType}
           contentSubtype={contentSubtype}
+          handleClose={() => {
+            if (viewTimerRef.current) {
+              clearTimeout(viewTimerRef.current);
+              viewTimerRef.current = null;
+            }
+            setIsPreviewModalOpen(false);
+          }}
+          onOpenInNewTab={() => {
+            // Cancel the 10-second preview modal timer immediately
+            if (viewTimerRef.current) {
+              clearTimeout(viewTimerRef.current);
+              viewTimerRef.current = null;
+            }
+
+            // Force-log the PREVIEW event if the user clicked Outlink before 10s passed
+            if (!previewLoggedRef.current) {
+              previewLoggedRef.current = true;
+              trackEvent(AnalyticsEventType.VIEW, contentId, {
+                title: description,
+                contentType,
+                contentSubtype,
+                contentLink,
+                source: "card_preview_button",
+                verifiedView: true,
+              });
+            }
+
+            // Instantly track the "Open in New Window" verified view event
+            trackEvent(AnalyticsEventType.VIEW, contentId, {
+              title: description,
+              contentType,
+              contentSubtype,
+              contentLink,
+              source: "modal_open_in_new_tab",
+              verifiedView: true,
+            });
+          }}
         />
 
         <CustomButtonConfigDialog

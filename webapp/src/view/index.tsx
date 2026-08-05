@@ -21,11 +21,13 @@ const MyBoard = lazy(() => import("./my-board/index"));
 const addComponents = lazy(() => import("./component"));
 const Search = lazy(() => import("./search"));
 const QuizAdminDashboard = lazy(() => import("./quiz/index"));
+const AnalyticsAdminDashboard = lazy(() => import("./analytics/index"));
 
 export const View = {
   Home,
   MyBoard,
   addComponents,
   Search,
-  QuizAdminDashboard
+  QuizAdminDashboard,
+  AnalyticsAdminDashboard
 };
