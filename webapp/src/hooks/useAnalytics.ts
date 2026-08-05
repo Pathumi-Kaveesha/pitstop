@@ -50,26 +50,6 @@ export const useAnalytics = () => {
     return auth?.user?.email || auth?.userInfo?.email || auth?.email || "";
   });
 
-  // Constructs authorization headers using ApiService.getIdToken()
-  const getFreshAuthHeader = useCallback((): Record<string, string> => {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    const token = ApiService.getIdToken();
-
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-      headers["x-jwt-assertion"] = token;
-    }
-
-    if (userEmail) {
-      headers["X-User-Email"] = userEmail;
-    }
-
-    return headers;
-  }, [userEmail]);
-
   const trackEvent = useCallback(
     async (
       eventType: AnalyticsEventType | string,
@@ -110,7 +90,7 @@ export const useAnalytics = () => {
       const sessionId = explicitSessionId || getOrCreateSessionId();
       const url = AppConfig.serviceUrls.logAnalyticsEvent();
 
-      const payload = JSON.stringify({
+      const payload = {
         userEmail,
         eventType,
         contentId,
@@ -119,21 +99,21 @@ export const useAnalytics = () => {
           timestamp: new Date().toISOString(),
           ...metadata,
         },
-      });
+      };
 
-      if (typeof fetch === "undefined") return;
+      const extraHeaders: Record<string, string> = {};
+      if (userEmail) {
+        extraHeaders["X-User-Email"] = userEmail;
+      }
 
-      fetch(url, {
-        method: "POST",
-        headers: getFreshAuthHeader(),
-        body: payload,
-        keepalive: true,
-        credentials: "include",
-      }).catch((err) => {
-        console.warn("Keepalive analytics flush failed:", err);
-      });
+      // Route through ApiService instance so retry-axios intercepted 401s automatically refresh tokens
+      ApiService.getInstance()
+        .post(url, payload, { headers: extraHeaders })
+        .catch((err) => {
+          console.warn("Analytics flush failed:", err);
+        });
     },
-    [userEmail, getFreshAuthHeader]
+    [userEmail]
   );
 
   return { trackEvent, flushBeaconEvent };

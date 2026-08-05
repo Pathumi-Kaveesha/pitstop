@@ -95,7 +95,7 @@ export class ApiService {
         return config;
       },
       (error) => {
-        Promise.reject(error);
+        return Promise.reject(error);
       }
     );
   }
