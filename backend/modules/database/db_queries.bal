@@ -503,21 +503,18 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
         UniqueSessionTimes AS (
             SELECT 
                 user_email,
-                user_name,
-                department,
-                region,
                 dedupeEventId,
                 MAX(durationSecs) as durationSecs
             FROM DeduplicatedLogs
             WHERE UPPER(event_type) = 'SESSION_TIME'
-            GROUP BY user_email, user_name, department, region, dedupeEventId
+            GROUP BY user_email, dedupeEventId
         ),
         UserMetrics AS (
             SELECT 
                 d.user_email,
-                COALESCE(NULLIF(d.user_name, ''), d.user_email) as userName,
-                COALESCE(NULLIF(d.department, ''), 'N/A') as department,
-                COALESCE(NULLIF(d.region, ''), 'N/A') as region,
+                COALESCE(NULLIF(MAX(d.user_name), ''), d.user_email) as userName,
+                COALESCE(NULLIF(MAX(d.department), ''), 'N/A') as department,
+                COALESCE(NULLIF(MAX(d.region), ''), 'N/A') as region,
                 CAST(SUM(CASE 
                     WHEN UPPER(d.event_type) = 'VIEW' 
                          AND (
@@ -533,7 +530,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
                     WHERE ust.user_email = d.user_email
                 ), 0) AS SIGNED) as timeSpentSeconds
             FROM DeduplicatedLogs d
-            GROUP BY d.user_email, d.user_name, d.department, d.region
+            GROUP BY d.user_email
         )
         SELECT 
             user_email as userEmail,
