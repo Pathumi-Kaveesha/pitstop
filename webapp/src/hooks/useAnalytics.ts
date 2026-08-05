@@ -51,32 +51,24 @@ export const useAnalytics = () => {
     authState?.email ||
     "";
 
-  // Constructs the exact header set expected by ApiService and Ballerina authorization filter
+  // Constructs authorization headers using ApiService.getIdToken() with authState fallback
   const getFreshAuthHeader = useCallback((): Record<string, string> => {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
-    try {
-      const apiServiceInstance = ApiService as any;
-      const token =
-        apiServiceInstance?._idToken ||
-        authState?.idToken ||
-        authState?.accessToken;
+    const token =
+      ApiService.getIdToken() ||
+      authState?.idToken ||
+      authState?.accessToken;
 
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-        headers["x-jwt-assertion"] = token;
-      }
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+      headers["x-jwt-assertion"] = token;
+    }
 
-      if (userEmail) {
-        headers["X-User-Email"] = userEmail;
-      }
-    } catch {
-      if (authState?.idToken) {
-        headers["Authorization"] = `Bearer ${authState.idToken}`;
-        headers["x-jwt-assertion"] = authState.idToken;
-      }
+    if (userEmail) {
+      headers["X-User-Email"] = userEmail;
     }
 
     return headers;
