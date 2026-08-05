@@ -54,7 +54,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PreviewIcon from "@mui/icons-material/Preview";
 import PeopleIcon from "@mui/icons-material/People";
 import RefreshIcon from "@mui/icons-material/Refresh";
-
+import { purple } from "@mui/material/colors";
 import { useAppDispatch, useAppSelector } from "@slices/store";
 import {
   fetchAnalyticsSummary,
@@ -93,6 +93,17 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
   const [startDate, setStartDate] = useState<string>(globalFilters.startDate || "");
   const [endDate, setEndDate] = useState<string>(globalFilters.endDate || "");
   const [pageRoute, setPageRoute] = useState<string>(globalFilters.pageRoute || "");
+  const [cardDateError, setCardDateError] = useState<string>("");
+
+  // Synchronize popover state whenever global filters are updated
+  useEffect(() => {
+    setRegion(globalFilters.region || "");
+    setUserEmail(globalFilters.userEmail || "");
+    setStartDate(globalFilters.startDate || "");
+    setEndDate(globalFilters.endDate || "");
+    setPageRoute(globalFilters.pageRoute || "");
+    setCardDateError("");
+  }, [globalFilters]);
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -103,6 +114,12 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
   };
 
   const handleApply = () => {
+    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
+      setCardDateError("End Date must be equal to or later than Start Date.");
+      return;
+    }
+
+    setCardDateError("");
     onApply({ startDate, endDate, region, userEmail, pageRoute });
     handleClose();
   };
@@ -113,6 +130,7 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
     setStartDate(globalFilters.startDate || "");
     setEndDate(globalFilters.endDate || "");
     setPageRoute(globalFilters.pageRoute || "");
+    setCardDateError("");
     onReset();
     handleClose();
   };
@@ -138,6 +156,12 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
             Card Specific Filter
           </Typography>
 
+          {cardDateError && (
+            <Alert severity="error" sx={{ py: 0.5, px: 1, borderRadius: 1, fontSize: "0.75rem" }}>
+              {cardDateError}
+            </Alert>
+          )}
+
           <FormControl size="small" fullWidth>
             <InputLabel>Page Route</InputLabel>
             <Select
@@ -159,16 +183,24 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
             type="date"
             size="small"
             InputLabelProps={{ shrink: true }}
+            inputProps={{ max: endDate || undefined }}
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              if (cardDateError) setCardDateError("");
+            }}
           />
           <TextField
             label="End Date"
             type="date"
             size="small"
             InputLabelProps={{ shrink: true }}
+            inputProps={{ min: startDate || undefined }}
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            onChange={(e) => {
+              setEndDate(e.target.value);
+              if (cardDateError) setCardDateError("");
+            }}
           />
           <FormControl size="small" fullWidth>
             <InputLabel>Region / Team</InputLabel>
@@ -586,15 +618,18 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     sx={{
                       p: 1.5,
                       borderRadius: 2,
-                      backgroundColor: alpha(theme.palette.secondary.main, 0.1),
-                      color: theme.palette.secondary.main,
+                      backgroundColor: alpha(purple[500], 0.15),
+                      color: purple[500],
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
                     }}
                   >
-                    <SearchIcon />
+                    <SearchIcon sx={{ color: purple[500], fontSize: 24 }} />
                   </Box>
                   <Box>
                     <Typography variant="caption" color="text.secondary">
-                      Top Searches Tracked
+                      Distinct Search Terms Listed
                     </Typography>
                     <Typography variant="h5" fontWeight={700}>
                       {topSearches?.length ?? 0}
