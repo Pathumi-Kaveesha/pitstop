@@ -612,46 +612,62 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
 }
 
 # Dynamic query to fetch the peak activity hour for each day of the week.
-# Content is strictly scoped to matching page routes before aggregating hourly traffic logs.
+# Scopes content to matching page routes when a filter is supplied, preserving all traffic when unfiltered.
 #
 # + filter - Analytics filter parameters including dates, region, user email, and page route
 # + return - Constructed SQL parameterized query
 isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
-    sql:ParameterizedQuery query = `
-        WITH RouteFilteredContent AS (
-            SELECT DISTINCT c.content_id
-            FROM content c
-            INNER JOIN section s ON s.section_id = c.section_id
-            INNER JOIN route r ON r.route_id = s.route_id
-            LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-            WHERE COALESCE(c.is_deleted, 0) = 0
-    `;
+    sql:ParameterizedQuery query = ``;
 
-    if filter.pageRoute is string && filter.pageRoute != "" {
-        query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.route_path)) = LOWER(TRIM(${filter.pageRoute}))
-            OR LOWER(TRIM(parent_r.route_path)) = LOWER(TRIM(${filter.pageRoute}))
-            OR LOWER(TRIM(r.menu_item)) = LOWER(TRIM(${filter.pageRoute}))
-            OR LOWER(TRIM(parent_r.menu_item)) = LOWER(TRIM(${filter.pageRoute}))
-        )`);
+    string? pageRoute = filter.pageRoute;
+    boolean hasPageRoute = pageRoute is string && pageRoute != "";
+
+    if hasPageRoute {
+        query = sql:queryConcat(query, `
+            WITH RouteFilteredContent AS (
+                SELECT DISTINCT c.content_id
+                FROM content c
+                LEFT JOIN section s ON s.section_id = c.section_id
+                LEFT JOIN route r ON r.route_id = COALESCE(s.route_id, c.route_id)
+                LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
+                WHERE COALESCE(c.is_deleted, 0) = 0
+                  AND (
+                      LOWER(TRIM(r.route_path)) = LOWER(TRIM(${pageRoute}))
+                      OR LOWER(TRIM(parent_r.route_path)) = LOWER(TRIM(${pageRoute}))
+                      OR LOWER(TRIM(r.menu_item)) = LOWER(TRIM(${pageRoute}))
+                      OR LOWER(TRIM(parent_r.menu_item)) = LOWER(TRIM(${pageRoute}))
+                  )
+            ),
+            HourlyStats AS (
+                SELECT 
+                    DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayOfWeek,
+                    DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayNum,
+                    HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as peakHour,
+                    CAST(COUNT(*) AS SIGNED) as visitCount,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) 
+                        ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) ASC
+                    ) as rank_num
+                FROM user_activity_logs l
+                INNER JOIN RouteFilteredContent rfc ON rfc.content_id = l.content_id
+                WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
+        `);
+    } else {
+        query = sql:queryConcat(query, `
+            WITH HourlyStats AS (
+                SELECT 
+                    DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayOfWeek,
+                    DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayNum,
+                    HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as peakHour,
+                    CAST(COUNT(*) AS SIGNED) as visitCount,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) 
+                        ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) ASC
+                    ) as rank_num
+                FROM user_activity_logs l
+                WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
+        `);
     }
-
-    query = sql:queryConcat(query, `
-        ),
-        HourlyStats AS (
-            SELECT 
-                DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayOfWeek,
-                DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as dayNum,
-                HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) as peakHour,
-                CAST(COUNT(*) AS SIGNED) as visitCount,
-                ROW_NUMBER() OVER (
-                    PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) 
-                    ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL 330 MINUTE)) ASC
-                ) as rank_num
-            FROM user_activity_logs l
-            INNER JOIN RouteFilteredContent rfc ON rfc.content_id = l.content_id
-            WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
-    `);
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
     
