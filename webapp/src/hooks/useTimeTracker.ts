@@ -99,7 +99,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     );
 
     const flushTimeSpent = async (isLeavingPage: boolean = false) => {
-      if (!isLeavingPage && !isPrimaryTab()) return;
+      if (!isPrimaryTab()) return;
 
       const now = performance.now();
       const elapsedSeconds = Math.floor((now - lastTickTimeRef.current) / 1000);
