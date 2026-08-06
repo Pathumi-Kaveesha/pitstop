@@ -69,6 +69,11 @@ const AppHandler = () => {
           element: React.createElement(View.QuizAdminDashboard),
           errorElement: <Error />,
         },
+        {
+          path: "/analytics-dashboard",
+          element: React.createElement(View.AnalyticsAdminDashboard),
+          errorElement: <Error />,
+        },
       ],
     },
     {

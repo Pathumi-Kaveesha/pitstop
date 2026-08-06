@@ -28,6 +28,7 @@ import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 import { enableMapSet } from "immer";
 import quizReducer from "@slices/quizSlice/quiz";
+import analyticsReducer from "@slices/analyticsSlice/analytics";
 
 enableMapSet();
 
@@ -43,6 +44,7 @@ export const store = configureStore({
     customerTestimonials: customerTestimonialsReducer,
     quiz: quizReducer,
     preview: previewReducer,
+    analytics: analyticsReducer,
   },
 });
 

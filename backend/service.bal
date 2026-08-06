@@ -283,6 +283,26 @@ service http:InterceptableService / on new http:Listener(9090) {
         return http:CREATED;
     }
 
+    # Endpoint to retrieve main top-level routes for filter dropdowns.
+    #
+    # + ctx - Request context
+    # + return - Array of top-level Route records, 403 Forbidden, or 500 Internal Server Error
+    resource function get analytics/routes(http:RequestContext ctx) 
+        returns types:Route[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        types:Route[]|error routes = database:getMainRoutes();
+        if routes is error {
+            log:printError("Error fetching main routes", routes);
+            return <http:InternalServerError>{ body: "Error retrieving main routes" };
+        }
+        return routes;
+    }
+
     # Add a new content under a particular section or route.
     #
     # + ctx - Request context
@@ -560,6 +580,312 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
         return comments;
+    }
+
+    # Log a user activity event.
+    #
+    # + ctx - Request context
+    # + eventPayload - Analytics event payload details
+    # + return - Success or error responses
+    resource function post analytics/events(http:RequestContext ctx, types:AnalyticsEvent eventPayload)
+        returns http:Created|http:BadRequest|http:Forbidden|http:InternalServerError {
+
+        string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+        if userEmail is error {
+            log:printError(constants:USER_INFO_HEADER_NOT_FOUND, userEmail);
+            return <http:InternalServerError> { body: constants:USER_INFO_HEADER_NOT_FOUND };
+        }
+
+        // Strict email validation against authenticated JWT user email.
+        string reqEmail = eventPayload.userEmail.trim().toLowerAscii();
+        string authEmail = userEmail.trim().toLowerAscii();
+
+        if reqEmail == "" || reqEmail != authEmail {
+            string customError = "Email mismatch or missing email in request payload for authenticated user";
+            log:printError(customError);
+            return <http:BadRequest> { body: customError };
+        }
+
+        // Retrieve user profile details from request context
+        authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
+        if userProfile is error {
+            log:printError(constants:GET_USER_PROFILE_ERROR, userProfile);
+            return <http:InternalServerError> { body: constants:USER_PROFILE_READ_ERROR };
+        }
+
+        // Populate missing identity fields directly from user profile
+        if eventPayload.userName is () || eventPayload.userName == "" {
+            eventPayload.userName = string `${userProfile.firstName} ${userProfile.lastName}`.trim();
+        }
+
+        if eventPayload.department is () || eventPayload.department == "" {
+            eventPayload.department = userProfile.department;
+        }
+
+        if eventPayload.region is () || eventPayload.region == "" {
+            eventPayload.region = userProfile.team;
+        }
+
+        error? result = database:logUserActivity(eventPayload);
+        if result is error {
+            string customError = "Error while logging user activity";
+            log:printError(customError, result);
+            return <http:InternalServerError> { body: customError };
+        }
+
+        return http:CREATED;
+    }
+
+    # Get comprehensive platform analytics summary for overall dashboard view.
+    #
+    # + ctx - Request context
+    # + startDate - Optional start date filter (YYYY-MM-DD)
+    # + endDate - Optional end date filter (YYYY-MM-DD)
+    # + region - Optional region/team filter
+    # + userEmail - Optional individual user email filter
+    # + pageRoute - Optional parent or sub-page route filter (e.g. /channel-sales)
+    # + sortBy - Optional sorting metric for top content ("totalViews" or "uniqueViews")
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
+    # + return - Comprehensive Analytics Summary record or 500 Internal Server Error
+    resource function get analytics/summary(
+        http:RequestContext ctx, 
+        string? startDate, 
+        string? endDate, 
+        string? region, 
+        string? userEmail, 
+        string? pageRoute,
+        string? sortBy,
+        int? timezoneOffsetMinutes
+    ) returns types:ComprehensiveAnalyticsSummary|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        types:AnalyticsFilter filter = {
+            startDate: startDate,
+            endDate: endDate,
+            region: region,
+            userEmail: userEmail,
+            pageRoute: pageRoute,
+            sortBy: sortBy,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
+        };
+
+        types:ComprehensiveAnalyticsSummary|error summary = database:getComprehensiveAnalytics(filter);
+        if summary is error {
+            log:printError("Error fetching analytics summary", summary);
+            return <http:InternalServerError>{ body: "Error retrieving analytics summary data" };
+        }
+
+        return summary;
+    }
+
+    # Section Filter Resource: Top Content Performance
+    #
+    # + ctx - Request context
+    # + startDate - Optional start date filter
+    # + endDate - Optional end date filter
+    # + region - Optional region filter
+    # + userEmail - Optional user email filter
+    # + pageRoute - Optional page route filter
+    # + sortBy - Optional sorting metric ("totalViews" or "uniqueViews")
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
+    # + return - Array of ContentPerformanceMetric records, 403 Forbidden, or 500 Internal Server Error
+    resource function get analytics/summary/top\-content(
+        http:RequestContext ctx, 
+        string? startDate, 
+        string? endDate, 
+        string? region, 
+        string? userEmail, 
+        string? pageRoute,
+        string? sortBy,
+        int? timezoneOffsetMinutes
+    ) returns types:ContentPerformanceMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        types:AnalyticsFilter filter = { 
+            startDate: startDate, 
+            endDate: endDate, 
+            region: region, 
+            userEmail: userEmail,
+            pageRoute: pageRoute,
+            sortBy: sortBy,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
+        };
+
+        types:ContentPerformanceMetric[]|error data = database:getTopContentMetrics(filter);
+        if data is error {
+            log:printError("Error retrieving top content metrics", data);
+            return <http:InternalServerError>{ body: "Error retrieving top content metrics" };
+        }
+
+        return data;
+    }
+
+    # Section Filter Resource: User Activity Leaderboard
+    #
+    # + ctx - Request context
+    # + startDate - Optional start date filter
+    # + endDate - Optional end date filter
+    # + region - Optional region filter
+    # + userEmail - Optional user email filter
+    # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
+    # + return - Array of UserLeaderboardEntry records or 500 Internal Server Error
+    resource function get analytics/summary/leaderboard(
+        http:RequestContext ctx, 
+        string? startDate, 
+        string? endDate, 
+        string? region, 
+        string? userEmail,
+        string? pageRoute,
+        int? timezoneOffsetMinutes
+    ) returns types:UserLeaderboardEntry[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        types:AnalyticsFilter filter = { 
+            startDate: startDate, 
+            endDate: endDate, 
+            region: region, 
+            userEmail: userEmail,
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
+        };
+        types:UserLeaderboardEntry[]|error data = database:getUserLeaderboardMetrics(filter);
+        if data is error {
+            return <http:InternalServerError>{ body: "Error retrieving leaderboard metrics" };
+        }
+        return data;
+    }
+
+    # Section Filter Resource: Regional Time Spent
+    #
+    # + ctx - Request context
+    # + startDate - Optional start date filter
+    # + endDate - Optional end date filter
+    # + region - Optional region filter
+    # + userEmail - Optional user email filter
+    # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
+    # + return - Array of RegionalTimeMetric records or 500 Internal Server Error
+    resource function get analytics/summary/regional\-time(
+        http:RequestContext ctx, 
+        string? startDate, 
+        string? endDate, 
+        string? region, 
+        string? userEmail,
+        string? pageRoute,
+        int? timezoneOffsetMinutes
+    ) returns types:RegionalTimeMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        types:AnalyticsFilter filter = { 
+            startDate: startDate, 
+            endDate: endDate, 
+            region: region, 
+            userEmail: userEmail,
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
+        };
+        types:RegionalTimeMetric[]|error data = database:getRegionalTimeMetrics(filter);
+        if data is error {
+            return <http:InternalServerError>{ body: "Error retrieving regional time metrics" };
+        }
+        return data;
+    }
+
+    # Section Filter Resource: Peak Activity Windows
+    #
+    # + ctx - Request context
+    # + startDate - Optional start date filter
+    # + endDate - Optional end date filter
+    # + region - Optional region filter
+    # + userEmail - Optional user email filter
+    # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
+    # + return - Array of TrafficPeakMetric records or 500 Internal Server Error
+    resource function get analytics/summary/peak\-activity(
+        http:RequestContext ctx, 
+        string? startDate, 
+        string? endDate, 
+        string? region, 
+        string? userEmail,
+        string? pageRoute,
+        int? timezoneOffsetMinutes
+    ) returns types:TrafficPeakMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        types:AnalyticsFilter filter = { 
+            startDate: startDate, 
+            endDate: endDate, 
+            region: region, 
+            userEmail: userEmail,
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
+        };
+        types:TrafficPeakMetric[]|error data = database:getPeakActivityMetrics(filter);
+        if data is error {
+            return <http:InternalServerError>{ body: "Error retrieving peak activity metrics" };
+        }
+        return data;
+    }
+
+    # Section Filter Resource: Top Search Terms
+    #
+    # + ctx - Request context
+    # + startDate - Optional start date filter
+    # + endDate - Optional end date filter
+    # + region - Optional region filter
+    # + userEmail - Optional user email filter
+    # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
+    # + return - Array of SearchMetric records or 500 Internal Server Error
+    resource function get analytics/summary/top\-searches(
+        http:RequestContext ctx, 
+        string? startDate, 
+        string? endDate, 
+        string? region, 
+        string? userEmail,
+        string? pageRoute,
+        int? timezoneOffsetMinutes
+    ) returns types:SearchMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        types:AnalyticsFilter filter = { 
+            startDate: startDate, 
+            endDate: endDate, 
+            region: region, 
+            userEmail: userEmail,
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
+        };
+        types:SearchMetric[]|error data = database:getTopSearchesMetrics(filter);
+        if data is error {
+            return <http:InternalServerError>{ body: "Error retrieving search metrics" };
+        }
+        return data;
     }
 
     # Retrieve all tags from the database.

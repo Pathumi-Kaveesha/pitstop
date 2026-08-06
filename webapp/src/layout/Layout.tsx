@@ -34,12 +34,18 @@ import { setNavigationLoading } from "@slices/commonSlice/common";
 import pJson from "../../package.json";
 import MatomoTracker from "../analytics/MatomoTracker";
 import Header from "./header";
+import { usePageTimeTracker } from "../hooks/useTimeTracker"; 
 
 export default function Layout() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const common = useAppSelector((state: RootState) => state.common);
   const prevPathnameRef = useRef<string>("");
+
+  const route = useAppSelector((state: RootState) => state.route);
+  const location = useLocation();
+
+  usePageTimeTracker(location.pathname);
 
   useEffect(() => {
     if (localStorage.getItem("hris-app-redirect-url")) {
@@ -48,8 +54,6 @@ export default function Layout() {
     }
   }, [navigate]);
 
-  const route = useAppSelector((state: RootState) => state.route);
-  const location = useLocation();
   const matches = matchRoutes(route.routes, location.pathname);
   const theme = useTheme();
   const userInfo = useSelector(selectUserInfo);

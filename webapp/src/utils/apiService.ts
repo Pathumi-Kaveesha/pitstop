@@ -65,6 +65,10 @@ export class ApiService {
     return ApiService._instance;
   }
 
+  public static getIdToken(): string | null {
+    return ApiService._idToken || null;
+  }
+
   public static getCancelToken() {
     return ApiService._cancelTokenSource;
   }
@@ -91,7 +95,7 @@ export class ApiService {
         return config;
       },
       (error) => {
-        Promise.reject(error);
+        return Promise.reject(error);
       }
     );
   }

@@ -36,6 +36,8 @@ import {
 } from "@slices/pageSlice/page";
 import { TagResponse } from "@/types/types";
 import { useLocation } from "react-router-dom";
+import { useAnalytics } from "../../hooks/useAnalytics";
+import { AnalyticsEventType } from "@utils/types";
 
 export declare let _paq: unknown[];
 if (typeof window !== "undefined") {
@@ -43,6 +45,7 @@ if (typeof window !== "undefined") {
 }
 
 export default function Search() {
+  const { trackEvent } = useAnalytics();
   const [selectedTags, setSelectedTags] = useState<TagResponse[]>([]);
   const [keywordText, setKeywordText] = useState("");
   const tagInfo = useAppSelector((state: RootState) => state.page.tagData);
@@ -60,25 +63,58 @@ export default function Search() {
     if (query) {
       setKeywordText(query);
       dispatch(searchContent({ userInput: query }));
+
+      trackEvent(AnalyticsEventType.SEARCH, null, {
+        query,
+        source: "url_param_search",
+      });
+
       if (window.config?.IS_MATOMO_ENABLED) {
         _paq.push(["trackSiteSearch", query, false, false]);
       }
     }
-  }, [location.search, dispatch]);
+  }, [location.search, dispatch, trackEvent]);
 
   const handleSearch = () => {
     const searchText = keywordText.trim();
-    const tags = selectedTags.map((tag) => tag.tagName);
 
-    if (searchText) {
-      dispatch(searchContent({ userInput: searchText }));
+    // Get explicit tag names selected from the dropdown
+    const explicitTagNames = selectedTags.map((tag) => tag.tagName);
+
+    // Check if typed text matches an existing tag name (case-insensitive)
+    const matchedTag = tagInfo.find(
+      (t) => t.tagName.toLowerCase() === searchText.toLowerCase()
+    );
+
+    // Combine explicit tags and matched typed tag
+    const allTagsToFilter = [...explicitTagNames];
+    if (matchedTag && !allTagsToFilter.includes(matchedTag.tagName)) {
+      allTagsToFilter.push(matchedTag.tagName);
+    }
+
+    // Label for analytics query log
+    const searchTerms = [searchText, ...explicitTagNames].filter(Boolean).join(", ");
+
+    if (searchTerms) {
+      trackEvent(AnalyticsEventType.SEARCH, null, {
+        query: searchTerms,
+        rawText: searchText,
+        tagsSelected: allTagsToFilter,
+        source: "global_search_bar",
+      });
+
       if (window.config?.IS_MATOMO_ENABLED) {
-        _paq.push(["trackSiteSearch", searchText, false, false]);
+        _paq.push(["trackSiteSearch", searchTerms, false, false]);
       }
     }
 
-    if (tags.length > 0) {
-      dispatch(filterContent({ inputTags: tags }));
+    // If there are tags to filter by (either dropdown selection or exact typed match)
+    if (allTagsToFilter.length > 0) {
+      dispatch(filterContent({ inputTags: allTagsToFilter }));
+    } 
+    // Otherwise, perform full-text search on title/description
+    else if (searchText) {
+      dispatch(searchContent({ userInput: searchText }));
     }
   };
 
@@ -129,7 +165,7 @@ export default function Search() {
               }}
               onChange={(_, newValue) => {
                 const tagsOnly = newValue.filter(
-                  (item): item is TagResponse => typeof item !== "string",
+                  (item): item is TagResponse => typeof item !== "string"
                 );
                 setSelectedTags(tagsOnly);
               }}
