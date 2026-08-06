@@ -96,9 +96,7 @@ export default function Search() {
     const searchTerms = [searchText, ...explicitTagNames].filter(Boolean).join(", ");
 
     if (searchTerms) {
-      console.log("🔍 [Search.tsx] Logging search event for:", searchTerms);
-
-      trackEvent(AnalyticsEventType.SEARCH || "SEARCH", null, {
+      trackEvent(AnalyticsEventType.SEARCH, null, {
         query: searchTerms,
         rawText: searchText,
         tagsSelected: allTagsToFilter,
