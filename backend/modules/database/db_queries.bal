@@ -795,7 +795,12 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
         PlatformEventLogs AS (
             SELECT 
                 l.event_type,
-                l.user_email
+                l.user_email,
+                JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.trackingType')) as trackingType,
+                COALESCE(
+                    JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
+                    CAST(l.id AS CHAR)
+                ) as dedupeEventId
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -828,13 +833,32 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
     return sql:queryConcat(query, `
         )
         SELECT 
-            CAST(COALESCE(SUM(CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN 1 ELSE 0 END), 0) AS SIGNED) as totalViews,
-            CAST(COUNT(DISTINCT CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN user_email END) AS SIGNED) as totalUniqueViews,
+            CAST(
+                -- Explicit VIEW/PREVIEW/CARD_VIEW events
+                COALESCE(SUM(CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN 1 ELSE 0 END), 0)
+                + 
+                -- Distinct page visit event instances via SESSION_TIME events
+                COUNT(DISTINCT CASE 
+                    WHEN UPPER(event_type) = 'SESSION_TIME' 
+                         AND (trackingType = 'page_view_duration' OR trackingType IS NULL)
+                    THEN dedupeEventId 
+                END)
+            AS SIGNED) as totalViews,
+            
+            CAST(COUNT(DISTINCT CASE 
+                WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') 
+                     OR (UPPER(event_type) = 'SESSION_TIME' AND (trackingType = 'page_view_duration' OR trackingType IS NULL))
+                THEN user_email 
+            END) AS SIGNED) as totalUniqueViews,
+            
             CAST(COALESCE((SELECT SUM(maxDuration) FROM DeduplicatedSessionTimes), 0) AS SIGNED) as totalTimeSpentSeconds,
-            CAST(COUNT(*) AS SIGNED) as totalEngagements
+            
+            -- Exclude passive SESSION_TIME ticks from user interaction counts
+            CAST(SUM(CASE WHEN UPPER(event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) AS SIGNED) as totalEngagements
         FROM PlatformEventLogs
     `);
 }
+
 
 # Query to get section ID for given section details.
 #

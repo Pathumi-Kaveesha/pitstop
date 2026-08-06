@@ -44,6 +44,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     typeof document !== "undefined" ? document.hasFocus() : true
   );
 
+  // Maintain eventId across flushes for the duration of this route visit session
   const activeEventIdRef = useRef<string>(
     `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
   );
@@ -60,6 +61,11 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
   };
 
   useEffect(() => {
+    // Generate ONE event ID per route visit session mount
+    activeEventIdRef.current = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    lastTickTimeRef.current = performance.now();
+    activeDurationRef.current = 0;
+
     const routeKeyPart = pageRoute ?? "content";
     const tabKey = `${ACTIVE_TAB_KEY}_${trackingType}_${routeKeyPart}`;
     const heartbeatKey = `${ACTIVE_TAB_HEARTBEAT_KEY}_${trackingType}_${routeKeyPart}`;
@@ -110,14 +116,13 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
       const finalSecondsToReport = activeDurationRef.current + (isUserIdle ? 0 : validElapsed);
 
       const secondsToSend = finalSecondsToReport;
-      const eventIdToSend = activeEventIdRef.current;
+      const eventIdToSend = activeEventIdRef.current; // Always reuses the same event ID for this route visit!
       const routeToSend = resolvePageRoute();
       const currentSessionId = getOrCreateSessionId();
 
-      // Synchronously zero-out active duration baseline
+      // Zero-out active duration baseline without re-generating a new eventId
       activeDurationRef.current = 0;
       lastTickTimeRef.current = performance.now();
-      activeEventIdRef.current = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
       if (secondsToSend < 1) return;
 
