@@ -596,12 +596,6 @@ service http:InterceptableService / on new http:Listener(9090) {
             return <http:InternalServerError> { body: constants:USER_INFO_HEADER_NOT_FOUND };
         }
 
-        string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
-        if userGroups is error {
-            log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
-            return <http:InternalServerError> { body: constants:GET_USER_ROLE_ERROR };
-        }
-
         // Strict email validation against authenticated JWT user email.
         string reqEmail = eventPayload.userEmail.trim().toLowerAscii();
         string authEmail = userEmail.trim().toLowerAscii();
@@ -733,7 +727,7 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         return data;
     }
-    
+
     # Section Filter Resource: User Activity Leaderboard
     #
     # + ctx - Request context
