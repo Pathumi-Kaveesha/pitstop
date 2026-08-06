@@ -351,10 +351,12 @@ const AnalyticsAdminDashboard: React.FC = () => {
           : [];
 
         if (rawData.length > 0) {
-          const routes: MainRouteOption[] = rawData.map((r) => ({
-            route_path: r.routePath || r.route_path || r.path || "",
-            label: r.menuItem || r.menu_item || r.title || r.label || "Unnamed Page",
-          }));
+          const routes: MainRouteOption[] = rawData
+            .map((r) => ({
+              route_path: (r.routePath || r.route_path || r.path || "").trim(),
+              label: (r.menuItem || r.menu_item || r.title || r.label || "Unnamed Page").trim(),
+            }))
+            .filter((r) => Boolean(r.route_path));
           setMainRoutes(routes);
         }
       } catch (err) {
