@@ -504,7 +504,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             SELECT 
                 user_email,
                 dedupeEventId,
-                MAX(durationSecs) as durationSecs
+                SUM(durationSecs) as durationSecs
             FROM DeduplicatedLogs
             WHERE UPPER(event_type) = 'SESSION_TIME'
             GROUP BY user_email, dedupeEventId
@@ -564,7 +564,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as maxDuration
+                SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -601,7 +601,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
         )
         SELECT 
             region,
-            CAST(COALESCE(SUM(maxDuration), 0) AS SIGNED) as totalTimeSpentSeconds,
+            CAST(COALESCE(SUM(totalDuration), 0) AS SIGNED) as totalTimeSpentSeconds,
             CAST(COUNT(DISTINCT user_email) AS SIGNED) as activeUsersCount
         FROM DeduplicatedSessionTimes
         GROUP BY region 
@@ -757,7 +757,7 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as maxDuration
+                SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -851,14 +851,13 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
                 THEN user_email 
             END) AS SIGNED) as totalUniqueViews,
             
-            CAST(COALESCE((SELECT SUM(maxDuration) FROM DeduplicatedSessionTimes), 0) AS SIGNED) as totalTimeSpentSeconds,
+            CAST(COALESCE((SELECT SUM(totalDuration) FROM DeduplicatedSessionTimes), 0) AS SIGNED) as totalTimeSpentSeconds,
             
             -- Exclude passive SESSION_TIME ticks from user interaction counts
             CAST(SUM(CASE WHEN UPPER(event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) AS SIGNED) as totalEngagements
         FROM PlatformEventLogs
     `);
 }
-
 
 # Query to get section ID for given section details.
 #

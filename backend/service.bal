@@ -651,6 +651,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + userEmail - Optional individual user email filter
     # + pageRoute - Optional parent or sub-page route filter (e.g. /channel-sales)
     # + sortBy - Optional sorting metric for top content ("totalViews" or "uniqueViews")
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
     # + return - Comprehensive Analytics Summary record or 500 Internal Server Error
     resource function get analytics/summary(
         http:RequestContext ctx, 
@@ -659,7 +660,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? region, 
         string? userEmail, 
         string? pageRoute,
-        string? sortBy
+        string? sortBy,
+        int? timezoneOffsetMinutes
     ) returns types:ComprehensiveAnalyticsSummary|http:Forbidden|http:InternalServerError {
 
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
@@ -673,7 +675,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             region: region,
             userEmail: userEmail,
             pageRoute: pageRoute,
-            sortBy: sortBy
+            sortBy: sortBy,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
         };
 
         types:ComprehensiveAnalyticsSummary|error summary = database:getComprehensiveAnalytics(filter);
@@ -694,6 +697,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
     # + sortBy - Optional sorting metric ("totalViews" or "uniqueViews")
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
     # + return - Array of ContentPerformanceMetric records or 500 Internal Server Error
     resource function get analytics/summary/top\-content(
         http:RequestContext ctx, 
@@ -702,7 +706,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? region, 
         string? userEmail, 
         string? pageRoute,
-        string? sortBy
+        string? sortBy,
+        int? timezoneOffsetMinutes
     ) returns types:ContentPerformanceMetric[]|http:Forbidden|http:InternalServerError {
 
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
@@ -716,7 +721,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             region: region, 
             userEmail: userEmail,
             pageRoute: pageRoute,
-            sortBy: sortBy 
+            sortBy: sortBy,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
         };
         types:ContentPerformanceMetric[]|error data = database:getTopContentMetrics(filter);
         if data is error {
@@ -733,6 +739,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + region - Optional region filter
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
     # + return - Array of UserLeaderboardEntry records or 500 Internal Server Error
     resource function get analytics/summary/leaderboard(
         http:RequestContext ctx, 
@@ -740,7 +747,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? endDate, 
         string? region, 
         string? userEmail,
-        string? pageRoute
+        string? pageRoute,
+        int? timezoneOffsetMinutes
     ) returns types:UserLeaderboardEntry[]|http:Forbidden|http:InternalServerError {
 
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
@@ -753,7 +761,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             endDate: endDate, 
             region: region, 
             userEmail: userEmail,
-            pageRoute: pageRoute 
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
         };
         types:UserLeaderboardEntry[]|error data = database:getUserLeaderboardMetrics(filter);
         if data is error {
@@ -770,6 +779,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + region - Optional region filter
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
     # + return - Array of RegionalTimeMetric records or 500 Internal Server Error
     resource function get analytics/summary/regional\-time(
         http:RequestContext ctx, 
@@ -777,7 +787,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? endDate, 
         string? region, 
         string? userEmail,
-        string? pageRoute
+        string? pageRoute,
+        int? timezoneOffsetMinutes
     ) returns types:RegionalTimeMetric[]|http:Forbidden|http:InternalServerError {
 
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
@@ -790,7 +801,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             endDate: endDate, 
             region: region, 
             userEmail: userEmail,
-            pageRoute: pageRoute 
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
         };
         types:RegionalTimeMetric[]|error data = database:getRegionalTimeMetrics(filter);
         if data is error {
@@ -807,6 +819,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + region - Optional region filter
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
     # + return - Array of TrafficPeakMetric records or 500 Internal Server Error
     resource function get analytics/summary/peak\-activity(
         http:RequestContext ctx, 
@@ -814,7 +827,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? endDate, 
         string? region, 
         string? userEmail,
-        string? pageRoute
+        string? pageRoute,
+        int? timezoneOffsetMinutes
     ) returns types:TrafficPeakMetric[]|http:Forbidden|http:InternalServerError {
 
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
@@ -827,7 +841,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             endDate: endDate, 
             region: region, 
             userEmail: userEmail,
-            pageRoute: pageRoute 
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
         };
         types:TrafficPeakMetric[]|error data = database:getPeakActivityMetrics(filter);
         if data is error {
@@ -844,6 +859,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + region - Optional region filter
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
     # + return - Array of SearchMetric records or 500 Internal Server Error
     resource function get analytics/summary/top\-searches(
         http:RequestContext ctx, 
@@ -851,7 +867,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? endDate, 
         string? region, 
         string? userEmail,
-        string? pageRoute
+        string? pageRoute,
+        int? timezoneOffsetMinutes
     ) returns types:SearchMetric[]|http:Forbidden|http:InternalServerError {
 
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
@@ -864,7 +881,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             endDate: endDate, 
             region: region, 
             userEmail: userEmail,
-            pageRoute: pageRoute 
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
         };
         types:SearchMetric[]|error data = database:getTopSearchesMetrics(filter);
         if data is error {
