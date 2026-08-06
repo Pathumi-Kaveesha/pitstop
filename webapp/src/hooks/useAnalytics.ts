@@ -57,6 +57,8 @@ export const useAnalytics = () => {
       metadata: Record<string, unknown> = {},
       explicitSessionId?: string | null
     ) => {
+      if (!userEmail) return null;
+
       const sessionId = explicitSessionId || getOrCreateSessionId();
 
       return await dispatch(
@@ -87,6 +89,8 @@ export const useAnalytics = () => {
       metadata: Record<string, unknown> = {},
       explicitSessionId?: string | null
     ) => {
+      if (!userEmail) return;
+
       const sessionId = explicitSessionId || getOrCreateSessionId();
       const url = AppConfig.serviceUrls.logAnalyticsEvent();
 
@@ -101,10 +105,9 @@ export const useAnalytics = () => {
         },
       };
 
-      const extraHeaders: Record<string, string> = {};
-      if (userEmail) {
-        extraHeaders["X-User-Email"] = userEmail;
-      }
+      const extraHeaders: Record<string, string> = {
+        "X-User-Email": userEmail,
+      };
 
       // Route through ApiService instance so retry-axios intercepted 401s automatically refresh tokens
       ApiService.getInstance()
