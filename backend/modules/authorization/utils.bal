@@ -14,6 +14,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/http;
+import ballerina/log;
+import pitstop.constants;
+
 # Check permissions.
 #
 # + requiredRoles - Required Role list
@@ -26,6 +30,25 @@ public isolated function hasPermission(string[] requiredRoles, string[] userRole
 
     final string[] & readonly userRolesReadOnly = userRoles.cloneReadOnly();
     return requiredRoles.every(role => userRolesReadOnly.indexOf(role) !is ());
+}
+
+# Check if the requesting user has admin access.
+#
+# + ctx - Request context
+# + return - () if user is authorized, or http:Forbidden/http:InternalServerError on failure
+public isolated function checkAdminAccess(http:RequestContext ctx) returns http:Forbidden|http:InternalServerError? {
+    string[]|error userGroups = ctx.getWithType(REQUESTED_BY_USER_ROLES);
+    if userGroups is error {
+        log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
+        return <http:InternalServerError> { body: constants:GET_USER_ROLE_ERROR };
+    }
+
+    if !hasPermission([authorizedRoles.adminRole], userGroups) {
+        log:printError(constants:UNAUTHORIZED_ACCESS_ERROR);
+        return http:FORBIDDEN;
+    }
+
+    return ();
 }
 
 # Converts a single string or an array of strings into a single consolidated string.

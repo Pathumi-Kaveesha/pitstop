@@ -286,9 +286,14 @@ service http:InterceptableService / on new http:Listener(9090) {
     # Endpoint to retrieve main top-level routes for filter dropdowns.
     #
     # + ctx - Request context
-    # + return - Array of top-level Route records or 500 Internal Server Error
+    # + return - Array of top-level Route records, 403 Forbidden, or 500 Internal Server Error
     resource function get analytics/routes(http:RequestContext ctx) 
-        returns types:Route[]|http:InternalServerError {
+        returns types:Route[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
 
         types:Route[]|error routes = database:getMainRoutes();
         if routes is error {
@@ -598,7 +603,6 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         // Strict email validation against authenticated JWT user email.
-        // Rejects empty, missing, or mismatched emails to prevent identity spoofing.
         string reqEmail = eventPayload.userEmail.trim().toLowerAscii();
         string authEmail = userEmail.trim().toLowerAscii();
 
@@ -656,7 +660,12 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? userEmail, 
         string? pageRoute,
         string? sortBy
-    ) returns types:ComprehensiveAnalyticsSummary|http:InternalServerError {
+    ) returns types:ComprehensiveAnalyticsSummary|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
 
         types:AnalyticsFilter filter = {
             startDate: startDate,
@@ -694,7 +703,12 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? userEmail, 
         string? pageRoute,
         string? sortBy
-    ) returns types:ContentPerformanceMetric[]|http:InternalServerError {
+    ) returns types:ContentPerformanceMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
 
         types:AnalyticsFilter filter = { 
             startDate: startDate, 
@@ -727,7 +741,12 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? region, 
         string? userEmail,
         string? pageRoute
-    ) returns types:UserLeaderboardEntry[]|http:InternalServerError {
+    ) returns types:UserLeaderboardEntry[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
 
         types:AnalyticsFilter filter = { 
             startDate: startDate, 
@@ -759,7 +778,12 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? region, 
         string? userEmail,
         string? pageRoute
-    ) returns types:RegionalTimeMetric[]|http:InternalServerError {
+    ) returns types:RegionalTimeMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
 
         types:AnalyticsFilter filter = { 
             startDate: startDate, 
@@ -791,7 +815,12 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? region, 
         string? userEmail,
         string? pageRoute
-    ) returns types:TrafficPeakMetric[]|http:InternalServerError {
+    ) returns types:TrafficPeakMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
 
         types:AnalyticsFilter filter = { 
             startDate: startDate, 
@@ -823,7 +852,12 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? region, 
         string? userEmail,
         string? pageRoute
-    ) returns types:SearchMetric[]|http:InternalServerError {
+    ) returns types:SearchMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
 
         types:AnalyticsFilter filter = { 
             startDate: startDate, 
