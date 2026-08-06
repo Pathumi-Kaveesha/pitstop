@@ -150,7 +150,7 @@ public type AnalyticsFilter record {|
 public type AnalyticsTotals record {|
     # Total number of content views
     int totalViews;
-    #otal number of distinct users who viewed content
+    # Total number of distinct users who viewed content
     int totalUniqueViews;
     # Total cumulative user active time spent in seconds
     int totalTimeSpentSeconds;
