@@ -64,7 +64,7 @@ export default function Search() {
       setKeywordText(query);
       dispatch(searchContent({ userInput: query }));
 
-      trackEvent(AnalyticsEventType.SEARCH || "SEARCH", null, {
+      trackEvent(AnalyticsEventType.SEARCH, null, {
         query,
         source: "url_param_search",
       });
