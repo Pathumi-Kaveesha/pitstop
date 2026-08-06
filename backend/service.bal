@@ -698,7 +698,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + pageRoute - Optional page route filter
     # + sortBy - Optional sorting metric ("totalViews" or "uniqueViews")
     # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
-    # + return - Array of ContentPerformanceMetric records or 500 Internal Server Error
+    # + return - Array of ContentPerformanceMetric records, 403 Forbidden, or 500 Internal Server Error
     resource function get analytics/summary/top\-content(
         http:RequestContext ctx, 
         string? startDate, 
@@ -724,13 +724,16 @@ service http:InterceptableService / on new http:Listener(9090) {
             sortBy: sortBy,
             timezoneOffsetMinutes: timezoneOffsetMinutes
         };
+
         types:ContentPerformanceMetric[]|error data = database:getTopContentMetrics(filter);
         if data is error {
+            log:printError("Error retrieving top content metrics", data);
             return <http:InternalServerError>{ body: "Error retrieving top content metrics" };
         }
+
         return data;
     }
-
+    
     # Section Filter Resource: User Activity Leaderboard
     #
     # + ctx - Request context
