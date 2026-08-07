@@ -146,6 +146,9 @@ public isolated function deleteContentById(int contentId) returns int|error? {
 # + event - Analytics event payload details
 # + return - Error or nil
 public isolated function logUserActivity(types:AnalyticsEvent event) returns error? {
+    if event.userEmail.trim() == "" {
+        return error("User email cannot be empty for activity logging");
+    }
     _ = check dbClient->execute(logUserActivityQuery(event));
 }
 
