@@ -20,7 +20,6 @@ import { ApiService } from "@utils/apiService";
 import type { AnalyticsEventType } from "@utils/types";
 
 export interface AnalyticsEventPayload {
-  userEmail: string;
   userName?: string;
   department?: string;
   region?: string;

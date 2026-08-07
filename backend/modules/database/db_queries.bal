@@ -398,15 +398,19 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
                      OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.source'))) LIKE '%outlink%'
                 THEN 1 ELSE 0 
             END), 0) AS SIGNED) as outlinkClicks,
-            CAST(COUNT(*) AS SIGNED) as totalViews,
-            CAST(COUNT(DISTINCT l.user_email) AS SIGNED) as uniqueViews,
-            CAST(COALESCE(SUM(CASE WHEN JSON_EXTRACT(l.metadata, '$.completed') = true THEN 1 ELSE 0 END), 0) AS SIGNED) as fullCompletions
+            CAST(SUM(CASE WHEN UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN 1 ELSE 0 END) AS SIGNED) as totalViews,
+            CAST(COUNT(DISTINCT CASE WHEN UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN l.user_email END) AS SIGNED) as uniqueViews,
+            CAST(COUNT(DISTINCT CASE 
+                WHEN LOWER(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.completed'))) = 'true' 
+                THEN l.user_email 
+            END) AS SIGNED) as fullCompletions
         FROM user_activity_logs l
         LEFT JOIN content c ON c.content_id = l.content_id
         LEFT JOIN section s ON s.section_id = c.section_id
         LEFT JOIN route r ON r.route_id = s.route_id
         LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-        WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
+        WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW', 'COMPLETION', 'ENGAGEMENT')
+          AND l.content_id IS NOT NULL
           AND COALESCE(c.is_deleted, 0) = 0
     `;
 
@@ -445,7 +449,6 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
 }
 
 # Dynamic query to fetch top 10 users for the leaderboard.
-# Deduplicates SESSION_TIME events using metadata eventId to prevent double-counting active time.
 #
 # + filter - Analytics filter parameters including dates, region, user email, and page route
 # + return - Constructed SQL parameterized query
@@ -519,7 +522,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
                     WHEN UPPER(d.event_type) = 'VIEW' 
                          AND (
                              d.durationSecs >= 10
-                             OR JSON_EXTRACT(d.metadata, '$.verifiedView') = true
+                             OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(d.metadata, '$.verifiedView'))) = 'true'
                          )
                     THEN 1 ELSE 0 
                 END) AS SIGNED) as verifiedViews,
@@ -834,10 +837,8 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
         )
         SELECT 
             CAST(
-                -- Explicit VIEW/PREVIEW/CARD_VIEW events
                 COALESCE(SUM(CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN 1 ELSE 0 END), 0)
                 + 
-                -- Distinct page visit event instances via SESSION_TIME events
                 COUNT(DISTINCT CASE 
                     WHEN UPPER(event_type) = 'SESSION_TIME' 
                          AND (trackingType = 'page_view_duration' OR trackingType IS NULL)
@@ -853,8 +854,8 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             
             CAST(COALESCE((SELECT SUM(totalDuration) FROM DeduplicatedSessionTimes), 0) AS SIGNED) as totalTimeSpentSeconds,
             
-            -- Exclude passive SESSION_TIME ticks from user interaction counts
-            CAST(SUM(CASE WHEN UPPER(event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) AS SIGNED) as totalEngagements
+            -- Wrapped with COALESCE to prevent returning NULL on empty sets
+            CAST(COALESCE(SUM(CASE WHEN UPPER(event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END), 0) AS SIGNED) as totalEngagements
         FROM PlatformEventLogs
     `);
 }

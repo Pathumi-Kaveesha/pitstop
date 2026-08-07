@@ -63,7 +63,6 @@ export const useAnalytics = () => {
 
       return await dispatch(
         logAnalyticsEvent({
-          userEmail,
           eventType,
           contentId,
           sessionId,
@@ -95,7 +94,6 @@ export const useAnalytics = () => {
       const url = AppConfig.serviceUrls.logAnalyticsEvent();
 
       const payload = {
-        userEmail,
         eventType,
         contentId,
         sessionId,
@@ -105,13 +103,9 @@ export const useAnalytics = () => {
         },
       };
 
-      const extraHeaders: Record<string, string> = {
-        "X-User-Email": userEmail,
-      };
-
-      // Route through ApiService instance so retry-axios intercepted 401s automatically refresh tokens
+      // Route through ApiService without custom headers to satisfy CORS
       ApiService.getInstance()
-        .post(url, payload, { headers: extraHeaders })
+        .post(url, payload)
         .catch((err) => {
           console.warn("Analytics flush failed:", err);
         });

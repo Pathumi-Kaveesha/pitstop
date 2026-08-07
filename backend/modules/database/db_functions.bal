@@ -411,8 +411,9 @@ public isolated function getPageDetails(string routePath) returns types:PageResp
 # + return - Route list or error
 public isolated function getMainRoutes() returns types:Route[]|error {
     stream<types:Route, sql:Error?> resultStream = dbClient->query(getMainRoutesQuery());
-    return from types:Route result in resultStream
-        select result;
+    types:Route[] routes = check from types:Route result in resultStream select result;
+    check resultStream.close();
+    return routes;
 }
 
 # Update content.

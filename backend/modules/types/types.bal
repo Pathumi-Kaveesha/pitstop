@@ -98,12 +98,10 @@ public type ContentPayload record {|
     boolean isReused = false;
 |};
 
-
-
 # Analytics event payload sent from the React frontend
 public type AnalyticsEvent record {|
     # User email
-    string userEmail;
+    string userEmail = "";
     # User name
     string? userName = ();
     # User department
@@ -119,6 +117,7 @@ public type AnalyticsEvent record {|
     # Additional dynamic attributes
     json? metadata = ();   // Dynamic JSON for extra details (e.g. watch %, scroll depth)
 |};
+
 
 # Standard HTTP response for analytics ingestion
 public type AnalyticsResponse record {|
