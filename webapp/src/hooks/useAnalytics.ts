@@ -118,9 +118,15 @@ export const useAnalytics = () => {
         headers,
         body: JSON.stringify(payload),
         keepalive: true,
-      }).catch((err) => {
-        console.warn("Analytics flush failed:", err);
-      });
+      })
+        .then((res) => {
+          if (!res.ok) {
+            console.warn("Analytics flush failed with status:", res.status);
+          }
+        })
+        .catch((err) => {
+          console.warn("Analytics flush failed:", err);
+        });
     },
     [userEmail]
   );
