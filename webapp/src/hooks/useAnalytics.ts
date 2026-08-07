@@ -103,12 +103,24 @@ export const useAnalytics = () => {
         },
       };
 
-      // Route through ApiService without custom headers to satisfy CORS
-      ApiService.getInstance()
-        .post(url, payload)
-        .catch((err) => {
-          console.warn("Analytics flush failed:", err);
-        });
+      const idToken = ApiService.getIdToken();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (idToken) {
+        headers["Authorization"] = `Bearer ${idToken}`;
+      }
+
+      // Native fetch with keepalive: true ensures the request finishes in the background when tabs close
+      fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch((err) => {
+        console.warn("Analytics flush failed:", err);
+      });
     },
     [userEmail]
   );
