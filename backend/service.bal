@@ -598,6 +598,13 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         eventPayload.userEmail = userEmail.trim().toLowerAscii();
 
+        // Validate that user email is not empty before processing
+        if eventPayload.userEmail == "" {
+            string customError = "Authenticated user email cannot be empty";
+            log:printError(customError);
+            return <http:BadRequest> { body: customError };
+        }
+
         // Retrieve user profile details from request context
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
