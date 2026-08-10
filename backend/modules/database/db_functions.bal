@@ -146,6 +146,9 @@ public isolated function deleteContentById(int contentId) returns int|error? {
 # + event - Analytics event payload details
 # + return - Error or nil
 public isolated function logUserActivity(types:AnalyticsEvent event) returns error? {
+    if event.userEmail.trim() == "" {
+        return error("User email cannot be empty for activity logging");
+    }
     _ = check dbClient->execute(logUserActivityQuery(event));
 }
 
@@ -155,9 +158,14 @@ public isolated function logUserActivity(types:AnalyticsEvent event) returns err
 # + return - Array of ContentPerformanceMetric records or database error
 public isolated function getTopContentMetrics(types:AnalyticsFilter filter) returns types:ContentPerformanceMetric[]|error {
     stream<types:ContentPerformanceMetric, sql:Error?> contentStream = dbClient->query(getTopContentQuery(filter));
-    types:ContentPerformanceMetric[] metrics = check from types:ContentPerformanceMetric item in contentStream
-        select item;
-    check contentStream.close();
+    types:ContentPerformanceMetric[]|error metrics = from var item in contentStream select item;
+    error? closeErr = contentStream.close();
+    if metrics is error {
+        return metrics;
+    }
+    if closeErr is error {
+        return closeErr;
+    }
     return metrics;
 }
 
@@ -167,9 +175,14 @@ public isolated function getTopContentMetrics(types:AnalyticsFilter filter) retu
 # + return - Array of UserLeaderboardEntry records or database error
 public isolated function getUserLeaderboardMetrics(types:AnalyticsFilter filter) returns types:UserLeaderboardEntry[]|error {
     stream<types:UserLeaderboardEntry, sql:Error?> leaderboardStream = dbClient->query(getUserLeaderboardQuery(filter));
-    types:UserLeaderboardEntry[] entries = check from types:UserLeaderboardEntry item in leaderboardStream
-        select item;
-    check leaderboardStream.close();
+    types:UserLeaderboardEntry[]|error entries = from var item in leaderboardStream select item;
+    error? closeErr = leaderboardStream.close();
+    if entries is error {
+        return entries;
+    }
+    if closeErr is error {
+        return closeErr;
+    }
     return entries;
 }
 
@@ -241,8 +254,14 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
     types:TrafficPeakMetric[] peakActivityTimes = check getPeakActivityMetrics(filter);
 
     stream<types:AnalyticsTotals, sql:Error?> totalsStream = dbClient->query(getAnalyticsTotalsQuery(filter));
-    types:AnalyticsTotals[] totalsList = check from var item in totalsStream select item;
-    check totalsStream.close();
+    types:AnalyticsTotals[]|error totalsList = from var item in totalsStream select item;
+    error? closeErr = totalsStream.close();
+    if totalsList is error {
+        return totalsList;
+    }
+    if closeErr is error {
+        return closeErr;
+    }
 
     types:AnalyticsTotals totals = totalsList.length() > 0 ? totalsList[0] : {
         totalViews: 0,
@@ -411,8 +430,15 @@ public isolated function getPageDetails(string routePath) returns types:PageResp
 # + return - Route list or error
 public isolated function getMainRoutes() returns types:Route[]|error {
     stream<types:Route, sql:Error?> resultStream = dbClient->query(getMainRoutesQuery());
-    return from types:Route result in resultStream
-        select result;
+    types:Route[]|error routes = from var result in resultStream select result;
+    error? closeErr = resultStream.close();
+    if routes is error {
+        return routes;
+    }
+    if closeErr is error {
+        return closeErr;
+    }
+    return routes;
 }
 
 # Update content.

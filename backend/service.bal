@@ -596,12 +596,11 @@ service http:InterceptableService / on new http:Listener(9090) {
             return <http:InternalServerError> { body: constants:USER_INFO_HEADER_NOT_FOUND };
         }
 
-        // Strict email validation against authenticated JWT user email.
-        string reqEmail = eventPayload.userEmail.trim().toLowerAscii();
-        string authEmail = userEmail.trim().toLowerAscii();
+        eventPayload.userEmail = userEmail.trim().toLowerAscii();
 
-        if reqEmail == "" || reqEmail != authEmail {
-            string customError = "Email mismatch or missing email in request payload for authenticated user";
+        // Validate that user email is not empty before processing
+        if eventPayload.userEmail == "" {
+            string customError = "Authenticated user email cannot be empty";
             log:printError(customError);
             return <http:BadRequest> { body: customError };
         }

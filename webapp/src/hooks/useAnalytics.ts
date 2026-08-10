@@ -63,7 +63,6 @@ export const useAnalytics = () => {
 
       return await dispatch(
         logAnalyticsEvent({
-          userEmail,
           eventType,
           contentId,
           sessionId,
@@ -91,11 +90,13 @@ export const useAnalytics = () => {
     ) => {
       if (!userEmail) return;
 
+      const idToken = ApiService.getIdToken();
+      if (!idToken) return;
+
       const sessionId = explicitSessionId || getOrCreateSessionId();
       const url = AppConfig.serviceUrls.logAnalyticsEvent();
 
       const payload = {
-        userEmail,
         eventType,
         contentId,
         sessionId,
@@ -105,13 +106,23 @@ export const useAnalytics = () => {
         },
       };
 
-      const extraHeaders: Record<string, string> = {
-        "X-User-Email": userEmail,
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
       };
 
-      // Route through ApiService instance so retry-axios intercepted 401s automatically refresh tokens
-      ApiService.getInstance()
-        .post(url, payload, { headers: extraHeaders })
+      // Native fetch with keepalive: true ensures the request finishes in the background when tabs close
+      fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        keepalive: true,
+      })
+        .then((res) => {
+          if (!res.ok) {
+            console.warn("Analytics flush failed with status:", res.status);
+          }
+        })
         .catch((err) => {
           console.warn("Analytics flush failed:", err);
         });
