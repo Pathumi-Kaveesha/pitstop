@@ -90,6 +90,9 @@ export const useAnalytics = () => {
     ) => {
       if (!userEmail) return;
 
+      const idToken = ApiService.getIdToken();
+      if (!idToken) return;
+
       const sessionId = explicitSessionId || getOrCreateSessionId();
       const url = AppConfig.serviceUrls.logAnalyticsEvent();
 
@@ -103,14 +106,10 @@ export const useAnalytics = () => {
         },
       };
 
-      const idToken = ApiService.getIdToken();
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
       };
-
-      if (idToken) {
-        headers["Authorization"] = `Bearer ${idToken}`;
-      }
 
       // Native fetch with keepalive: true ensures the request finishes in the background when tabs close
       fetch(url, {
