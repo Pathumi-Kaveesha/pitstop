@@ -156,6 +156,12 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     };
 
     const intervalId = setInterval(() => {
+      // If focus moved into an embedded iframe, keep window focus and active state alive
+      if (typeof document !== "undefined" && document.activeElement?.tagName === "IFRAME") {
+        windowHasFocusRef.current = true;
+        lastUserActivityRef.current = performance.now();
+      }
+
       if (document.hidden || !windowHasFocusRef.current || !isPrimaryTab()) {
         lastTickTimeRef.current = performance.now();
         return;
@@ -201,8 +207,16 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     };
 
     const handleBlur = () => {
-      windowHasFocusRef.current = false;
-      void flushTimeSpent(true);
+      // Allow browser to settle activeElement update before treating blur as page leave
+      setTimeout(() => {
+        if (typeof document !== "undefined" && document.activeElement?.tagName === "IFRAME") {
+          windowHasFocusRef.current = true;
+          lastUserActivityRef.current = performance.now();
+          return;
+        }
+        windowHasFocusRef.current = false;
+        void flushTimeSpent(true);
+      }, 100);
     };
 
     const handlePageHide = () => {

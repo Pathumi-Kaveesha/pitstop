@@ -35,16 +35,28 @@ import { verifyLinkPreview, resetPreviewStatus } from "@slices/previewSlice/prev
 import { CONTENT_STATE_IDLE, CONTENT_STATE_FAILED } from "@config/constant";
 import { isGoogleDriveFolderLink } from "@utils/utils";
 import { FILETYPE, CONTENT_SUBTYPE } from "@utils/types";
+import { useContentTracker } from "../../hooks/useContentTracker";
+import { useAnalytics } from "../../hooks/useAnalytics";
+import { AnalyticsEventType } from "@utils/types";
 
 export declare let _paq: unknown[];
 if (typeof window !== "undefined" && typeof _paq === "undefined") {
   (window as Window & { _paq?: unknown[] })._paq = [];
 }
 
-interface ExtendedIframeViewerDialogBoxProps extends IframeViewerDialogBoxProps {
+interface ExtendedIframeViewerDialogBoxProps
+  extends Omit<IframeViewerDialogBoxProps, "contentId"> {
+  contentId?: number | null;
   onOpenInNewTab?: () => void;
   onPreviewReady?: () => void;
 }
+
+const extractYouTubeVideoId = (url: string): string | null => {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return match && match[2].length === 11 ? match[2] : null;
+};
 
 const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   link,
@@ -54,14 +66,37 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   description,
   contentType,
   contentSubtype,
+  contentId = null,
   onOpenInNewTab,
   onPreviewReady,
 }) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
+  const { trackEvent } = useAnalytics();
 
-  // Reference to correlate the active preview request with the current link
   const activeRequestedLinkRef = useRef<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  const normalizedContentType = contentType?.toLowerCase() || "";
+  const isYouTube =
+    normalizedContentType === "youtube" ||
+    contentType === FILETYPE.Youtube ||
+    link?.includes("youtube.com") ||
+    link?.includes("youtu.be") ||
+    originalUrl?.includes("youtube.com") ||
+    originalUrl?.includes("youtu.be");
+
+  const youtubeVideoId = isYouTube
+    ? extractYouTubeVideoId(link) || extractYouTubeVideoId(originalUrl)
+    : null;
+
+  const isDirectEmbeddable =
+    isYouTube ||
+    contentType === FILETYPE.Slide ||
+    contentType === FILETYPE.GSheet ||
+    contentType === FILETYPE.Youtube ||
+    link?.includes("docs.google.com/presentation") ||
+    link?.includes("docs.google.com/spreadsheets");
 
   const blockedUrls = useAppSelector((state: RootState) => state.page.blockedIframeUrls);
   const blockedUrlsState = useAppSelector((state: RootState) => state.page.blockedUrlsState);
@@ -69,6 +104,16 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   const { state: backendState, previewInfo } = useAppSelector(
     (state: RootState) => state.preview
   );
+
+  const { onContainerMouseEnter, onContainerMouseLeave, triggerVerifiedView } =
+    useContentTracker({
+      contentId: contentId ?? null,
+      contentType: contentType || "unknown",
+      contentSubtype: contentSubtype || "generic",
+      title: description,
+      isOpen: open,
+      source: "card_preview_button",
+    });
 
   const isBlockedUrl = (url: string): boolean => {
     try {
@@ -128,7 +173,9 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
 
   const isGoogleDriveFolder = isGoogleDriveFolderLink(link);
   const isLocalBlocked = isBlockedUrl(link);
-  const shouldCropIframe = contentType === FILETYPE.External_Link && (contentSubtype === CONTENT_SUBTYPE.Pdf || contentSubtype === CONTENT_SUBTYPE.Video);
+  const shouldCropIframe =
+    contentType === FILETYPE.External_Link &&
+    (contentSubtype === CONTENT_SUBTYPE.Pdf || contentSubtype === CONTENT_SUBTYPE.Video);
 
   useEffect(() => {
     if (
@@ -141,12 +188,12 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
 
   useEffect(() => {
     if (open && link) {
-      if (!isGoogleDriveFolder && !isLocalBlocked) {
+      if (!isGoogleDriveFolder && !isLocalBlocked && !isDirectEmbeddable) {
         activeRequestedLinkRef.current = link;
         dispatch(verifyLinkPreview(link));
       }
     }
-  }, [open, link, isGoogleDriveFolder, isLocalBlocked, dispatch]);
+  }, [open, link, isGoogleDriveFolder, isLocalBlocked, isDirectEmbeddable, dispatch]);
 
   useEffect(() => {
     if (!open) {
@@ -155,25 +202,41 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     }
   }, [open, dispatch]);
 
-  // Trigger onPreviewReady only when the dialog is open, status resolves to SUCCESS,
-  // and the success correlates to the active request for the current link
   useEffect(() => {
     const isCurrentRequest = activeRequestedLinkRef.current === link;
 
-    if (open && previewInfo?.status === "SUCCESS" && isCurrentRequest && onPreviewReady) {
+    if (
+      open &&
+      onPreviewReady &&
+      (isDirectEmbeddable || isGoogleDriveFolder || isLocalBlocked || previewInfo?.status || isCurrentRequest)
+    ) {
       onPreviewReady();
     }
-  }, [open, previewInfo?.status, link, onPreviewReady]);
+  }, [open, previewInfo?.status, link, isDirectEmbeddable, isGoogleDriveFolder, isLocalBlocked, onPreviewReady]);
 
   const handleOpenInNewTabClick = () => {
+    // 1. Instantly mark the preview as verified if 10 seconds hasn't passed yet
+    triggerVerifiedView();
+
+    // 2. Track the outlink click event
+    trackEvent(AnalyticsEventType.VIEW, contentId, {
+      title: description,
+      contentType,
+      contentSubtype,
+      contentLink: link,
+      source: "modal_open_in_new_tab",
+      verifiedView: true,
+    });
+
     if (onOpenInNewTab) {
       onOpenInNewTab();
     }
+
     window.open(originalUrl, "_blank", "noopener, noreferrer");
   };
 
   const renderContent = () => {
-    if (backendState === "loading") {
+    if (!isDirectEmbeddable && backendState === "loading") {
       return (
         <Box
           sx={{
@@ -194,22 +257,26 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
       );
     }
 
-    const isGoogleDriveFile = link?.includes("drive.google.com");
+    const isGoogleDriveFile =
+      link?.includes("drive.google.com") || link?.includes("docs.google.com");
 
-    // Path A: The URL is live, but framing is restricted by rules or security protections (including file storage wrappers)
     const isRestrictedState =
-      isGoogleDriveFolder ||
-      isLocalBlocked ||
-      previewInfo?.status === "RESTRICTED" ||
-      (previewInfo?.status === "BROKEN" && isGoogleDriveFile);
+      !isDirectEmbeddable &&
+      (isGoogleDriveFolder ||
+        isLocalBlocked ||
+        previewInfo?.status === "RESTRICTED" ||
+        (previewInfo?.status === "BROKEN" && isGoogleDriveFile));
 
     if (isRestrictedState) {
-      let errorMessage = "This content cannot be displayed in an embedded preview. Click the button below to open it in a new window.";
+      let errorMessage =
+        "This content cannot be displayed in an embedded preview. Click the button below to open it in a new window.";
 
       if (isGoogleDriveFolder || isGoogleDriveFile) {
-        errorMessage = "Google Drive items cannot be previewed directly inside this embedded frame. Click the button below to safely open the resource in a new window.";
+        errorMessage =
+          "Google Drive items cannot be previewed directly inside this embedded frame. Click the button below to safely open the resource in a new window.";
       } else if (isLocalBlocked || previewInfo?.status === "RESTRICTED") {
-        errorMessage = "This content cannot be embedded due to security restrictions. Click the button below to open it in a new window.";
+        errorMessage =
+          "This content cannot be embedded due to security restrictions. Click the button below to open it in a new window.";
       }
 
       return (
@@ -269,8 +336,10 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
       );
     }
 
-    // Path B: The URL link layout is entirely dead or invalid (excluding structural file configurations)
-    const isBrokenState = (previewInfo?.status === "BROKEN" && !isGoogleDriveFile) || backendState === "failed";
+    const isBrokenState =
+      !isDirectEmbeddable &&
+      ((previewInfo?.status === "BROKEN" && !isGoogleDriveFile) || backendState === "failed");
+
     if (isBrokenState) {
       return (
         <Box
@@ -332,12 +401,23 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
       );
     }
 
-    // Path C: The validation succeeded cleanly
-    if (previewInfo?.status === "SUCCESS") {
+    if (isDirectEmbeddable || previewInfo?.status === "SUCCESS") {
+      let finalIframeSrc = link;
+      if (isYouTube && youtubeVideoId) {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const urlObj = new URL(`https://www.youtube.com/embed/${youtubeVideoId}`);
+        if (origin) {
+          urlObj.searchParams.set("origin", origin);
+        }
+        finalIframeSrc = urlObj.toString();
+      }
+
       return (
         <iframe
+          id="youtube-iframe-player"
+          ref={iframeRef}
           title="Content Preview"
-          src={link}
+          src={finalIframeSrc}
           sandbox="allow-same-origin allow-scripts allow-presentation allow-forms"
           style={{
             border: "none",
@@ -369,6 +449,8 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
       }}
     >
       <Box
+        onMouseEnter={onContainerMouseEnter}
+        onMouseLeave={onContainerMouseLeave}
         sx={{
           position: "relative",
           backgroundColor: theme.palette.background.paper,

@@ -78,8 +78,6 @@ import CardTitle from "./CardTitle";
 import CardNote from "./CardNote";
 import CardTags from "./CardTags";
 import LikesModal from "./LikesModal";
-import { useAnalytics } from "../../../hooks/useAnalytics";
-import { AnalyticsEventType } from "@utils/types";
 
 interface ComponentCardProps {
   contentId: number;
@@ -140,7 +138,6 @@ const ComponentCard = ({
   onContentUnpinned,
   isInPinnedSection,
 }: ComponentCardProps) => {
-  const { trackEvent } = useAnalytics();
   const authorizedRoles: Role[] = useAppSelector((state: RootState) => state.auth.roles);
   const location = useLocation();
   const [like, setLike] = useState(status);
@@ -171,17 +168,6 @@ const ComponentCard = ({
 
   const cardRef = useRef<HTMLDivElement>(null);
   const contentBodyRef = useRef<HTMLDivElement>(null);
-
-  const viewTimerRef = useRef<number | null>(null);
-  const previewLoggedRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    return () => {
-      if (viewTimerRef.current) {
-        clearTimeout(viewTimerRef.current);
-      }
-    };
-  }, []);
 
   const [hasOverflow, setHasOverflow] = useState(false);
   const [isOverflowExpanded, setIsOverflowExpanded] = useState(false);
@@ -236,28 +222,7 @@ const ComponentCard = ({
     }
   };
 
-  const handlePreviewReady = useCallback(() => {
-    if (previewLoggedRef.current || viewTimerRef.current) return;
-
-    // Start 10-second verification timer ONLY after content confirmed ready
-    viewTimerRef.current = window.setTimeout(() => {
-      previewLoggedRef.current = true;
-      trackEvent(AnalyticsEventType.VIEW, contentId, {
-        title: description,
-        contentType,
-        contentSubtype,
-        contentLink,
-        source: "card_preview_button",
-        verifiedView: true,
-      });
-    }, 10000); // 10 seconds
-  }, [contentId, description, contentType, contentSubtype, contentLink, trackEvent]);
-
   const handleClosePreviewModal = () => {
-    if (viewTimerRef.current) {
-      clearTimeout(viewTimerRef.current);
-      viewTimerRef.current = null;
-    }
     setIsPreviewModalOpen(false);
   };
 
@@ -679,7 +644,7 @@ const ComponentCard = ({
 
   const renderOverlaySection = (sectionName: string) => {
     const hasVisibleCustomButtons = (localCustomButtons || []).some((b) => b.isVisible) && localIsVisible;
-    
+
     switch (sectionName) {
       case "title": {
         return (
@@ -747,17 +712,17 @@ const ComponentCard = ({
     const isGoogleDrivePdf =
       contentType === FILETYPE.External_Link &&
       contentSubtype === CONTENT_SUBTYPE.Pdf &&
-      (embedUrl.includes("drive.google.com"));
+      embedUrl.includes("drive.google.com");
 
     return (
-      <Box 
-        sx={{ 
+      <Box
+        sx={{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          width: "100%", 
+          width: "100%",
           height: "100%"
-          }}
+        }}
       >
         <iframe
           title="Content Viewer"
@@ -770,17 +735,17 @@ const ComponentCard = ({
               ? {
                   position: "absolute",
                   width: "120%",
-                  height: "140%", 
+                  height: "140%",
                   top: "-45px",
                   left: "-10%",
-                } 
+                }
               : {
                   position: "relative",
                   width: "100%",
                   height: "100%",
                   objectFit: "contain",
                 }
-            ),
+              ),
 
             ...(authorizedRoles.includes(Role.SALES_ADMIN) && !localIsVisible
               ? {
@@ -926,13 +891,7 @@ const ComponentCard = ({
                   onClick={(e) => {
                     e.stopPropagation();
 
-                    // Clear any existing timer & reset preview logged ref
-                    if (viewTimerRef.current) {
-                      clearTimeout(viewTimerRef.current);
-                      viewTimerRef.current = null;
-                    }
-                    previewLoggedRef.current = false; 
-
+                    // Simply open the modal. Unverified events are handled on close only if < 10s and no outlink!
                     setIsPreviewModalOpen(true);
 
                     if (window.config?.IS_MATOMO_ENABLED) {
@@ -1241,200 +1200,200 @@ const ComponentCard = ({
         {/* Info Modal */}
         <Modal open={isInfoModalOpen} onClose={toggleInfoModal} closeAfterTransition>
           <Fade in={isInfoModalOpen}>
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  width: 400,
-                  bgcolor: "background.paper",
-                  borderRadius: 2,
-                  boxShadow: 24,
-                  p: 3,
-                }}
-              >
-                <Typography variant="h6" sx={{ mb: 1 }}>
-                  Additional Information
+            <Box
+              sx={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+                width: 400,
+                bgcolor: "background.paper",
+                borderRadius: 2,
+                boxShadow: 24,
+                p: 3,
+              }}
+            >
+              <Typography variant="h6" sx={{ mb: 1 }}>
+                Additional Information
+              </Typography>
+              {customContentTheme?.note?.htmlContent ? (
+                <Box
+                  sx={{
+                    "& *": {
+                      margin: 0,
+                      padding: 0,
+                    },
+                    "& p": {
+                      marginBottom: "0.5em",
+                    },
+                    whiteSpace: "pre-line",
+                    wordWrap: "break-word",
+                  }}
+                >
+                  {safeParseHtml(customContentTheme.note.htmlContent)}
+                </Box>
+              ) : (
+                <Typography
+                  variant="body2"
+                  sx={{ whiteSpace: "pre-line", ...customContentTheme?.note }}
+                >
+                  {note}
                 </Typography>
-                {customContentTheme?.note?.htmlContent ? (
-                  <Box
-                    sx={{
-                      "& *": {
-                        margin: 0,
-                        padding: 0,
-                      },
-                      "& p": {
-                        marginBottom: "0.5em",
-                      },
-                      whiteSpace: "pre-line",
-                      wordWrap: "break-word",
-                    }}
-                  >
-                    {safeParseHtml(customContentTheme.note.htmlContent)}
-                  </Box>
-                ) : (
-                  <Typography
-                    variant="body2"
-                    sx={{ whiteSpace: "pre-line", ...customContentTheme?.note }}
-                  >
-                    {note}
-                  </Typography>
-                )}
-              </Box>
-            </Fade>
-          </Modal>
+              )}
+            </Box>
+          </Fade>
+        </Modal>
 
-          <Divider sx={{ borderColor: "rgba(255,255,255,0.03)", flexShrink: 0 }} />
+        <Divider sx={{ borderColor: "rgba(255,255,255,0.03)", flexShrink: 0 }} />
 
-          <CardActions
-            disableSpacing
-            sx={{
-              pt: 0.5,
-              pb: 0.75,
-              px: 2.5,
-              minHeight: 44,
-              justifyContent: "flex-start",
-              gap: 1.5,
-              flexShrink: 0,
-            }}
-          >
-            <Tooltip
-              title={
-                likes.length > 0 ? (
-                    <Box sx={{ maxWidth: 250 }}>
-                    <Box sx={{ maxHeight: 200, overflowY: "auto" }}>
-                      {likes.slice(0, 20).map((liker, index) => (
+        <CardActions
+          disableSpacing
+          sx={{
+            pt: 0.5,
+            pb: 0.75,
+            px: 2.5,
+            minHeight: 44,
+            justifyContent: "flex-start",
+            gap: 1.5,
+            flexShrink: 0,
+          }}
+        >
+          <Tooltip
+            title={
+              likes.length > 0 ? (
+                <Box sx={{ maxWidth: 250 }}>
+                  <Box sx={{ maxHeight: 200, overflowY: "auto" }}>
+                    {likes.slice(0, 20).map((liker, index) => (
                       <Typography key={index} variant="body2">
                         {liker.firstName && liker.lastName
-                        ? `${liker.firstName} ${liker.lastName}`
-                        : liker.email}
+                          ? `${liker.firstName} ${liker.lastName}`
+                          : liker.email}
                       </Typography>
-                      ))}
-                      {likes.length > 20 && (
+                    ))}
+                    {likes.length > 20 && (
                       <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 500 }}>
                         +{likes.length - 20} more
                       </Typography>
-                      )}
-                    </Box>
+                    )}
                   </Box>
-                ) : (
-                  "No likes yet"
-                )
-              }
-              arrow
-              placement="top"
-            >
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }} onMouseEnter={fetchLikesIfNeeded}>
-                <IconButton
-                  aria-label="like"
-                  onClick={toggleLike}
-                  size="small"
-                  sx={{
-                    color: like ? "#ff6b9d" : "rgba(255,255,255,0.7)",
-                    p: 0.5,
-                    "&:hover": {
-                      transform: "scale(1.1)",
-                      color: "#ff6b9d",
-                    },
-                  }}
-                >
-                  {like ? (
-                    <FavoriteIcon sx={{ fontSize: 18 }} />
-                  ) : (
-                    <FavoriteBorderIcon sx={{ fontSize: 18 }} />
-                  )}
-                </IconButton>
-                <Typography
-                  component="button"
-                  onClick={() => {
-                    if (localLikesCount > 0) {
-                      fetchLikesIfNeeded();
-                      setIsLikesModalOpen(true);
-                    }
-                  }}
-                  onKeyDown={(e: React.KeyboardEvent) => {
-                    if (localLikesCount > 0 && (e.key === "Enter" || e.key === " ")) {
-                      e.preventDefault();
-                      fetchLikesIfNeeded();
-                      setIsLikesModalOpen(true);
-                    }
-                  }}
-                  tabIndex={localLikesCount > 0 ? 0 : -1}
-                  role="button"
-                  aria-label={`View ${localLikesCount} liker${localLikesCount !== 1 ? "s" : ""}`}
-                  sx={{
-                    fontSize: 11,
-                    color: theme.palette.common.white,
-                    cursor: localLikesCount > 0 ? "pointer" : "default",
-                    paddingRight: 0.5,
-                    fontWeight: 500,
-                    border: "none",
-                    background: "none",
-                    padding: 0,
-                    font: "inherit",
-                    "&:focus-visible": {
-                      outline: "2px solid rgba(255,255,255,0.5)",
-                      borderRadius: "2px",
-                      outlineOffset: "2px",
-                    },
-                    "&:hover": localLikesCount > 0 ? { textDecoration: "underline" } : {},
-                  }}
-                >
-                  {localLikesCount}
-                </Typography>
-              </Box>
-            </Tooltip>
-
-            {!isExpanded && (
+                </Box>
+              ) : (
+                "No likes yet"
+              )
+            }
+            arrow
+            placement="top"
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }} onMouseEnter={fetchLikesIfNeeded}>
               <IconButton
-                aria-label="comment"
-                onClick={commentDrawerHandler}
+                aria-label="like"
+                onClick={toggleLike}
                 size="small"
                 sx={{
-                  color: "rgba(255,255,255,0.7)",
+                  color: like ? "#ff6b9d" : "rgba(255,255,255,0.7)",
                   p: 0.5,
                   "&:hover": {
                     transform: "scale(1.1)",
-                    color: "#fff",
+                    color: "#ff6b9d",
                   },
                 }}
               >
-                <ChatBubbleOutlineIcon sx={{ fontSize: 18 }} />
-                <Typography sx={{ ml: 0.5, fontSize: 11, color: "inherit" }}>
-                  {commentCount}
-                </Typography>
+                {like ? (
+                  <FavoriteIcon sx={{ fontSize: 18 }} />
+                ) : (
+                  <FavoriteBorderIcon sx={{ fontSize: 18 }} />
+                )}
               </IconButton>
-            )}
-
-            {authorizedRoles.includes(Role.SALES_ADMIN) && (
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => setIsCustomButtonDialogOpen(true)}
+              <Typography
+                component="button"
+                onClick={() => {
+                  if (localLikesCount > 0) {
+                    fetchLikesIfNeeded();
+                    setIsLikesModalOpen(true);
+                  }
+                }}
+                onKeyDown={(e: React.KeyboardEvent) => {
+                  if (localLikesCount > 0 && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    fetchLikesIfNeeded();
+                    setIsLikesModalOpen(true);
+                  }
+                }}
+                tabIndex={localLikesCount > 0 ? 0 : -1}
+                role="button"
+                aria-label={`View ${localLikesCount} liker${localLikesCount !== 1 ? "s" : ""}`}
                 sx={{
-                  minHeight: 26,
-                  fontSize: "0.7rem",
-                  borderStyle: "dashed",
-                  color: "rgba(255,255,255,0.5)",
-                  borderColor: "rgba(255,255,255,0.2)",
-                  px: 1.5,
-                  py: 0.25,
-                  borderRadius: 1.5,
-                  textTransform: "none",
-                  ml: 2.5,
-                  "&:hover": {
-                    borderStyle: "solid",
-                    borderColor: "rgba(255,255,255,0.4)",
-                    color: "rgba(255,255,255,0.7)",
-                    backgroundColor: "rgba(0, 0, 0, 0.05)",
+                  fontSize: 11,
+                  color: theme.palette.common.white,
+                  cursor: localLikesCount > 0 ? "pointer" : "default",
+                  paddingRight: 0.5,
+                  fontWeight: 500,
+                  border: "none",
+                  background: "none",
+                  padding: 0,
+                  font: "inherit",
+                  "&:focus-visible": {
+                    outline: "2px solid rgba(255,255,255,0.5)",
+                    borderRadius: "2px",
+                    outlineOffset: "2px",
                   },
+                  "&:hover": localLikesCount > 0 ? { textDecoration: "underline" } : {},
                 }}
               >
-                + Customize Buttons
-              </Button>
-            )}
-          </CardActions>
+                {localLikesCount}
+              </Typography>
+            </Box>
+          </Tooltip>
+
+          {!isExpanded && (
+            <IconButton
+              aria-label="comment"
+              onClick={commentDrawerHandler}
+              size="small"
+              sx={{
+                color: "rgba(255,255,255,0.7)",
+                p: 0.5,
+                "&:hover": {
+                  transform: "scale(1.1)",
+                  color: "#fff",
+                },
+              }}
+            >
+              <ChatBubbleOutlineIcon sx={{ fontSize: 18 }} />
+              <Typography sx={{ ml: 0.5, fontSize: 11, color: "inherit" }}>
+                {commentCount}
+              </Typography>
+            </IconButton>
+          )}
+
+          {authorizedRoles.includes(Role.SALES_ADMIN) && (
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setIsCustomButtonDialogOpen(true)}
+              sx={{
+                minHeight: 26,
+                fontSize: "0.7rem",
+                borderStyle: "dashed",
+                color: "rgba(255,255,255,0.5)",
+                borderColor: "rgba(255,255,255,0.2)",
+                px: 1.5,
+                py: 0.25,
+                borderRadius: 1.5,
+                textTransform: "none",
+                ml: 2.5,
+                "&:hover": {
+                  borderStyle: "solid",
+                  borderColor: "rgba(255,255,255,0.4)",
+                  color: "rgba(255,255,255,0.7)",
+                  backgroundColor: "rgba(0, 0, 0, 0.05)",
+                },
+              }}
+            >
+              + Customize Buttons
+            </Button>
+          )}
+        </CardActions>
 
         {/* Dialogs / drawers */}
         <UpdateContentDialogBox
@@ -1495,36 +1454,8 @@ const ComponentCard = ({
           contentType={contentType}
           contentSubtype={contentSubtype}
           handleClose={handleClosePreviewModal}
-          onPreviewReady={handlePreviewReady}
           onOpenInNewTab={() => {
-            // Cancel the 10-second preview modal timer immediately
-            if (viewTimerRef.current) {
-              clearTimeout(viewTimerRef.current);
-              viewTimerRef.current = null;
-            }
-
-            // Force-log the PREVIEW event if the user clicked Outlink before 10s passed
-            if (!previewLoggedRef.current) {
-              previewLoggedRef.current = true;
-              trackEvent(AnalyticsEventType.VIEW, contentId, {
-                title: description,
-                contentType,
-                contentSubtype,
-                contentLink,
-                source: "card_preview_button",
-                verifiedView: true,
-              });
-            }
-
-            // Instantly track the "Open in New Window" verified view event
-            trackEvent(AnalyticsEventType.VIEW, contentId, {
-              title: description,
-              contentType,
-              contentSubtype,
-              contentLink,
-              source: "modal_open_in_new_tab",
-              verifiedView: true,
-            });
+            // Handled inside IframeViewerDialogBox
           }}
         />
 
@@ -1543,81 +1474,81 @@ const ComponentCard = ({
           likes={likes}
         />
 
-         {isOverflowExpanded && (
-           <Box
-             sx={{
-               position: "absolute",
-               top: 0,
-               left: 0,
-               right: 0,
-               bottom: 0,
-               zIndex: 19,
-               borderRadius: "inherit",
-             }}
-             onClick={() => setIsOverflowExpanded(false)}
-           />
-         )}
-         <Box
-           id={`card-overflow-content-${contentId}`}
-           sx={{
-             position: "absolute",
-             top: `${PREVIEW_H - 30}px`,
-             left: 0,
-             right: 0,
-             bottom: 0,
-             zIndex: 20,
-             borderRadius: "0 0 40px 40px",
-             overflow: "hidden",
-             display: "flex",
-             flexDirection: "column",
-             backgroundColor: "rgba(20,21,27,0.97)",
-             backdropFilter: "blur(20px)",
-             border: "1px solid rgba(255,255,255,0.1)",
-             borderTop: "none",
-             opacity: isOverflowExpanded ? 1 : 0,
-             pointerEvents: isOverflowExpanded ? "auto" : "none",
-             transition: "opacity 0.25s ease",
-           }}
-           onClick={(e) => e.stopPropagation()}
-         >
-               <Box
+        {isOverflowExpanded && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 19,
+              borderRadius: "inherit",
+            }}
+            onClick={() => setIsOverflowExpanded(false)}
+          />
+        )}
+        <Box
+          id={`card-overflow-content-${contentId}`}
+          sx={{
+            position: "absolute",
+            top: `${PREVIEW_H - 30}px`,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 20,
+            borderRadius: "0 0 40px 40px",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            backgroundColor: "rgba(20,21,27,0.97)",
+            backdropFilter: "blur(20px)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderTop: "none",
+            opacity: isOverflowExpanded ? 1 : 0,
+            pointerEvents: isOverflowExpanded ? "auto" : "none",
+            transition: "opacity 0.25s ease",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Box
+            sx={{
+              flexGrow: 1,
+              overflowY: "auto",
+              p: 2,
+              pt: 1.5,
+              "&::-webkit-scrollbar": { width: 4 },
+              "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.05)", borderRadius: 2 },
+              "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: 2 },
+            }}
+          >
+               {/* Close chevron at top */}
+            <Box sx={{ display: "flex", justifyContent: "center", mb: 0.5 }}>
+              <IconButton
+                size="small"
+                aria-label="Collapse content"
+                aria-expanded={true}
+                aria-controls={`card-overflow-content-${contentId}`}
+                onClick={() => setIsOverflowExpanded(false)}
                 sx={{
-                  flexGrow: 1,
-                  overflowY: "auto",
-                  p: 2,
-                  pt: 1.5,
-                  "&::-webkit-scrollbar": { width: 4 },
-                  "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.05)", borderRadius: 2 },
-                  "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: 2 },
+                  color: "rgba(255,255,255,0.45)",
+                  p: 0.25,
+                  transition: "transform 0.3s ease",
+                  transform: "rotate(180deg)",
+                  "&:hover": { color: "rgba(255,255,255,0.9)" },
                 }}
               >
-               {/* Close chevron at top */}
-                <Box sx={{ display: "flex", justifyContent: "center", mb: 0.5 }}>
-                  <IconButton
-                    size="small"
-                    aria-label="Collapse content"
-                    aria-expanded={true}
-                    aria-controls={`card-overflow-content-${contentId}`}
-                    onClick={() => setIsOverflowExpanded(false)}
-                    sx={{
-                      color: "rgba(255,255,255,0.45)",
-                      p: 0.25,
-                      transition: "transform 0.3s ease",
-                      transform: "rotate(180deg)",
-                      "&:hover": { color: "rgba(255,255,255,0.9)" },
-                    }}
-                  >
-                    <ExpandMoreIcon sx={{ fontSize: 18 }} />
-                  </IconButton>
-                </Box>
+                <ExpandMoreIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Box>
 
-                {(() => {
-                  const contentOrder = getCardContentOrder();
-                  return contentOrder.map((sectionName) => renderOverlaySection(sectionName));
-                })()}
-
-              </Box>
-         </Box>
+            {(() => {
+              const contentOrder = getCardContentOrder();
+              return contentOrder.map((sectionName) => renderOverlaySection(sectionName));
+            })()}
+            
+          </Box>
+        </Box>
       </Card>
     </Grow>
   );
