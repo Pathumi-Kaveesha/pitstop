@@ -179,24 +179,34 @@ export const useContentTracker = ({
     };
   }, [isOpen, resetActivityTimer, startTimer, stopTimer]);
 
+  const startTimerRef = useRef(startTimer);
+  const stopTimerRef = useRef(stopTimer);
+  const logUnverifiedViewOnCloseRef = useRef(logUnverifiedViewOnClose);
+
+  useEffect(() => {
+    startTimerRef.current = startTimer;
+    stopTimerRef.current = stopTimer;
+    logUnverifiedViewOnCloseRef.current = logUnverifiedViewOnClose;
+  }, [startTimer, stopTimer, logUnverifiedViewOnClose]);
+
   useEffect(() => {
     if (isOpen) {
       activeSecondsRef.current = 0;
       viewLoggedRef.current = false;
       lastActivityTimestampRef.current = Date.now();
-      startTimer();
+      startTimerRef.current();
     } else {
-      stopTimer();
+      stopTimerRef.current();
     }
 
     return () => {
-      stopTimer();
+      stopTimerRef.current();
       // If modal closes before 10s and without outlink, log unverified misclick
       if (isOpen && !viewLoggedRef.current) {
-        logUnverifiedViewOnClose();
+        logUnverifiedViewOnCloseRef.current();
       }
     };
-  }, [isOpen, startTimer, stopTimer, logUnverifiedViewOnClose]);
+  }, [isOpen]);
 
   const onContainerMouseEnter = useCallback(() => {
     isMouseOverContainerRef.current = true;
