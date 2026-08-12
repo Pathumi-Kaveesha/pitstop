@@ -391,6 +391,10 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
             COALESCE(c.content_type, 'unknown') as contentType,
             CAST(COALESCE(SUM(CASE 
                 WHEN LOWER(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.source'))) LIKE '%preview%' 
+                     AND (
+                         LOWER(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.verifiedView'))) = 'true'
+                         OR CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.activeDwellSeconds'), 0) AS SIGNED) >= 10
+                     )
                 THEN 1 ELSE 0 
             END), 0) AS SIGNED) as previewClicks,
             CAST(COALESCE(SUM(CASE 
@@ -428,7 +432,9 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
     
     if filter.pageRoute is string && filter.pageRoute != "" {
         query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
+            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
+            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
+            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
             OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
             OR LOWER(REPLACE(r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
             OR LOWER(REPLACE(parent_r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
@@ -492,7 +498,9 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
     
     if filter.pageRoute is string && filter.pageRoute != "" {
         query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
+            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
+            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
+            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
             OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
             OR LOWER(REPLACE(r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
             OR LOWER(REPLACE(parent_r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
@@ -837,8 +845,6 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
         )
         SELECT 
             CAST(
-                COALESCE(SUM(CASE WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') THEN 1 ELSE 0 END), 0)
-                + 
                 COUNT(DISTINCT CASE 
                     WHEN UPPER(event_type) = 'SESSION_TIME' 
                          AND (trackingType = 'page_view_duration' OR trackingType IS NULL)
@@ -846,11 +852,13 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
                 END)
             AS SIGNED) as totalViews,
             
-            CAST(COUNT(DISTINCT CASE 
-                WHEN UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW') 
-                     OR (UPPER(event_type) = 'SESSION_TIME' AND (trackingType = 'page_view_duration' OR trackingType IS NULL))
-                THEN user_email 
-            END) AS SIGNED) as totalUniqueViews,
+            CAST(
+                COUNT(DISTINCT CASE 
+                    WHEN UPPER(event_type) = 'SESSION_TIME' 
+                         AND (trackingType = 'page_view_duration' OR trackingType IS NULL)
+                    THEN user_email 
+                END)
+            AS SIGNED) as totalUniqueViews,
             
             CAST(COALESCE((SELECT SUM(totalDuration) FROM DeduplicatedSessionTimes), 0) AS SIGNED) as totalTimeSpentSeconds,
             
