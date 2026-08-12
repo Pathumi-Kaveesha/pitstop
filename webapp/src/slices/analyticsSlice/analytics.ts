@@ -46,15 +46,17 @@ export interface UserLeaderboardEntry {
   userName: string;
   department: string;
   region: string;
-  totalEngagements: number;
-  timeSpentSeconds: number;
-  activityScore: number;
+  visits: number;
+  actions: number;
+  avgTimeSpentSeconds: number;
 }
 
 export interface RegionalTimeMetric {
   region: string;
-  totalTimeSpentSeconds: number;
-  activeUsersCount: number;
+  uniqueVisits: number;
+  totalVisits: number;
+  actions: number;
+  avgTimeSpentSeconds: number;
 }
 
 export interface SearchMetric {
@@ -74,6 +76,7 @@ export interface AnalyticsSummary {
   totalUniqueViews: number;
   totalTimeSpentSeconds: number;
   totalEngagements: number;
+  avgActionsPerVisit?: number;
   topContent: ContentPerformanceMetric[];
   leaderboard: UserLeaderboardEntry[];
   regionalTimeSpent: RegionalTimeMetric[];

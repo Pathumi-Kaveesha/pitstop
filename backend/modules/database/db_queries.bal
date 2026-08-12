@@ -454,7 +454,7 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
     return query;
 }
 
-# Dynamic query to fetch top 10 users for the leaderboard.
+# Dynamic query to fetch top 10 users for the leaderboard ranked by total actions.
 #
 # + filter - Analytics filter parameters including dates, region, user email, and page route
 # + return - Constructed SQL parameterized query
@@ -468,6 +468,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
                 l.department,
                 l.region,
                 l.event_type,
+                l.session_id,
                 l.content_id,
                 l.metadata,
                 l.event_timestamp,
@@ -520,68 +521,55 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             WHERE UPPER(event_type) = 'SESSION_TIME'
             GROUP BY user_email, dedupeEventId
         ),
-        UserMetrics AS (
+        UserTimeSummary AS (
             SELECT 
-                d.user_email,
-                COALESCE(NULLIF(MAX(d.user_name), ''), d.user_email) as userName,
-                COALESCE(NULLIF(MAX(d.department), ''), 'N/A') as department,
-                COALESCE(NULLIF(MAX(d.region), ''), 'N/A') as region,
-                CAST(SUM(CASE 
-                    WHEN UPPER(d.event_type) = 'VIEW' 
-                         AND (
-                             d.durationSecs >= 10
-                             OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(d.metadata, '$.verifiedView'))) = 'true'
-                         )
-                    THEN 1 ELSE 0 
-                END) AS SIGNED) as verifiedViews,
-                CAST(SUM(CASE WHEN UPPER(d.event_type) = 'SEARCH' THEN 1 ELSE 0 END) AS SIGNED) as totalSearches,
-                CAST(COALESCE((
-                    SELECT SUM(ust.durationSecs) 
-                    FROM UniqueSessionTimes ust 
-                    WHERE ust.user_email = d.user_email
-                ), 0) AS SIGNED) as timeSpentSeconds
-            FROM DeduplicatedLogs d
-            GROUP BY d.user_email
+                user_email,
+                SUM(durationSecs) as totalTimeSpent
+            FROM UniqueSessionTimes
+            GROUP BY user_email
         )
         SELECT 
-            user_email as userEmail,
-            userName,
-            department,
-            region,
-            (verifiedViews + totalSearches) as totalEngagements,
-            timeSpentSeconds,
-            CAST(
-                (verifiedViews * 5) 
-                + LEAST(totalSearches * 2, 10) 
-                + ROUND(LOG10(GREATEST(timeSpentSeconds / 60, 1) + 1) * 100)
-            AS SIGNED) as activityScore
-        FROM UserMetrics
-        ORDER BY activityScore DESC 
+            d.user_email as userEmail,
+            COALESCE(NULLIF(MAX(d.user_name), ''), d.user_email) as userName,
+            COALESCE(NULLIF(MAX(d.department), ''), 'N/A') as department,
+            COALESCE(NULLIF(MAX(d.region), ''), 'N/A') as region,
+            CAST(COUNT(DISTINCT CASE WHEN d.session_id IS NOT NULL AND d.session_id != '' THEN d.session_id END) AS SIGNED) as visits,
+            CAST(SUM(CASE WHEN UPPER(d.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) AS SIGNED) as actions,
+            CAST(COALESCE(
+                MAX(uts.totalTimeSpent) / NULLIF(COUNT(DISTINCT CASE WHEN d.session_id IS NOT NULL AND d.session_id != '' THEN d.session_id END), 0), 
+                0
+            ) AS SIGNED) as avgTimeSpentSeconds
+        FROM DeduplicatedLogs d
+        LEFT JOIN UserTimeSummary uts ON uts.user_email = d.user_email
+        GROUP BY d.user_email
+        ORDER BY actions DESC, visits DESC
         LIMIT 10
     `);
 }
 
-# Query to fetch regional time spent breakdown with route filtering and deduplication guard.
+# Query to fetch global team performance metrics with route filtering and deduplication guard.
 #
 # + filter - Applied time range, user, regional, and route filters
 # + return - Constructed SQL parameterized query
 isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
     sql:ParameterizedQuery query = `
-        WITH DeduplicatedSessionTimes AS (
+        WITH BaseLogs AS (
             SELECT 
                 COALESCE(NULLIF(l.region, ''), 'Unassigned') as region,
                 l.user_email,
+                l.session_id,
+                l.event_type,
                 COALESCE(
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
+                GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0) as durationSecs
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-            WHERE UPPER(l.event_type) = 'SESSION_TIME'
+            WHERE 1=1
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
@@ -608,15 +596,37 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
     }
 
     query = sql:queryConcat(query, `
-            GROUP BY region, l.user_email, dedupeEventId
+        ),
+        DeduplicatedSessionTimes AS (
+            SELECT 
+                region,
+                user_email,
+                dedupeEventId,
+                SUM(durationSecs) as totalDuration
+            FROM BaseLogs
+            WHERE UPPER(event_type) = 'SESSION_TIME'
+            GROUP BY region, user_email, dedupeEventId
+        ),
+        RegionalTimeSummary AS (
+            SELECT 
+                region,
+                SUM(totalDuration) as totalTimeSpent
+            FROM DeduplicatedSessionTimes
+            GROUP BY region
         )
         SELECT 
-            region,
-            CAST(COALESCE(SUM(totalDuration), 0) AS SIGNED) as totalTimeSpentSeconds,
-            CAST(COUNT(DISTINCT user_email) AS SIGNED) as activeUsersCount
-        FROM DeduplicatedSessionTimes
-        GROUP BY region 
-        ORDER BY totalTimeSpentSeconds DESC
+            b.region as region,
+            CAST(COUNT(DISTINCT CASE WHEN UPPER(b.event_type) = 'SESSION_TIME' THEN b.user_email END) AS SIGNED) as uniqueVisits,
+            CAST(COUNT(DISTINCT CASE WHEN UPPER(b.event_type) = 'SESSION_TIME' THEN b.dedupeEventId END) AS SIGNED) as totalVisits,
+            CAST(SUM(CASE WHEN UPPER(b.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) AS SIGNED) as actions,
+            CAST(COALESCE(
+                MAX(rts.totalTimeSpent) / NULLIF(COUNT(DISTINCT CASE WHEN UPPER(b.event_type) = 'SESSION_TIME' THEN b.dedupeEventId END), 0), 
+                0
+            ) AS SIGNED) as avgTimeSpentSeconds
+        FROM BaseLogs b
+        LEFT JOIN RegionalTimeSummary rts ON rts.region = b.region
+        GROUP BY b.region 
+        ORDER BY totalVisits DESC, actions DESC
     `);
 
     return query;
@@ -807,6 +817,7 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             SELECT 
                 l.event_type,
                 l.user_email,
+                l.session_id,
                 JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.trackingType')) as trackingType,
                 COALESCE(
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
@@ -862,8 +873,13 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             
             CAST(COALESCE((SELECT SUM(totalDuration) FROM DeduplicatedSessionTimes), 0) AS SIGNED) as totalTimeSpentSeconds,
             
-            -- Wrapped with COALESCE to prevent returning NULL on empty sets
-            CAST(COALESCE(SUM(CASE WHEN UPPER(event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END), 0) AS SIGNED) as totalEngagements
+            CAST(COALESCE(SUM(CASE WHEN UPPER(event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END), 0) AS SIGNED) as totalEngagements,
+
+            CAST(COALESCE(
+                SUM(CASE WHEN UPPER(event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) / 
+                NULLIF(COUNT(DISTINCT CASE WHEN session_id IS NOT NULL AND session_id != '' THEN session_id END), 0), 
+                0.0
+            ) AS DECIMAL(10,2)) as avgActionsPerVisit
         FROM PlatformEventLogs
     `);
 }

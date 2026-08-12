@@ -34,6 +34,7 @@ interface UserEmailAutocompleteProps {
   placeholder?: string;
   size?: "small" | "medium";
   fullWidth?: boolean;
+  disabled?: boolean;
 }
 
 export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
@@ -43,6 +44,7 @@ export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
   placeholder = "e.g. user@wso2.com",
   size = "small",
   fullWidth = true,
+  disabled = false,
 }) => {
   const dispatch = useAppDispatch();
   const [inputValue, setInputValue] = useState(value);
@@ -94,6 +96,7 @@ export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
 
   return (
     <Autocomplete
+      disabled={disabled}
       freeSolo
       size={size}
       fullWidth={fullWidth}

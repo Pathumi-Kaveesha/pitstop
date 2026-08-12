@@ -267,7 +267,8 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
         totalViews: 0,
         totalUniqueViews: 0,
         totalTimeSpentSeconds: 0,
-        totalEngagements: 0
+        totalEngagements: 0,
+        avgActionsPerVisit: 0.0d
     };
 
     return {
@@ -275,6 +276,7 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
         totalUniqueViews: totals.totalUniqueViews,
         totalTimeSpentSeconds: totals.totalTimeSpentSeconds,
         totalEngagements: totals.totalEngagements,
+        avgActionsPerVisit: totals.avgActionsPerVisit,
         topContent: topContent,
         leaderboard: leaderboard,
         regionalTimeSpent: regionalTimeSpent,
