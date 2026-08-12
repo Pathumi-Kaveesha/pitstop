@@ -1487,6 +1487,8 @@ const ComponentCard = ({
         )}
         <Box
           id={`card-overflow-content-${contentId}`}
+          aria-hidden={!isOverflowExpanded}
+          inert={!isOverflowExpanded}
           sx={{
             position: "absolute",
             top: `${PREVIEW_H - 30}px`,
@@ -1503,10 +1505,11 @@ const ComponentCard = ({
             border: "1px solid rgba(255,255,255,0.1)",
             borderTop: "none",
             opacity: isOverflowExpanded ? 1 : 0,
+            visibility: isOverflowExpanded ? "visible" : "hidden",
             pointerEvents: isOverflowExpanded ? "auto" : "none",
-            transition: "opacity 0.25s ease",
+            transition: "opacity 0.25s ease, visibility 0.25s ease",
           }}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
         >
           <Box
             sx={{
@@ -1519,12 +1522,13 @@ const ComponentCard = ({
               "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: 2 },
             }}
           >
-               {/* Close chevron at top */}
+            {/* Close chevron at top */}
             <Box sx={{ display: "flex", justifyContent: "center", mb: 0.5 }}>
               <IconButton
                 size="small"
                 aria-label="Collapse content"
-                aria-expanded={true}
+                aria-expanded={isOverflowExpanded}
+                tabIndex={isOverflowExpanded ? 0 : -1}
                 aria-controls={`card-overflow-content-${contentId}`}
                 onClick={() => setIsOverflowExpanded(false)}
                 sx={{
