@@ -41,6 +41,7 @@ export const useContentTracker = ({
   const viewLoggedRef = useRef<boolean>(false);
 
   const timerIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const iframeFocusCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivityTimestampRef = useRef<number>(Date.now());
   const isIframeFocusedRef = useRef<boolean>(false);
   const isMouseOverContainerRef = useRef<boolean>(false);
@@ -143,8 +144,12 @@ export const useContentTracker = ({
     const handleUserInteraction = () => resetActivityTimer();
 
     const handleWindowBlur = () => {
+      if (iframeFocusCheckTimeoutRef.current) {
+        clearTimeout(iframeFocusCheckTimeoutRef.current);
+      }
+
       // Allow browser 100ms to settle activeElement focus updates before determining iframe focus
-      setTimeout(() => {
+      iframeFocusCheckTimeoutRef.current = setTimeout(() => {
         if (
           isMouseOverContainerRef.current &&
           typeof document !== "undefined" &&
@@ -183,6 +188,11 @@ export const useContentTracker = ({
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      if (iframeFocusCheckTimeoutRef.current) {
+        clearTimeout(iframeFocusCheckTimeoutRef.current);
+        iframeFocusCheckTimeoutRef.current = null;
+      }
+
       window.removeEventListener("mousemove", handleUserInteraction);
       window.removeEventListener("keydown", handleUserInteraction);
       window.removeEventListener("click", handleUserInteraction);
@@ -206,6 +216,8 @@ export const useContentTracker = ({
 
   useEffect(() => {
     if (isOpen) {
+      isIframeFocusedRef.current = false;
+      isMouseOverContainerRef.current = false;
       activeSecondsRef.current = 0;
       viewLoggedRef.current = false;
       lastActivityTimestampRef.current = Date.now();
@@ -215,6 +227,8 @@ export const useContentTracker = ({
     }
 
     return () => {
+      isIframeFocusedRef.current = false;
+      isMouseOverContainerRef.current = false;
       stopTimerRef.current();
       // If modal closes before 10s and without outlink, log unverified misclick
       if (isOpen && !viewLoggedRef.current) {
