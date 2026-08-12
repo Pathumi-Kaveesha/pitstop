@@ -156,8 +156,12 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     };
 
     const intervalId = setInterval(() => {
-      // If focus moved into an embedded iframe, keep window focus and active state alive
-      if (typeof document !== "undefined" && document.activeElement?.tagName === "IFRAME") {
+      // If focus moved into an embedded iframe AND the browser window has OS focus, keep state active
+      if (
+        typeof document !== "undefined" &&
+        document.activeElement?.tagName === "IFRAME" &&
+        document.hasFocus()
+      ) {
         windowHasFocusRef.current = true;
         lastUserActivityRef.current = performance.now();
       }
@@ -209,7 +213,11 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     const handleBlur = () => {
       // Allow browser to settle activeElement update before treating blur as page leave
       setTimeout(() => {
-        if (typeof document !== "undefined" && document.activeElement?.tagName === "IFRAME") {
+        if (
+          typeof document !== "undefined" &&
+          document.activeElement?.tagName === "IFRAME" &&
+          document.hasFocus()
+        ) {
           windowHasFocusRef.current = true;
           lastUserActivityRef.current = performance.now();
           return;

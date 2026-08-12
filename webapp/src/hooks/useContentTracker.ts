@@ -123,11 +123,16 @@ export const useContentTracker = ({
     timerIdRef.current = setInterval(() => {
       const now = Date.now();
       const idleTime = now - lastActivityTimestampRef.current;
-      const isActive = idleTime < 120000 || isIframeFocusedRef.current;
+
+      const hasWindowFocus = typeof document !== "undefined" && document.hasFocus();
+      const isIframeActive = isIframeFocusedRef.current && hasWindowFocus;
+      const isActive = idleTime < 120000 || isIframeActive;
 
       if (isActive) {
         activeSecondsRef.current += 1;
         evaluateProgress();
+      } else {
+        isIframeFocusedRef.current = false;
       }
     }, 1000);
   }, [isOpen, evaluateProgress]);
@@ -138,9 +143,16 @@ export const useContentTracker = ({
     const handleUserInteraction = () => resetActivityTimer();
 
     const handleWindowBlur = () => {
-      if (isMouseOverContainerRef.current) {
+      if (
+        isMouseOverContainerRef.current &&
+        typeof document !== "undefined" &&
+        document.activeElement?.tagName === "IFRAME" &&
+        document.hasFocus()
+      ) {
         isIframeFocusedRef.current = true;
         resetActivityTimer();
+      } else {
+        isIframeFocusedRef.current = false;
       }
     };
 
