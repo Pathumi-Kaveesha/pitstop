@@ -56,19 +56,41 @@ export const useContentTracker = ({
     }
   }, []);
 
-  const triggerVerifiedView = useCallback(() => {
-    if (!contentId || viewLoggedRef.current) return;
+  const triggerVerifiedView = useCallback(
+    (isOutlink: boolean = false) => {
+      if (!contentId) return;
 
-    viewLoggedRef.current = true;
-    trackEvent(AnalyticsEventType.VIEW, contentId, {
-      title,
-      contentType,
-      contentSubtype,
-      activeDwellSeconds: activeSecondsRef.current,
-      verifiedView: true,
-      source,
-    });
-  }, [contentId, contentType, contentSubtype, title, source, trackEvent]);
+      const wasLogged = viewLoggedRef.current;
+      viewLoggedRef.current = true;
+
+      if (!wasLogged) {
+        // Log a single combined event if verified via outlink click before 10s dwell
+        const eventSource = isOutlink
+          ? "card_preview_button_open_in_new_tab"
+          : source;
+
+        trackEvent(AnalyticsEventType.VIEW, contentId, {
+          title,
+          contentType,
+          contentSubtype,
+          activeDwellSeconds: activeSecondsRef.current,
+          verifiedView: true,
+          source: eventSource,
+        });
+      } else if (isOutlink) {
+        // Preview was already logged at 10s dwell; record separate outlink event
+        trackEvent(AnalyticsEventType.VIEW, contentId, {
+          title,
+          contentType,
+          contentSubtype,
+          activeDwellSeconds: activeSecondsRef.current,
+          verifiedView: true,
+          source: "modal_open_in_new_tab",
+        });
+      }
+    },
+    [contentId, contentType, contentSubtype, title, source, trackEvent]
+  );
 
   const logUnverifiedViewOnClose = useCallback(() => {
     if (!contentId || viewLoggedRef.current) return;
@@ -91,7 +113,7 @@ export const useContentTracker = ({
 
     // Send Verified VIEW Event after 10 seconds of verified active viewing
     if (currentSeconds >= 10 && !viewLoggedRef.current) {
-      triggerVerifiedView();
+      triggerVerifiedView(false);
     }
   }, [contentId, triggerVerifiedView]);
 

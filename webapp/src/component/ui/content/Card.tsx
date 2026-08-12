@@ -1454,9 +1454,6 @@ const ComponentCard = ({
           contentType={contentType}
           contentSubtype={contentSubtype}
           handleClose={handleClosePreviewModal}
-          onOpenInNewTab={() => {
-            // Handled inside IframeViewerDialogBox
-          }}
         />
 
         <CustomButtonConfigDialog

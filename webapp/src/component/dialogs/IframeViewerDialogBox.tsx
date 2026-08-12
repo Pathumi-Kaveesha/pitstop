@@ -36,8 +36,6 @@ import { CONTENT_STATE_IDLE, CONTENT_STATE_FAILED } from "@config/constant";
 import { isGoogleDriveFolderLink } from "@utils/utils";
 import { FILETYPE, CONTENT_SUBTYPE } from "@utils/types";
 import { useContentTracker } from "../../hooks/useContentTracker";
-import { useAnalytics } from "../../hooks/useAnalytics";
-import { AnalyticsEventType } from "@utils/types";
 
 export declare let _paq: unknown[];
 if (typeof window !== "undefined" && typeof _paq === "undefined") {
@@ -72,7 +70,6 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
 }) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
-  const { trackEvent } = useAnalytics();
 
   const activeRequestedLinkRef = useRef<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -215,18 +212,8 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   }, [open, previewInfo?.status, link, isDirectEmbeddable, isGoogleDriveFolder, isLocalBlocked, onPreviewReady]);
 
   const handleOpenInNewTabClick = () => {
-    // 1. Instantly mark the preview as verified if 10 seconds hasn't passed yet
-    triggerVerifiedView();
-
-    // 2. Track the outlink click event
-    trackEvent(AnalyticsEventType.VIEW, contentId, {
-      title: description,
-      contentType,
-      contentSubtype,
-      contentLink: link,
-      source: "modal_open_in_new_tab",
-      verifiedView: true,
-    });
+    // Single call handles preview verification and outlink logging cleanly
+    triggerVerifiedView(true);
 
     if (onOpenInNewTab) {
       onOpenInNewTab();
