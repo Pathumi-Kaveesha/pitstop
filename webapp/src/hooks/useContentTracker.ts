@@ -143,17 +143,20 @@ export const useContentTracker = ({
     const handleUserInteraction = () => resetActivityTimer();
 
     const handleWindowBlur = () => {
-      if (
-        isMouseOverContainerRef.current &&
-        typeof document !== "undefined" &&
-        document.activeElement?.tagName === "IFRAME" &&
-        document.hasFocus()
-      ) {
-        isIframeFocusedRef.current = true;
-        resetActivityTimer();
-      } else {
-        isIframeFocusedRef.current = false;
-      }
+      // Allow browser 100ms to settle activeElement focus updates before determining iframe focus
+      setTimeout(() => {
+        if (
+          isMouseOverContainerRef.current &&
+          typeof document !== "undefined" &&
+          document.activeElement?.tagName === "IFRAME" &&
+          document.hasFocus()
+        ) {
+          isIframeFocusedRef.current = true;
+          resetActivityTimer();
+        } else {
+          isIframeFocusedRef.current = false;
+        }
+      }, 100);
     };
 
     const handleWindowFocus = () => {
