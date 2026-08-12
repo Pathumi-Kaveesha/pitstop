@@ -201,11 +201,12 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
 
   useEffect(() => {
     const isCurrentRequest = activeRequestedLinkRef.current === link;
+    const isBackendReady = isCurrentRequest && previewInfo?.status === "SUCCESS";
 
     if (
       open &&
       onPreviewReady &&
-      (isDirectEmbeddable || isGoogleDriveFolder || isLocalBlocked || previewInfo?.status || isCurrentRequest)
+      (isDirectEmbeddable || isGoogleDriveFolder || isLocalBlocked || isBackendReady)
     ) {
       onPreviewReady();
     }
