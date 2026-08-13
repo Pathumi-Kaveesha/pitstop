@@ -74,6 +74,7 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
 
   const activeRequestedLinkRef = useRef<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const openTimeRef = useRef<number | null>(null);
 
   const normalizedContentType = contentType?.toLowerCase() || "";
   const isYouTube =
@@ -111,6 +112,15 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   const shouldCropIframe =
     contentType === FILETYPE.External_Link &&
     (contentSubtype === CONTENT_SUBTYPE.Pdf || contentSubtype === CONTENT_SUBTYPE.Video);
+
+  // Track modal open timestamp to calculate elapsed dwell time when outlink is clicked
+  useEffect(() => {
+    if (open) {
+      openTimeRef.current = Date.now();
+    } else {
+      openTimeRef.current = null;
+    }
+  }, [open]);
 
   // Evaluate restricted or broken state
   const isRestrictedState =
@@ -242,15 +252,22 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   }, [open, previewInfo?.status, link, isDirectEmbeddable, isGoogleDriveFolder, isLocalBlocked, onPreviewReady]);
 
   const handleOpenInNewTabClick = () => {
-    // Log as ENGAGEMENT with outlink source to increment outlinkClicks without adding extra totalViews
     if (contentId) {
+      const elapsedSeconds = openTimeRef.current
+        ? (Date.now() - openTimeRef.current) / 1000
+        : 0;
+      const isEarlyWorkingOutlink = isPreviewSuccessful && elapsedSeconds < 10;
+      const outlinkSource = isEarlyWorkingOutlink
+        ? "card_preview_open_in_new_tab"
+        : "modal_open_in_new_tab";
+
       dispatch(
         logAnalyticsEvent({
           eventType: "ENGAGEMENT",
           contentId: contentId,
           metadata: {
             title: description,
-            source: "modal_open_in_new_tab",
+            source: outlinkSource,
             contentType: contentType || "unknown",
             contentSubtype: contentSubtype || "generic",
             verifiedView: true,
@@ -395,40 +412,26 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
           >
             This link looks broken or the site is temporarily unavailable. Please check the URL and try again.
           </Typography>
-          <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
-            <Button
-              variant="outlined"
-              size="large"
-              onClick={handleClose}
-              sx={{
-                px: 3,
-                py: 1.5,
-                textTransform: "none",
-                fontSize: "1rem",
-              }}
-            >
-              Go Back
-            </Button>
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<OpenInNewIcon />}
-              onClick={handleOpenInNewTabClick}
-              sx={{
-                px: 4,
-                py: 1.5,
-                textTransform: "none",
-                fontSize: "1rem",
-                backgroundColor: theme.palette.error.main,
-                color: theme.palette.common.white,
-                "&:hover": {
-                  backgroundColor: theme.palette.error.dark,
-                },
-              }}
-            >
-              Try Opening in New Window
-            </Button>
-          </Box>
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={<OpenInNewIcon />}
+            onClick={handleOpenInNewTabClick}
+            sx={{
+              mt: 2,
+              px: 4,
+              py: 1.5,
+              textTransform: "none",
+              fontSize: "1rem",
+              backgroundColor: theme.palette.error.main,
+              color: theme.palette.common.white,
+              "&:hover": {
+                backgroundColor: theme.palette.error.dark,
+              },
+            }}
+          >
+            Try Opening in New Window
+          </Button>
         </Box>
       );
     }
