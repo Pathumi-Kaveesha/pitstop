@@ -616,11 +616,11 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
         )
         SELECT 
             b.region as region,
-            CAST(COUNT(DISTINCT CASE WHEN UPPER(b.event_type) = 'SESSION_TIME' THEN b.user_email END) AS SIGNED) as uniqueVisits,
-            CAST(COUNT(DISTINCT CASE WHEN UPPER(b.event_type) = 'SESSION_TIME' THEN b.dedupeEventId END) AS SIGNED) as totalVisits,
+            CAST(COUNT(DISTINCT CASE WHEN b.session_id IS NOT NULL AND b.session_id != '' THEN b.user_email END) AS SIGNED) as uniqueVisits,
+            CAST(COUNT(DISTINCT CASE WHEN b.session_id IS NOT NULL AND b.session_id != '' THEN b.session_id END) AS SIGNED) as totalVisits,
             CAST(SUM(CASE WHEN UPPER(b.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) AS SIGNED) as actions,
             CAST(COALESCE(
-                MAX(rts.totalTimeSpent) / NULLIF(COUNT(DISTINCT CASE WHEN UPPER(b.event_type) = 'SESSION_TIME' THEN b.dedupeEventId END), 0), 
+                MAX(rts.totalTimeSpent) / NULLIF(COUNT(DISTINCT CASE WHEN b.session_id IS NOT NULL AND b.session_id != '' THEN b.session_id END), 0), 
                 0
             ) AS SIGNED) as avgTimeSpentSeconds
         FROM BaseLogs b
