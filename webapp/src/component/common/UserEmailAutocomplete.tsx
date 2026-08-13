@@ -41,7 +41,7 @@ export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
   value,
   onChange,
   label = "User Email",
-  placeholder = "e.g. user@wso2.com",
+  placeholder = "Type a name...",
   size = "small",
   fullWidth = true,
   disabled = false,
