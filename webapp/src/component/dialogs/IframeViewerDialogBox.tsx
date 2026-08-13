@@ -113,14 +113,14 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     contentType === FILETYPE.External_Link &&
     (contentSubtype === CONTENT_SUBTYPE.Pdf || contentSubtype === CONTENT_SUBTYPE.Video);
 
-  // Track modal open timestamp to calculate elapsed dwell time when outlink is clicked
+  // Track modal open timestamp (resets when modal opens OR when link changes)
   useEffect(() => {
-    if (open) {
+    if (open && link) {
       openTimeRef.current = Date.now();
     } else {
       openTimeRef.current = null;
     }
-  }, [open]);
+  }, [open, link]);
 
   // Evaluate restricted or broken state
   const isRestrictedState =
