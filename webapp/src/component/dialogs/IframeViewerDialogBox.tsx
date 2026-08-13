@@ -32,6 +32,7 @@ import LinkOffIcon from "@mui/icons-material/LinkOff";
 import { useAppDispatch, useAppSelector, RootState } from "@slices/store";
 import { getBlockedIframeUrls } from "@slices/pageSlice/page";
 import { verifyLinkPreview, resetPreviewStatus } from "@slices/previewSlice/preview";
+import { logAnalyticsEvent } from "@slices/analyticsSlice/analytics";
 import { CONTENT_STATE_IDLE, CONTENT_STATE_FAILED } from "@config/constant";
 import { isGoogleDriveFolderLink } from "@utils/utils";
 import { FILETYPE, CONTENT_SUBTYPE } from "@utils/types";
@@ -102,17 +103,51 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     (state: RootState) => state.preview
   );
 
-  const { onContainerMouseEnter, onContainerMouseLeave, triggerVerifiedView } =
+  const isGoogleDriveFolder = isGoogleDriveFolderLink(link);
+  const isGoogleDriveFile =
+    link?.includes("drive.google.com") || link?.includes("docs.google.com");
+
+  const isLocalBlocked = isBlockedUrl(link);
+  const shouldCropIframe =
+    contentType === FILETYPE.External_Link &&
+    (contentSubtype === CONTENT_SUBTYPE.Pdf || contentSubtype === CONTENT_SUBTYPE.Video);
+
+  // Evaluate restricted or broken state
+  const isRestrictedState =
+    !isDirectEmbeddable &&
+    (isGoogleDriveFolder ||
+      isLocalBlocked ||
+      previewInfo?.status === "RESTRICTED" ||
+      (previewInfo?.status === "BROKEN" && isGoogleDriveFile));
+
+  const isBrokenState =
+    !isDirectEmbeddable &&
+    ((previewInfo?.status === "BROKEN" && !isGoogleDriveFile) || backendState === "failed");
+
+  // A preview is ONLY successful if content can actually render in the iframe
+  const isPreviewSuccessful =
+    isDirectEmbeddable ||
+    (!isRestrictedState && !isBrokenState && previewInfo?.status === "SUCCESS");
+
+  // Dynamically set source: "card_preview_button" when preview is valid, "card_modal_open" when invalid.
+  // The backend SQL specifically looks for source LIKE '%preview%' to count previewClicks.
+  const trackerSource = isPreviewSuccessful ? "card_preview_button" : "card_modal_open";
+
+  const { onContainerMouseEnter, onContainerMouseLeave } =
     useContentTracker({
       contentId: contentId ?? null,
       contentType: contentType || "unknown",
       contentSubtype: contentSubtype || "generic",
       title: description,
       isOpen: open,
-      source: "card_preview_button",
+      source: trackerSource,
     });
 
-  const isBlockedUrl = (url: string): boolean => {
+  // Attach hover timers ONLY when preview rendering is successful (disables activeDwellSeconds on error screens)
+  const handleMouseEnter = isPreviewSuccessful ? onContainerMouseEnter : undefined;
+  const handleMouseLeave = isPreviewSuccessful ? onContainerMouseLeave : undefined;
+
+  function isBlockedUrl(url: string): boolean {
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname;
@@ -166,13 +201,7 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     } catch {
       return blockedUrls.some((blockedUrl: string) => url.includes(blockedUrl));
     }
-  };
-
-  const isGoogleDriveFolder = isGoogleDriveFolderLink(link);
-  const isLocalBlocked = isBlockedUrl(link);
-  const shouldCropIframe =
-    contentType === FILETYPE.External_Link &&
-    (contentSubtype === CONTENT_SUBTYPE.Pdf || contentSubtype === CONTENT_SUBTYPE.Video);
+  }
 
   useEffect(() => {
     if (
@@ -213,8 +242,22 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   }, [open, previewInfo?.status, link, isDirectEmbeddable, isGoogleDriveFolder, isLocalBlocked, onPreviewReady]);
 
   const handleOpenInNewTabClick = () => {
-    // Single call handles preview verification and outlink logging cleanly
-    triggerVerifiedView(true);
+    // Log as ENGAGEMENT with outlink source to increment outlinkClicks without adding extra totalViews
+    if (contentId) {
+      dispatch(
+        logAnalyticsEvent({
+          eventType: "ENGAGEMENT",
+          contentId: contentId,
+          metadata: {
+            title: description,
+            source: "modal_open_in_new_tab",
+            contentType: contentType || "unknown",
+            contentSubtype: contentSubtype || "generic",
+            verifiedView: true,
+          },
+        })
+      );
+    }
 
     if (onOpenInNewTab) {
       onOpenInNewTab();
@@ -244,16 +287,6 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
         </Box>
       );
     }
-
-    const isGoogleDriveFile =
-      link?.includes("drive.google.com") || link?.includes("docs.google.com");
-
-    const isRestrictedState =
-      !isDirectEmbeddable &&
-      (isGoogleDriveFolder ||
-        isLocalBlocked ||
-        previewInfo?.status === "RESTRICTED" ||
-        (previewInfo?.status === "BROKEN" && isGoogleDriveFile));
 
     if (isRestrictedState) {
       let errorMessage =
@@ -324,10 +357,6 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
       );
     }
 
-    const isBrokenState =
-      !isDirectEmbeddable &&
-      ((previewInfo?.status === "BROKEN" && !isGoogleDriveFile) || backendState === "failed");
-
     if (isBrokenState) {
       return (
         <Box
@@ -366,30 +395,45 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
           >
             This link looks broken or the site is temporarily unavailable. Please check the URL and try again.
           </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={handleClose}
-            sx={{
-              mt: 2,
-              px: 4,
-              py: 1.5,
-              textTransform: "none",
-              fontSize: "1rem",
-              backgroundColor: theme.palette.error.main,
-              color: theme.palette.common.white,
-              "&:hover": {
-                backgroundColor: theme.palette.error.dark,
-              },
-            }}
-          >
-            Go Back
-          </Button>
+          <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+            <Button
+              variant="outlined"
+              size="large"
+              onClick={handleClose}
+              sx={{
+                px: 3,
+                py: 1.5,
+                textTransform: "none",
+                fontSize: "1rem",
+              }}
+            >
+              Go Back
+            </Button>
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<OpenInNewIcon />}
+              onClick={handleOpenInNewTabClick}
+              sx={{
+                px: 4,
+                py: 1.5,
+                textTransform: "none",
+                fontSize: "1rem",
+                backgroundColor: theme.palette.error.main,
+                color: theme.palette.common.white,
+                "&:hover": {
+                  backgroundColor: theme.palette.error.dark,
+                },
+              }}
+            >
+              Try Opening in New Window
+            </Button>
+          </Box>
         </Box>
       );
     }
 
-    if (isDirectEmbeddable || previewInfo?.status === "SUCCESS") {
+    if (isPreviewSuccessful) {
       let finalIframeSrc = link;
       if (isYouTube && youtubeVideoId) {
         const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -437,8 +481,8 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
       }}
     >
       <Box
-        onMouseEnter={onContainerMouseEnter}
-        onMouseLeave={onContainerMouseLeave}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         sx={{
           position: "relative",
           backgroundColor: theme.palette.background.paper,
