@@ -202,7 +202,7 @@ public type UserLeaderboardEntry record {|
 public type RegionalTimeMetric record {|
     # Region or team name
     string region;
-    # Count of distinct user visits in this team
+    # Count of distinct visitors (unique users) in this team
     int uniqueVisits;
     # Total number of visits / sessions in this team
     int totalVisits;
