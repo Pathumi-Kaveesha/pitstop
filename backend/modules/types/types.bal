@@ -155,6 +155,8 @@ public type AnalyticsTotals record {|
     int totalTimeSpentSeconds;
     # Total overall platform interaction events
     int totalEngagements;
+    # Average actions performed per visit
+    decimal avgActionsPerVisit;
 |};
 
 
@@ -188,22 +190,26 @@ public type UserLeaderboardEntry record {|
     string department;
     # Region or sub-team of the user
     string region;
-    # Total interaction count performed by the user
-    int totalEngagements;
-    # Total time spent on the platform in seconds
-    int timeSpentSeconds;
-    # Dynamically calculated platform activity score
-    int activityScore;
+    # Total session visits by the user
+    int visits;
+    # Total active actions performed by the user
+    int actions;
+    # Average time spent per visit in seconds
+    int avgTimeSpentSeconds;
 |};
 
-# Regional time spent metric.
+# Global team / regional performance metric.
 public type RegionalTimeMetric record {|
     # Region or team name
     string region;
-    # Total cumulative time spent in seconds
-    int totalTimeSpentSeconds;
-    # Count of active users in this region
-    int activeUsersCount;
+    # Count of distinct visitors (unique users) in this team
+    int uniqueVisits;
+    # Total number of visits / sessions in this team
+    int totalVisits;
+    # Total active engagement actions performed
+    int actions;
+    # Average time spent per visit in seconds
+    int avgTimeSpentSeconds;
 |};
 
 # Most searched query metric.
@@ -236,6 +242,8 @@ public type ComprehensiveAnalyticsSummary record {|
     int totalTimeSpentSeconds;
     # Total platform engagement interactions
     int totalEngagements;
+    # Average actions performed per visit session
+    decimal avgActionsPerVisit;
     # List of top performing content items
     ContentPerformanceMetric[] topContent;
     # Ranked list of active users

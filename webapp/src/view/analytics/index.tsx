@@ -45,7 +45,6 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import VisibilityIcon from "@mui/icons-material/Visibility";
-import SearchIcon from "@mui/icons-material/Search";
 import TimerIcon from "@mui/icons-material/Timer";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import FilterListIcon from "@mui/icons-material/FilterList";
@@ -55,6 +54,8 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PreviewIcon from "@mui/icons-material/Preview";
 import PeopleIcon from "@mui/icons-material/People";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import TouchAppIcon from "@mui/icons-material/TouchApp";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { purple } from "@mui/material/colors";
 import { useAppDispatch, useAppSelector } from "@slices/store";
 import {
@@ -106,7 +107,6 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
   const [pageRoute, setPageRoute] = useState<string>(globalFilters.pageRoute || "");
   const [cardDateError, setCardDateError] = useState<string>("");
 
-  // Synchronize popover state whenever global filters are updated
   useEffect(() => {
     setRegion(globalFilters.region || "");
     setUserEmail(globalFilters.userEmail || "");
@@ -151,7 +151,7 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
   return (
     <>
       <Tooltip title="Filter this card separately" arrow>
-        <IconButton size="small" onClick={handleClick}>
+        <IconButton size="small" onClick={handleClick} aria-label="Filter this card separately">
           <FilterListIcon fontSize="small" />
         </IconButton>
       </Tooltip>
@@ -213,7 +213,8 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
               if (cardDateError) setCardDateError("");
             }}
           />
-          <FormControl size="small" fullWidth>
+
+          <FormControl size="small" fullWidth disabled={Boolean(userEmail)}>
             <InputLabel>Region / Team</InputLabel>
             <Select
               value={region}
@@ -237,6 +238,7 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
             onChange={(selectedEmail) => setUserEmail(selectedEmail)}
             label="User Email"
             size="small"
+            disabled={Boolean(region)}
           />
 
           <Box sx={{ display: "flex", justifyContent: "space-between", mt: 1 }}>
@@ -337,7 +339,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
   useEffect(() => {
     dispatch(fetchAnalyticsSummary({ sortBy: "totalViews" }));
 
-    // Fetch main top-level routes for dropdown filters
     const fetchMainRoutes = async () => {
       try {
         const response = await ApiService.getInstance().get(
@@ -378,6 +379,11 @@ const AnalyticsAdminDashboard: React.FC = () => {
     return `${hours}h ${mins}m`;
   };
 
+  // Directly display backend-calculated Average Actions Per Visit
+  const avgActionsPerVisit = summary?.avgActionsPerVisit != null
+    ? Number(summary.avgActionsPerVisit).toFixed(1)
+    : "0.0";
+
   return (
     <Box
       sx={{
@@ -409,7 +415,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
           </Box>
           <Box>
             <Typography variant="h4" fontWeight={700} color="text.primary">
-              Pitstop Inbuilt Analytics
+              Platform Inbuilt Analytics
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Deep content performance, regional metrics, and user engagement leaderboards
@@ -479,7 +485,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
               }}
             />
 
-            <FormControl size="small" sx={{ minWidth: 160 }}>
+            <FormControl size="small" sx={{ minWidth: 160 }} disabled={Boolean(globalUserEmail)}>
               <InputLabel>Global Region / Team</InputLabel>
               <Select
                 value={globalRegion}
@@ -504,6 +510,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 onChange={(selectedEmail) => setGlobalUserEmail(selectedEmail)}
                 label="Global User Email"
                 size="small"
+                disabled={Boolean(globalRegion)}
               />
             </Box>
 
@@ -536,7 +543,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
           <Box sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {/* Overall KPI Cards */}
             <Grid container spacing={2}>
-              <Grid size={{ xs: 12, sm: 3 }}>
+              {/* Card 1: Total Views */}
+              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -545,31 +553,42 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     border: `1px solid ${theme.palette.divider}`,
                     display: "flex",
                     alignItems: "center",
-                    gap: 2,
+                    justifyContent: "space-between",
                   }}
                 >
-                  <Box
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 2,
-                      backgroundColor: alpha(theme.palette.info.main, 0.1),
-                      color: theme.palette.info.main,
-                    }}
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        backgroundColor: alpha(theme.palette.info.main, 0.1),
+                        color: theme.palette.info.main,
+                      }}
+                    >
+                      <VisibilityIcon />
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Total Views
+                      </Typography>
+                      <Typography variant="h5" fontWeight={700}>
+                        {summary?.totalViews ?? 0}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Tooltip
+                    title="Total page view duration events recorded on the platform matching your selected filters."
+                    arrow
                   >
-                    <VisibilityIcon />
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">
-                      Total Views / Unique Views
-                    </Typography>
-                    <Typography variant="h5" fontWeight={700}>
-                      {summary?.totalViews ?? 0} / {summary?.totalUniqueViews ?? 0}
-                    </Typography>
-                  </Box>
+                    <IconButton size="small" aria-label="Total Views info">
+                      <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                    </IconButton>
+                  </Tooltip>
                 </Paper>
               </Grid>
 
-              <Grid size={{ xs: 12, sm: 3 }}>
+              {/* Card 2: Unique Visitors */}
+              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -578,31 +597,42 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     border: `1px solid ${theme.palette.divider}`,
                     display: "flex",
                     alignItems: "center",
-                    gap: 2,
+                    justifyContent: "space-between",
                   }}
                 >
-                  <Box
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 2,
-                      backgroundColor: alpha(theme.palette.warning.main, 0.1),
-                      color: theme.palette.warning.main,
-                    }}
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                        color: theme.palette.primary.main,
+                      }}
+                    >
+                      <PeopleIcon />
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Unique Visitors
+                      </Typography>
+                      <Typography variant="h5" fontWeight={700}>
+                        {summary?.totalUniqueViews ?? 0}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Tooltip
+                    title="Number of distinct team members who logged into and accessed the platform within the selected filters."
+                    arrow
                   >
-                    <TimerIcon />
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">
-                      Time Spent on Platform
-                    </Typography>
-                    <Typography variant="h5" fontWeight={700}>
-                      {formatTime(summary?.totalTimeSpentSeconds ?? 0)}
-                    </Typography>
-                  </Box>
+                    <IconButton size="small" aria-label="Unique Visitors info">
+                      <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                    </IconButton>
+                  </Tooltip>
                 </Paper>
               </Grid>
 
-              <Grid size={{ xs: 12, sm: 3 }}>
+              {/* Card 3: Time Spent on Platform */}
+              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -611,31 +641,42 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     border: `1px solid ${theme.palette.divider}`,
                     display: "flex",
                     alignItems: "center",
-                    gap: 2,
+                    justifyContent: "space-between",
                   }}
                 >
-                  <Box
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 2,
-                      backgroundColor: alpha(theme.palette.success.main, 0.1),
-                      color: theme.palette.success.main,
-                    }}
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        backgroundColor: alpha(theme.palette.warning.main, 0.1),
+                        color: theme.palette.warning.main,
+                      }}
+                    >
+                      <TimerIcon />
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Time Spent on Platform
+                      </Typography>
+                      <Typography variant="h5" fontWeight={700}>
+                        {formatTime(summary?.totalTimeSpentSeconds ?? 0)}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Tooltip
+                    title="Total cumulative active session time spent browsing, reading, or navigating the platform."
+                    arrow
                   >
-                    <BarChartIcon />
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">
-                      Total Platform Engagements
-                    </Typography>
-                    <Typography variant="h5" fontWeight={700}>
-                      {summary?.totalEngagements ?? 0}
-                    </Typography>
-                  </Box>
+                    <IconButton size="small" aria-label="Time Spent on Platform info">
+                      <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                    </IconButton>
+                  </Tooltip>
                 </Paper>
               </Grid>
 
-              <Grid size={{ xs: 12, sm: 3 }}>
+              {/* Card 4: Total Platform Engagements */}
+              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -644,30 +685,84 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     border: `1px solid ${theme.palette.divider}`,
                     display: "flex",
                     alignItems: "center",
-                    gap: 2,
+                    justifyContent: "space-between",
                   }}
                 >
-                  <Box
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 2,
-                      backgroundColor: alpha(purple[500], 0.15),
-                      color: purple[500],
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        backgroundColor: alpha(theme.palette.success.main, 0.1),
+                        color: theme.palette.success.main,
+                      }}
+                    >
+                      <BarChartIcon />
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Total Actions Taken
+                      </Typography>
+                      <Typography variant="h5" fontWeight={700}>
+                        {summary?.totalEngagements ?? 0}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Tooltip
+                    title="Total user interactions performed (including opening previews, clicking external outlinks, or searching). Opening a preview and then clicking its outlink counts as 2 actions."
+                    arrow
                   >
-                    <SearchIcon sx={{ color: purple[500], fontSize: 24 }} />
+                    <IconButton size="small" aria-label="Total Actions Taken info">
+                      <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Paper>
+              </Grid>
+
+              {/* Card 5: Average Actions per Visit */}
+              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: 2.5,
+                    borderRadius: 3,
+                    border: `1px solid ${theme.palette.divider}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        backgroundColor: alpha(purple[500], 0.15),
+                        color: purple[500],
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <TouchAppIcon sx={{ color: purple[500], fontSize: 24 }} />
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Avg Actions Per Visit
+                      </Typography>
+                      <Typography variant="h5" fontWeight={700}>
+                        {avgActionsPerVisit}
+                      </Typography>
+                    </Box>
                   </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">
-                      Distinct Search Terms Listed
-                    </Typography>
-                    <Typography variant="h5" fontWeight={700}>
-                      {topSearches?.length ?? 0}
-                    </Typography>
-                  </Box>
+                  <Tooltip
+                    title="Average number of active interactions (Total Actions ÷ Total Unique Sessions)."
+                    arrow
+                  >
+                    <IconButton size="small" aria-label="Average Actions Per Visit info">
+                      <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                    </IconButton>
+                  </Tooltip>
                 </Paper>
               </Grid>
             </Grid>
@@ -694,9 +789,19 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       mb: 2.5,
                     }}
                   >
-                    <Typography variant="h6" fontWeight={600}>
-                      Top Performing Content Breakdown
-                    </Typography>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <Typography variant="h6" fontWeight={600}>
+                        Top Performing Content Breakdown
+                      </Typography>
+                      <Tooltip
+                        title="Breaks down engagement per material. Preview Clicks requires successful embedding and 10s+ view time. Outlinks tracks direct external opens. Total Views counts modal openings once."
+                        arrow
+                      >
+                        <IconButton size="small" aria-label="Top Performing Content info">
+                          <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
 
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
                       <ToggleButtonGroup
@@ -733,38 +838,53 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         <TableCell>Content Title</TableCell>
                         <TableCell align="center">Type</TableCell>
                         <TableCell align="center">
-                          <Tooltip title="In-App Embedded Preview Clicks" arrow>
-                            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                          <Tooltip
+                            title="Counted ONLY when content renders successfully in preview AND is viewed for at least 10 seconds. Broken or restricted links do NOT increment preview clicks."
+                            arrow
+                          >
+                            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
                               <PreviewIcon fontSize="small" color="action" />
                               <span>Preview Clicks</span>
                             </Box>
                           </Tooltip>
                         </TableCell>
                         <TableCell align="center">
-                          <Tooltip title="Opened directly in a new window/tab" arrow>
-                            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                          <Tooltip
+                            title="Counted when opened in a new window/tab (including clicking 'Open in New Window' on restricted or broken preview screens)."
+                            arrow
+                          >
+                            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
                               <OpenInNewIcon fontSize="small" color="action" />
                               <span>Outlinks</span>
                             </Box>
                           </Tooltip>
                         </TableCell>
                         <TableCell align="center">
-                          <Typography
-                            variant="caption"
-                            fontWeight={topContentSortBy === "totalViews" ? 700 : 500}
-                            color={topContentSortBy === "totalViews" ? "primary.main" : "text.secondary"}
+                          <Tooltip
+                            title="Total times this content modal was opened. Opening a preview counts as 1 view, even if an outlink is also clicked inside that modal."
+                            arrow
                           >
-                            Total Views {topContentSortBy === "totalViews" ? "↓" : ""}
-                          </Typography>
+                            <Typography
+                              variant="caption"
+                              fontWeight={topContentSortBy === "totalViews" ? 700 : 500}
+                              color={topContentSortBy === "totalViews" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "help" }}
+                            >
+                              Total Views {topContentSortBy === "totalViews" ? "↓" : ""}
+                            </Typography>
+                          </Tooltip>
                         </TableCell>
                         <TableCell align="center">
-                          <Typography
-                            variant="caption"
-                            fontWeight={topContentSortBy === "uniqueViews" ? 700 : 500}
-                            color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary"}
-                          >
-                            Unique Views {topContentSortBy === "uniqueViews" ? "↓" : ""}
-                          </Typography>
+                          <Tooltip title="Number of distinct team members who viewed or opened this content." arrow>
+                            <Typography
+                              variant="caption"
+                              fontWeight={topContentSortBy === "uniqueViews" ? 700 : 500}
+                              color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "help" }}
+                            >
+                              Unique Views {topContentSortBy === "uniqueViews" ? "↓" : ""}
+                            </Typography>
+                          </Tooltip>
                         </TableCell>
                       </TableRow>
                     </TableHead>
@@ -870,6 +990,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       <Typography variant="h6" fontWeight={600}>
                         User Activity Leaderboard
                       </Typography>
+                      <Tooltip
+                        title="Team members ranked by total active actions taken (slide previews, search queries, link opens), along with total visits and average time spent."
+                        arrow
+                      >
+                        <IconButton size="small" aria-label="User Activity Leaderboard info">
+                          <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                        </IconButton>
+                      </Tooltip>
                     </Box>
                     <CardFilterPopover
                       globalFilters={globalFilterObj}
@@ -882,9 +1010,13 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     <TableHead>
                       <TableRow>
                         <TableCell>User</TableCell>
-                        <TableCell>Region</TableCell>
-                        <TableCell align="center">Time Spent</TableCell>
-                        <TableCell align="center">Activity Score</TableCell>
+                        <TableCell align="center">Visits</TableCell>
+                        <TableCell align="center">
+                          <Typography variant="caption" fontWeight={700} color="primary.main">
+                            Actions ↓
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">Avg Time Spent</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -896,20 +1028,26 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                 #{idx + 1} {u.userName}
                               </Typography>
                               <Typography variant="caption" color="text.secondary">
-                                {u.userEmail}
+                                {u.userEmail} {u.region ? `• ${u.region}` : ""}
                               </Typography>
                             </TableCell>
-                            <TableCell>
-                              <Typography variant="caption">{u.region}</Typography>
+                            <TableCell align="center">
+                              <Typography variant="body2" fontWeight={600}>
+                                {u.visits}
+                              </Typography>
                             </TableCell>
-                            <TableCell align="center">{formatTime(u.timeSpentSeconds)}</TableCell>
                             <TableCell align="center">
                               <Chip
-                                label={u.activityScore}
+                                label={u.actions}
                                 size="small"
                                 color="primary"
                                 sx={{ fontWeight: 700 }}
                               />
+                            </TableCell>
+                            <TableCell align="center">
+                              <Typography variant="body2" fontWeight={500}>
+                                {formatTime(u.avgTimeSpentSeconds)}
+                              </Typography>
                             </TableCell>
                           </TableRow>
                         ))
@@ -930,7 +1068,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
             {/* Regional Time Spent & Peak Activity Grid */}
             <Grid container spacing={3}>
-              {/* Card 3: Regional Time Spent Breakdown */}
+              {/* Card 3: Global Team Performance */}
               <Grid size={{ xs: 12, md: 6 }}>
                 <Box
                   sx={{
@@ -944,8 +1082,16 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                       <PublicIcon color="primary" />
                       <Typography variant="h6" fontWeight={600}>
-                        Regional Time Spent
+                        Global Team Performance
                       </Typography>
+                      <Tooltip
+                        title="Platform activity broken down by regional teams, comparing unique visitors, total visits, total actions, and average time spent per visit."
+                        arrow
+                      >
+                        <IconButton size="small" aria-label="Global Team Performance info">
+                          <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                        </IconButton>
+                      </Tooltip>
                     </Box>
                     <CardFilterPopover
                       globalFilters={globalFilterObj}
@@ -958,8 +1104,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     <TableHead>
                       <TableRow>
                         <TableCell>Region / Team</TableCell>
-                        <TableCell align="center">Active Users</TableCell>
-                        <TableCell align="center">Total Time Spent</TableCell>
+                        <TableCell align="center">Unique Visitors</TableCell>
+                        <TableCell align="center">Total Visits</TableCell>
+                        <TableCell align="center">Actions</TableCell>
+                        <TableCell align="center">Avg Time Spent</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -969,17 +1117,28 @@ const AnalyticsAdminDashboard: React.FC = () => {
                             <TableCell>
                               <Chip label={r.region} size="small" variant="outlined" color="primary" />
                             </TableCell>
-                            <TableCell align="center">{r.activeUsersCount}</TableCell>
+                            <TableCell align="center">{r.uniqueVisits}</TableCell>
                             <TableCell align="center" sx={{ fontWeight: 600 }}>
-                              {formatTime(r.totalTimeSpentSeconds)}
+                              {r.totalVisits}
+                            </TableCell>
+                            <TableCell align="center">
+                              <Chip
+                                label={r.actions}
+                                size="small"
+                                color="info"
+                                sx={{ fontWeight: 700 }}
+                              />
+                            </TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 500 }}>
+                              {formatTime(r.avgTimeSpentSeconds)}
                             </TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={3} align="center" sx={{ py: 3 }}>
+                          <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
                             <Typography variant="body2" color="text.secondary">
-                              No regional metrics found.
+                              No team metrics found.
                             </Typography>
                           </TableCell>
                         </TableRow>
@@ -1005,6 +1164,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       <Typography variant="h6" fontWeight={600}>
                         Peak Activity Windows
                       </Typography>
+                      <Tooltip
+                        title="The busiest 1-hour time slot on the platform for each day of the week, based on visit counts."
+                        arrow
+                      >
+                        <IconButton size="small" aria-label="Peak Activity Windows info">
+                          <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                        </IconButton>
+                      </Tooltip>
                     </Box>
                     <CardFilterPopover
                       globalFilters={globalFilterObj}
@@ -1060,9 +1227,19 @@ const AnalyticsAdminDashboard: React.FC = () => {
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                <Typography variant="h6" fontWeight={600}>
-                  Most Searched Terms
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Typography variant="h6" fontWeight={600}>
+                    Most Searched Terms
+                  </Typography>
+                  <Tooltip
+                    title="Top search queries submitted in the global search bar, showing total search attempts vs unique users who searched."
+                    arrow
+                  >
+                    <IconButton size="small" aria-label="Most Searched Terms info">
+                      <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
                 <CardFilterPopover
                   globalFilters={globalFilterObj}
                   mainRoutes={mainRoutes}
