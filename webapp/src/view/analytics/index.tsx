@@ -379,12 +379,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
     return `${hours}h ${mins}m`;
   };
 
-  // Calculate Average Actions per Visit dynamically
+  // Directly display backend-calculated Average Actions Per Visit
   const avgActionsPerVisit = summary?.avgActionsPerVisit != null
     ? Number(summary.avgActionsPerVisit).toFixed(1)
-    : (summary?.totalViews && summary?.totalViews > 0
-        ? (summary.totalEngagements / summary.totalViews).toFixed(1)
-        : "0.0");
+    : "0.0";
 
   return (
     <Box

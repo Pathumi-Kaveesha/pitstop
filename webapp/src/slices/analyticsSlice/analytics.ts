@@ -76,7 +76,7 @@ export interface AnalyticsSummary {
   totalUniqueViews: number;
   totalTimeSpentSeconds: number;
   totalEngagements: number;
-  avgActionsPerVisit?: number;
+  avgActionsPerVisit: number;
   topContent: ContentPerformanceMetric[];
   leaderboard: UserLeaderboardEntry[];
   regionalTimeSpent: RegionalTimeMetric[];
