@@ -151,7 +151,7 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
   return (
     <>
       <Tooltip title="Filter this card separately" arrow>
-        <IconButton size="small" onClick={handleClick}>
+        <IconButton size="small" onClick={handleClick} aria-label="Filter this card separately">
           <FilterListIcon fontSize="small" />
         </IconButton>
       </Tooltip>
@@ -580,7 +580,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     title="Total number of times pages were opened or refreshed, matching your selected filters."
                     arrow
                   >
-                    <IconButton size="small">
+                    <IconButton size="small" aria-label="Total Views info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
@@ -624,7 +624,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     title="Number of distinct team members who accessed the platform within the selected filters."
                     arrow
                   >
-                    <IconButton size="small">
+                    <IconButton size="small" aria-label="Unique Visitors info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
@@ -668,7 +668,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     title="Total active time spent browsing, reading, or exploring content on the platform."
                     arrow
                   >
-                    <IconButton size="small">
+                    <IconButton size="small" aria-label="Time Spent on Platform info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
@@ -712,7 +712,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     title="Total actions completed (such as viewing slides, opening links, or searching) within your selected filters."
                     arrow
                   >
-                    <IconButton size="small">
+                    <IconButton size="small" aria-label="Total Actions Taken info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
@@ -759,7 +759,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     title="Average number of actions completed during a single visit within the selected filters."
                     arrow
                   >
-                    <IconButton size="small">
+                    <IconButton size="small" aria-label="Average Actions Per Visit info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
@@ -797,7 +797,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         title="Most-viewed sales materials and collateral, showing slide preview clicks vs direct link opens."
                         arrow
                       >
-                        <IconButton size="small">
+                        <IconButton size="small" aria-label="Top Performing Content info">
                           <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                         </IconButton>
                       </Tooltip>
@@ -979,7 +979,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         title="Team members ranked by active actions taken (slide views, searches, link clicks), along with total visits and average time spent."
                         arrow
                       >
-                        <IconButton size="small">
+                        <IconButton size="small" aria-label="User Activity Leaderboard info">
                           <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                         </IconButton>
                       </Tooltip>
@@ -1073,7 +1073,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         title="Usage broken down by regional teams, comparing visitors, total visits, actions, and average time spent per visit."
                         arrow
                       >
-                        <IconButton size="small">
+                        <IconButton size="small" aria-label="Global Team Performance info">
                           <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                         </IconButton>
                       </Tooltip>
@@ -1153,7 +1153,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         title="The busiest hour of the day for activity on the platform for each day of the week."
                         arrow
                       >
-                        <IconButton size="small">
+                        <IconButton size="small" aria-label="Peak Activity Windows info">
                           <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                         </IconButton>
                       </Tooltip>
@@ -1220,7 +1220,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     title="Top keywords and topics searched on the platform within the selected filters."
                     arrow
                   >
-                    <IconButton size="small">
+                    <IconButton size="small" aria-label="Most Searched Terms info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
