@@ -552,3 +552,87 @@ public isolated function formatDueDateWithOffset(string dueDateStr, string? offs
 
     return string `${withoutZ}${sign}${offHoursStr}:${offMinsStr}`;
 }
+
+# Validates and normalizes timezone offset in minutes from UTC.
+#
+# + timezoneOffsetMinutes - Optional timezone offset input in minutes
+# + return - Validated timezone offset integer
+isolated function getValidatedTzOffset(int? timezoneOffsetMinutes) returns int {
+    int rawTzOffset = timezoneOffsetMinutes ?: 330;
+    return (rawTzOffset >= -840 && rawTzOffset <= 840) ? rawTzOffset : 330;
+}
+
+# Constructs parameterized SQL predicates for date range filtering.
+#
+# + startDate - Optional start date string (YYYY-MM-DD)
+# + endDate - Optional end date string (YYYY-MM-DD)
+# + tzOffset - Timezone offset in minutes for local day alignment
+# + return - Parameterized SQL query fragment
+isolated function buildDateRangePredicates(string? startDate, string? endDate, int tzOffset = 330) 
+    returns sql:ParameterizedQuery {
+
+    if startDate is string && startDate != "" && endDate is string && endDate != "" {
+        return ` AND DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') >= ${startDate} AND DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') <= ${endDate}`;
+    } else if startDate is string && startDate != "" {
+        return ` AND DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') >= ${startDate}`;
+    } else if endDate is string && endDate != "" {
+        return ` AND DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') <= ${endDate}`;
+    } else {
+        return ``;
+    }
+}
+
+# Constructs parameterized SQL predicate for regional team filtering.
+#
+# + region - Optional region or team name
+# + return - Parameterized SQL query fragment
+isolated function buildRegionPredicate(string? region) returns sql:ParameterizedQuery {
+    if region is () || region.trim() == "" {
+        return ``;
+    }
+    string cleanRegion = region.trim();
+    return ` AND l.region = ${cleanRegion}`;
+}
+
+# Constructs parameterized SQL predicate for individual user email filtering.
+#
+# + userEmail - Optional target user email
+# + return - Parameterized SQL query fragment
+isolated function buildUserEmailPredicate(string? userEmail) returns sql:ParameterizedQuery {
+    if userEmail is () || userEmail.trim() == "" {
+        return ``;
+    }
+    return ` AND LOWER(TRIM(l.user_email)) = ${userEmail.trim().toLowerAscii()}`;
+}
+
+isolated function buildPageRoutePredicate(string? pageRoute) returns sql:ParameterizedQuery {
+    if pageRoute is () || pageRoute.trim() == "" {
+        return ``;
+    }
+    
+    // Trim spaces and strip trailing slash for consistent matching
+    string rawRoute = pageRoute.trim();
+    string cleanRoute = (rawRoute.length() > 1 && rawRoute.endsWith("/")) 
+        ? rawRoute.substring(0, rawRoute.length() - 1) 
+        : rawRoute;
+
+    if cleanRoute == "/" {
+        return ` AND (
+            TRIM(r.route_path) = '/'
+            OR TRIM(parent_r.route_path) = '/'
+            OR l.meta_page_route = '/'
+            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) = '/'
+        )`;
+    }
+
+    return ` AND (
+        LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${cleanRoute})), '%')
+        OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${cleanRoute})), '%')
+        OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
+        OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
+        OR LOWER(REPLACE(r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
+        OR LOWER(REPLACE(parent_r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
+        OR l.meta_page_route LIKE CONCAT('%', ${cleanRoute}, '%')
+        OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${cleanRoute}, '%')
+    )`;
+}

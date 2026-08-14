@@ -323,36 +323,12 @@ isolated function getContentIdQuery(string? contentLink, string? contentType, in
     return query;
 }
 
-# Construct parameterized SQL predicates for date range filtering.
-#
-# + startDate - Optional start date string (YYYY-MM-DD)
-# + endDate - Optional end date string (YYYY-MM-DD)
-# + return - Constructed parameterized SQL query fragment
-isolated function buildDateRangePredicates(string? startDate, string? endDate) 
-    returns sql:ParameterizedQuery {
-    
-    sql:ParameterizedQuery query = ``;
-
-    if startDate is string && startDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp >= ${startDate}`);
-    }
-
-    if endDate is string && endDate != "" {
-        query = sql:queryConcat(query, ` AND l.event_timestamp < DATE_ADD(${endDate}, INTERVAL 1 DAY)`);
-    }
-
-    return query;
-}
-
 # Query to insert a user activity log into the user_activity_logs table with normalized email and region.
 #
 # + event - Analytics event payload
 # + return - SQL parameterized query
-isolated function logUserActivityQuery(types:AnalyticsEvent event)
-    returns sql:ParameterizedQuery {
-    
+isolated function logUserActivityQuery(types:AnalyticsEvent event) returns sql:ParameterizedQuery {
     string normalizedEmail = event.userEmail.trim().toLowerAscii();
-    
     string? rawRegion = event.region;
     string? normalizedRegion = rawRegion is string ? rawRegion.trim() : ();
 
@@ -384,6 +360,8 @@ isolated function logUserActivityQuery(types:AnalyticsEvent event)
 # + filter - Analytics filter parameters including dates, region, user email, and sortBy
 # + return - SQL parameterized query
 isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
+    int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
+
     sql:ParameterizedQuery query = `
         SELECT 
             CAST(l.content_id AS SIGNED) as contentId,
@@ -418,30 +396,10 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
           AND COALESCE(c.is_deleted, 0) = 0
     `;
 
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
-    
-    string? reqRegion = filter.region;
-    if reqRegion is string && reqRegion != "" {
-        query = sql:queryConcat(query, ` AND l.region = ${reqRegion.trim()}`);
-    }
-    
-    string? reqUserEmail = filter.userEmail;
-    if reqUserEmail is string && reqUserEmail != "" {
-        query = sql:queryConcat(query, ` AND l.user_email = ${reqUserEmail.trim().toLowerAscii()}`);
-    }
-    
-    if filter.pageRoute is string && filter.pageRoute != "" {
-        query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(REPLACE(r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(REPLACE(parent_r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.pageRoute')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-        )`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     query = sql:queryConcat(query, ` GROUP BY l.content_id, c.description, c.content_type `);
 
@@ -459,6 +417,8 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
 # + filter - Analytics filter parameters including dates, region, user email, and page route
 # + return - Constructed SQL parameterized query
 isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
+    int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
+
     sql:ParameterizedQuery query = `
         WITH DeduplicatedLogs AS (
             SELECT 
@@ -485,30 +445,10 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             WHERE 1=1
     `;
 
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
-    
-    string? reqRegion = filter.region;
-    if reqRegion is string && reqRegion != "" {
-        query = sql:queryConcat(query, ` AND l.region = ${reqRegion.trim()}`);
-    }
-    
-    string? reqUserEmail = filter.userEmail;
-    if reqUserEmail is string && reqUserEmail != "" {
-        query = sql:queryConcat(query, ` AND l.user_email = ${reqUserEmail.trim().toLowerAscii()}`);
-    }
-    
-    if filter.pageRoute is string && filter.pageRoute != "" {
-        query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(REPLACE(r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(REPLACE(parent_r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.pageRoute')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-        )`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     return sql:queryConcat(query, `
         ),
@@ -552,6 +492,8 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
 # + filter - Applied time range, user, regional, and route filters
 # + return - Constructed SQL parameterized query
 isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
+    int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
+
     sql:ParameterizedQuery query = `
         WITH BaseLogs AS (
             SELECT 
@@ -572,28 +514,10 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
             WHERE 1=1
     `;
 
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
-    
-    string? reqRegion = filter.region;
-    if reqRegion is string && reqRegion != "" {
-        query = sql:queryConcat(query, ` AND l.region = ${reqRegion.trim()}`);
-    }
-    
-    string? reqUserEmail = filter.userEmail;
-    if reqUserEmail is string && reqUserEmail != "" {
-        query = sql:queryConcat(query, ` AND l.user_email = ${reqUserEmail.trim().toLowerAscii()}`);
-    }
-    
-    if filter.pageRoute is string && filter.pageRoute != "" {
-        query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.pageRoute')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-        )`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     query = sql:queryConcat(query, `
         ),
@@ -633,80 +557,35 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
 }
 
 # Dynamic query to fetch the peak activity hour for each day of the week.
-# Scopes content to matching page routes when a filter is supplied, preserving all traffic when unfiltered.
-# Converts UTC event timestamps using the viewer's requested timezone offset.
 #
 # + filter - Analytics filter parameters including dates, region, user email, page route, and timezone offset
 # + return - Constructed SQL parameterized query
 isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
-    sql:ParameterizedQuery query = ``;
+    int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
 
-    int rawTzOffset = filter.timezoneOffsetMinutes ?: 330;
-    int tzOffset = (rawTzOffset >= -840 && rawTzOffset <= 840) ? rawTzOffset : 330;
+    sql:ParameterizedQuery query = `
+        WITH HourlyStats AS (
+            SELECT 
+                DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as dayOfWeek,
+                DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as dayNum,
+                HOUR(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as peakHour,
+                CAST(COUNT(*) AS SIGNED) as visitCount,
+                ROW_NUMBER() OVER (
+                    PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) 
+                    ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) ASC
+                ) as rank_num
+            FROM user_activity_logs l
+            LEFT JOIN content c ON c.content_id = l.content_id
+            LEFT JOIN section s ON s.section_id = c.section_id
+            LEFT JOIN route r ON r.route_id = s.route_id
+            LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
+            WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW', 'SESSION_TIME')
+    `;
 
-    sql:ParameterizedQuery intervalExpr = `DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)`;
-
-    string? pageRoute = filter.pageRoute;
-    boolean hasPageRoute = pageRoute is string && pageRoute != "";
-
-    if hasPageRoute {
-        query = sql:queryConcat(query, `
-            WITH RouteFilteredContent AS (
-                SELECT DISTINCT c.content_id
-                FROM content c
-                LEFT JOIN section s ON s.section_id = c.section_id
-                LEFT JOIN route r ON r.route_id = COALESCE(s.route_id, c.route_id)
-                LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-                WHERE COALESCE(c.is_deleted, 0) = 0
-                  AND (
-                      LOWER(TRIM(r.route_path)) = LOWER(TRIM(${pageRoute}))
-                      OR LOWER(TRIM(parent_r.route_path)) = LOWER(TRIM(${pageRoute}))
-                      OR LOWER(TRIM(r.menu_item)) = LOWER(TRIM(${pageRoute}))
-                      OR LOWER(TRIM(parent_r.menu_item)) = LOWER(TRIM(${pageRoute}))
-                  )
-            ),
-            HourlyStats AS (
-                SELECT 
-                    DAYNAME(`, intervalExpr, `) as dayOfWeek,
-                    DAYOFWEEK(`, intervalExpr, `) as dayNum,
-                    HOUR(`, intervalExpr, `) as peakHour,
-                    CAST(COUNT(*) AS SIGNED) as visitCount,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY DAYNAME(`, intervalExpr, `) 
-                        ORDER BY COUNT(*) DESC, HOUR(`, intervalExpr, `) ASC
-                    ) as rank_num
-                FROM user_activity_logs l
-                INNER JOIN RouteFilteredContent rfc ON rfc.content_id = l.content_id
-                WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
-        `);
-    } else {
-        query = sql:queryConcat(query, `
-            WITH HourlyStats AS (
-                SELECT 
-                    DAYNAME(`, intervalExpr, `) as dayOfWeek,
-                    DAYOFWEEK(`, intervalExpr, `) as dayNum,
-                    HOUR(`, intervalExpr, `) as peakHour,
-                    CAST(COUNT(*) AS SIGNED) as visitCount,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY DAYNAME(`, intervalExpr, `) 
-                        ORDER BY COUNT(*) DESC, HOUR(`, intervalExpr, `) ASC
-                    ) as rank_num
-                FROM user_activity_logs l
-                WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
-        `);
-    }
-
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
-    
-    string? reqRegion = filter.region;
-    if reqRegion is string && reqRegion != "" {
-        query = sql:queryConcat(query, ` AND l.region = ${reqRegion.trim()}`);
-    }
-    
-    string? reqUserEmail = filter.userEmail;
-    if reqUserEmail is string && reqUserEmail != "" {
-        query = sql:queryConcat(query, ` AND l.user_email = ${reqUserEmail.trim().toLowerAscii()}`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     return sql:queryConcat(query, `
             GROUP BY dayOfWeek, dayNum, peakHour
@@ -726,6 +605,8 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
 # + filter - Analytics filter parameters including dates, region, user email, and page route
 # + return - SQL parameterized query
 isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
+    int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
+
     sql:ParameterizedQuery query = `
         SELECT 
             JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query')) as searchTerm,
@@ -739,28 +620,10 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
         WHERE UPPER(l.event_type) = 'SEARCH' AND JSON_EXTRACT(l.metadata, '$.query') IS NOT NULL
     `;
 
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
-    
-    string? reqRegion = filter.region;
-    if reqRegion is string && reqRegion != "" {
-        query = sql:queryConcat(query, ` AND l.region = ${reqRegion.trim()}`);
-    }
-    
-    string? reqUserEmail = filter.userEmail;
-    if reqUserEmail is string && reqUserEmail != "" {
-        query = sql:queryConcat(query, ` AND l.user_email = ${reqUserEmail.trim().toLowerAscii()}`);
-    }
-    
-    if filter.pageRoute is string && filter.pageRoute != "" {
-        query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.pageRoute')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-        )`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     return sql:queryConcat(query, ` GROUP BY searchTerm ORDER BY searchCount DESC LIMIT 10`);
 }
@@ -770,6 +633,8 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
 # + filter - Analytics filter parameters including dates, region, page route, and user email
 # + return - Constructed SQL parameterized query
 isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
+    int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
+
     sql:ParameterizedQuery query = `
         WITH DeduplicatedSessionTimes AS (
             SELECT 
@@ -787,28 +652,10 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             WHERE UPPER(l.event_type) = 'SESSION_TIME'
     `;
 
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
-    
-    string? reqRegion = filter.region;
-    if reqRegion is string && reqRegion != "" {
-        query = sql:queryConcat(query, ` AND l.region = ${reqRegion.trim()}`);
-    }
-    
-    string? reqUserEmail = filter.userEmail;
-    if reqUserEmail is string && reqUserEmail != "" {
-        query = sql:queryConcat(query, ` AND l.user_email = ${reqUserEmail.trim().toLowerAscii()}`);
-    }
-    
-    if filter.pageRoute is string && filter.pageRoute != "" {
-        query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.pageRoute')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-        )`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     query = sql:queryConcat(query, `
             GROUP BY l.user_email, dedupeEventId
@@ -831,26 +678,10 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             WHERE 1=1
     `);
 
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate));
-    
-    if reqRegion is string && reqRegion != "" {
-        query = sql:queryConcat(query, ` AND l.region = ${reqRegion.trim()}`);
-    }
-    
-    if reqUserEmail is string && reqUserEmail != "" {
-        query = sql:queryConcat(query, ` AND l.user_email = ${reqUserEmail.trim().toLowerAscii()}`);
-    }
-    
-    if filter.pageRoute is string && filter.pageRoute != "" {
-        query = sql:queryConcat(query, ` AND (
-            LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${filter.pageRoute})), '%')
-            OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${filter.pageRoute})), '/', ''), '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.pageRoute')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${filter.pageRoute}, '%')
-        )`);
-    }
+    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     return sql:queryConcat(query, `
         )
@@ -881,6 +712,119 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
                 0.0
             ) AS DECIMAL(10,2)) as avgActionsPerVisit
         FROM PlatformEventLogs
+    `);
+}
+
+# Query to fetch daily analytics trend breakdown grouped by date.
+# Defaults to the past 7 days (past week) when no date range filters are passed.
+#
+# + filter - Analytics filter parameters including dates, region, page route, user email, and timezone offset
+# + return - Constructed SQL parameterized query
+isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
+    int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
+
+    boolean hasStartDate = filter.startDate is string && filter.startDate != "";
+    boolean hasEndDate = filter.endDate is string && filter.endDate != "";
+
+    // Default specifically for the trend chart to the past 7 days when unfiltered
+    sql:ParameterizedQuery datePredicate = ``;
+    if hasStartDate || hasEndDate {
+        datePredicate = buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset);
+    } else {
+        datePredicate = ` AND DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE) >= DATE_SUB(DATE_ADD(NOW(), INTERVAL ${tzOffset} MINUTE), INTERVAL 7 DAY)`;
+    }
+
+    sql:ParameterizedQuery query = `
+        WITH DeduplicatedSessionTimes AS (
+            SELECT 
+                DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') as eventDate,
+                l.user_email,
+                COALESCE(
+                    JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
+                    CAST(l.id AS CHAR)
+                ) as dedupeEventId,
+                SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
+            FROM user_activity_logs l
+            LEFT JOIN content c ON c.content_id = l.content_id
+            LEFT JOIN section s ON s.section_id = c.section_id
+            LEFT JOIN route r ON r.route_id = s.route_id
+            LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
+            WHERE UPPER(l.event_type) = 'SESSION_TIME'
+    `;
+
+    query = sql:queryConcat(query, datePredicate);
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
+
+    query = sql:queryConcat(query, `
+            GROUP BY eventDate, l.user_email, dedupeEventId
+        ),
+        DailySessionDurationSummary AS (
+            SELECT 
+                eventDate,
+                SUM(totalDuration) as dailyTimeSpent
+            FROM DeduplicatedSessionTimes
+            GROUP BY eventDate
+        ),
+        PlatformDailyLogs AS (
+            SELECT 
+                DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') as eventDate,
+                l.event_type,
+                l.user_email,
+                l.session_id,
+                JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.trackingType')) as trackingType,
+                COALESCE(
+                    JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
+                    CAST(l.id AS CHAR)
+                ) as dedupeEventId
+            FROM user_activity_logs l
+            LEFT JOIN content c ON c.content_id = l.content_id
+            LEFT JOIN section s ON s.section_id = c.section_id
+            LEFT JOIN route r ON r.route_id = s.route_id
+            LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
+            WHERE 1=1
+    `);
+
+    query = sql:queryConcat(query, datePredicate);
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
+    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
+
+    return sql:queryConcat(query, `
+        )
+        SELECT 
+            p.eventDate as date,
+            
+            CAST(
+                COUNT(DISTINCT CASE 
+                    WHEN UPPER(p.event_type) = 'SESSION_TIME' 
+                         AND (p.trackingType = 'page_view_duration' OR p.trackingType IS NULL)
+                    THEN p.dedupeEventId 
+                END)
+            AS SIGNED) as totalViews,
+            
+            CAST(
+                COUNT(DISTINCT CASE 
+                    WHEN UPPER(p.event_type) = 'SESSION_TIME' 
+                         AND (p.trackingType = 'page_view_duration' OR p.trackingType IS NULL)
+                    THEN p.user_email 
+                END)
+            AS SIGNED) as uniqueViews,
+            
+            CAST(COALESCE(MAX(dss.dailyTimeSpent), 0) AS SIGNED) as timeSpentSeconds,
+            
+            CAST(COALESCE(SUM(CASE WHEN UPPER(p.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END), 0) AS SIGNED) as totalEngagements,
+
+            CAST(COALESCE(
+                SUM(CASE WHEN UPPER(p.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) / 
+                NULLIF(COUNT(DISTINCT CASE WHEN p.session_id IS NOT NULL AND p.session_id != '' THEN p.session_id END), 0), 
+                0.0
+            ) AS DECIMAL(10,2)) as avgActionsPerVisit
+        FROM PlatformDailyLogs p
+        LEFT JOIN DailySessionDurationSummary dss ON dss.eventDate = p.eventDate
+        GROUP BY p.eventDate
+        ORDER BY p.eventDate ASC
     `);
 }
 

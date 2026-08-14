@@ -123,6 +123,7 @@ export const AppConfig = {
     verifyLinkPreview: () => ServiceBaseUrl + "/verify-preview",
     logAnalyticsEvent: () => ServiceBaseUrl + "/analytics/events",
     getAnalyticsSummary: () => ServiceBaseUrl + "/analytics/summary",
+    getAnalyticsTrends: () => ServiceBaseUrl + "/analytics/summary/trends",
     getMainRoutes: () => ServiceBaseUrl + "/analytics/routes",
   },
 };

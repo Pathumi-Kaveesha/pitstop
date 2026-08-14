@@ -681,6 +681,47 @@ service http:InterceptableService / on new http:Listener(9090) {
         return summary;
     }
 
+    # Section Filter Resource: Daily Analytics Trends
+    #
+    # + ctx - Request context
+    # + startDate - Optional start date filter
+    # + endDate - Optional end date filter
+    # + region - Optional region filter
+    # + userEmail - Optional user email filter
+    # + pageRoute - Optional page route filter
+    # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
+    # + return - Array of DailyTrendMetric records or 500 Internal Server Error
+    resource function get analytics/summary/trends(
+        http:RequestContext ctx, 
+        string? startDate, 
+        string? endDate, 
+        string? region, 
+        string? userEmail,
+        string? pageRoute,
+        int? timezoneOffsetMinutes
+    ) returns types:DailyTrendMetric[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        types:AnalyticsFilter filter = { 
+            startDate: startDate, 
+            endDate: endDate, 
+            region: region, 
+            userEmail: userEmail,
+            pageRoute: pageRoute,
+            timezoneOffsetMinutes: timezoneOffsetMinutes
+        };
+        types:DailyTrendMetric[]|error data = database:getDailyTrendMetrics(filter);
+        if data is error {
+            log:printError("Error retrieving daily trend metrics", data);
+            return <http:InternalServerError>{ body: "Error retrieving daily trend metrics" };
+        }
+        return data;
+    }
+
     # Section Filter Resource: Top Content Performance
     #
     # + ctx - Request context

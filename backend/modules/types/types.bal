@@ -232,6 +232,22 @@ public type TrafficPeakMetric record {|
     int visitCount;
 |};
 
+# Daily trend metric breakdown.
+public type DailyTrendMetric record {|
+    # Date of the recorded activity trend (YYYY-MM-DD)
+    string date;
+    # Total page views recorded on this date
+    int totalViews;
+    # Number of distinct visitors on this date
+    int uniqueViews;
+    # Total cumulative time spent in seconds on this date
+    int timeSpentSeconds;
+    # Total user interactions and engagements on this date
+    int totalEngagements;
+    # Average number of actions performed per visit on this date
+    decimal avgActionsPerVisit;
+|};
+
 # Comprehensive Admin Analytics Summary.
 public type ComprehensiveAnalyticsSummary record {|
     # Total views across all content
@@ -244,6 +260,8 @@ public type ComprehensiveAnalyticsSummary record {|
     int totalEngagements;
     # Average actions performed per visit session
     decimal avgActionsPerVisit;
+    # Daily trend breakdown of performance metrics over time
+    DailyTrendMetric[] trends;
     # List of top performing content items
     ContentPerformanceMetric[] topContent;
     # Ranked list of active users
