@@ -66,6 +66,7 @@ import {
   fetchRegionalTimeSpent,
   fetchPeakActivityTimes,
   fetchTopSearches,
+  clearTrendsOverride,
   AnalyticsFilterParams,
   DailyTrendMetric,
 } from "@slices/analyticsSlice/analytics";
@@ -308,7 +309,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const summary = useAppSelector((state) => state.analytics.summary);
   const status = useAppSelector((state) => state.analytics.summaryStatus);
   const trends = useAppSelector((state) => state.analytics.trends);
-  const trendsStatus = useAppSelector((state) => state.analytics.trendsStatus);
+  const trendsOverridden = useAppSelector((state) => state.analytics.trendsOverridden);
   const topContent = useAppSelector((state) => state.analytics.topContent);
   const leaderboard = useAppSelector((state) => state.analytics.leaderboard);
   const regionalTimeSpent = useAppSelector((state) => state.analytics.regionalTimeSpent);
@@ -333,7 +334,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
     };
 
     setAppliedFilters(newApplied);
-    setTrendFilters(null); // Clear chart override so trend chart syncs with new global filters
+    setTrendFilters(null); // Clear card-level popover state
+    dispatch(clearTrendsOverride()); // Reset Redux override so trend chart syncs with new global summary
     dispatch(fetchAnalyticsSummary(newApplied));
   };
 
@@ -422,10 +424,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   // Uses activeTrendFilter (trendFilters if custom-filtered, else appliedFilters).
   // Generates 0-value points for inactive dates within the requested range.
   const realTrendData: TrendDataPoint[] = useMemo(() => {
-    const rawTrends =
-      trendsStatus === "success" || trendsStatus === "failed"
-        ? trends
-        : summary?.trends || [];
+    const rawTrends = trendsOverridden ? trends : summary?.trends || [];
 
     const trendMap = new Map<string, DailyTrendMetric>();
     rawTrends.forEach((item) => {
@@ -506,7 +505,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
     }
 
     return result;
-  }, [trends, trendsStatus, summary, trendFilters, appliedFilters]);
+  }, [trends, trendsOverridden, summary, trendFilters, appliedFilters]);
 
   return (
     <Box
@@ -910,7 +909,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   }}
                   onReset={() => {
                     setTrendFilters(null);
-                    dispatch(fetchAnalyticsTrends(appliedFilters));
+                    dispatch(clearTrendsOverride());
                   }}
                 />
               </Box>

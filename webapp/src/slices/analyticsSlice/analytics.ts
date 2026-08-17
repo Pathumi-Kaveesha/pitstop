@@ -305,6 +305,8 @@ export const analyticsSlice = createSlice({
   reducers: {
     clearTrendsOverride: (state) => {
       state.trendsOverridden = false;
+      state.trendsStatus = "idle";
+      state.trends = [];
     },
     resetAnalyticsState: (state) => {
       state.logState = "idle";
