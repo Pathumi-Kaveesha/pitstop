@@ -117,6 +117,11 @@ export const CascadingPageRouteSelector: React.FC<
     return routes.filter((r) => r.parent_id === card1SelectedRoute.route_id);
   }, [routes, card1SelectedRoute]);
 
+  const breadcrumbText = useMemo(
+    () => `In: ${navigationHistory.map((h) => h.label).join(" > ")}`,
+    [navigationHistory]
+  );
+
   const handleCard1Change = (routeIdStr: string) => {
     if (!routeIdStr) {
       setCard1SelectedRoute(null);
@@ -187,24 +192,44 @@ export const CascadingPageRouteSelector: React.FC<
     >
       {/* Drilled-in History Tag */}
       {navigationHistory.length > 0 && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 1.25 }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.5,
+            mb: 1.25,
+            maxWidth: "100%",
+          }}
+        >
           <Tooltip title="Go back to parent route level" arrow>
             <IconButton
               size="small"
               onClick={handleGoBack}
               color="primary"
-              sx={{ p: 0.25 }}
+              sx={{ p: 0.25, flexShrink: 0 }}
             >
               <ArrowBackIcon fontSize="inherit" />
             </IconButton>
           </Tooltip>
-          <Chip
-            label={`In: ${navigationHistory.map((h) => h.label).join(" > ")}`}
-            size="small"
-            color="primary"
-            variant="outlined"
-            sx={{ height: 20, fontSize: "0.68rem", fontWeight: 600 }}
-          />
+          <Tooltip title={breadcrumbText} arrow placement="top">
+            <Chip
+              label={breadcrumbText}
+              size="small"
+              color="primary"
+              variant="outlined"
+              sx={{
+                height: 20,
+                fontSize: "0.68rem",
+                fontWeight: 600,
+                maxWidth: layout === "vertical" ? 280 : 250,
+                "& .MuiChip-label": {
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                },
+              }}
+            />
+          </Tooltip>
         </Box>
       )}
 
