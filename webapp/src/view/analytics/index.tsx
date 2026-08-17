@@ -308,6 +308,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const summary = useAppSelector((state) => state.analytics.summary);
   const status = useAppSelector((state) => state.analytics.summaryStatus);
   const trends = useAppSelector((state) => state.analytics.trends);
+  const trendsStatus = useAppSelector((state) => state.analytics.trendsStatus);
   const topContent = useAppSelector((state) => state.analytics.topContent);
   const leaderboard = useAppSelector((state) => state.analytics.leaderboard);
   const regionalTimeSpent = useAppSelector((state) => state.analytics.regionalTimeSpent);
@@ -421,7 +422,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
   // Uses activeTrendFilter (trendFilters if custom-filtered, else appliedFilters).
   // Generates 0-value points for inactive dates within the requested range.
   const realTrendData: TrendDataPoint[] = useMemo(() => {
-    const rawTrends = trends && trends.length > 0 ? trends : summary?.trends || [];
+    const rawTrends =
+      trendsStatus === "success" || trendsStatus === "failed"
+        ? trends
+        : summary?.trends || [];
 
     const trendMap = new Map<string, DailyTrendMetric>();
     rawTrends.forEach((item) => {
@@ -481,12 +485,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
       const item = trendMap.get(dateKey);
 
-      const shortDate = current.toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      });
-
       const longDate = current.toLocaleDateString("en-US", {
         weekday: "long",
         year: "numeric",
@@ -495,7 +493,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
       });
 
       result.push({
-        date: shortDate,
+        date: dateKey,
         formattedDate: longDate,
         totalViews: Number(item?.totalViews || 0),
         uniqueViews: Number(item?.uniqueViews || 0),
@@ -508,7 +506,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
     }
 
     return result;
-  }, [trends, summary, trendFilters, appliedFilters]);
+  }, [trends, trendsStatus, summary, trendFilters, appliedFilters]);
 
   return (
     <Box

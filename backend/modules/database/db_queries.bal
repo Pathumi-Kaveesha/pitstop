@@ -566,12 +566,20 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
     sql:ParameterizedQuery query = `
         WITH HourlyStats AS (
             SELECT 
-                DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as dayOfWeek,
+                CASE DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE))
+                    WHEN 1 THEN 'Sunday'
+                    WHEN 2 THEN 'Monday'
+                    WHEN 3 THEN 'Tuesday'
+                    WHEN 4 THEN 'Wednesday'
+                    WHEN 5 THEN 'Thursday'
+                    WHEN 6 THEN 'Friday'
+                    WHEN 7 THEN 'Saturday'
+                END as dayOfWeek,
                 DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as dayNum,
                 HOUR(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) as peakHour,
                 CAST(COUNT(*) AS SIGNED) as visitCount,
                 ROW_NUMBER() OVER (
-                    PARTITION BY DAYNAME(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) 
+                    PARTITION BY DAYOFWEEK(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) 
                     ORDER BY COUNT(*) DESC, HOUR(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE)) ASC
                 ) as rank_num
             FROM user_activity_logs l
@@ -579,7 +587,7 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
             LEFT JOIN section s ON s.section_id = c.section_id
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-            WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW', 'SESSION_TIME')
+            WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
@@ -723,15 +731,24 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
 isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
     int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
 
-    boolean hasStartDate = filter.startDate is string && filter.startDate != "";
-    boolean hasEndDate = filter.endDate is string && filter.endDate != "";
+    string? startDate = filter.startDate;
+    string? endDate = filter.endDate;
+
+    boolean hasStartDate = startDate is string && startDate.trim() != "";
+    boolean hasEndDate = endDate is string && endDate.trim() != "";
 
     // Default specifically for the trend chart to the past 7 days when unfiltered
     sql:ParameterizedQuery datePredicate = ``;
     if hasStartDate || hasEndDate {
         datePredicate = buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset);
     } else {
-        datePredicate = ` AND DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE) >= DATE_SUB(DATE_ADD(NOW(), INTERVAL ${tzOffset} MINUTE), INTERVAL 7 DAY)`;
+        datePredicate = ` AND l.event_timestamp >= DATE_SUB(
+            DATE_SUB(
+                DATE(DATE_ADD(NOW(), INTERVAL ${tzOffset} MINUTE)), 
+                INTERVAL 6 DAY
+            ), 
+            INTERVAL ${tzOffset} MINUTE
+        )`;
     }
 
     sql:ParameterizedQuery query = `

@@ -112,6 +112,7 @@ interface AnalyticsState {
   // Independent card states
   trends: DailyTrendMetric[];
   trendsStatus: "idle" | "loading" | "success" | "failed";
+  trendsOverridden: boolean; 
 
   topContent: ContentPerformanceMetric[];
   topContentStatus: "idle" | "loading" | "success" | "failed";
@@ -138,6 +139,7 @@ const initialState: AnalyticsState = {
 
   trends: [],
   trendsStatus: "idle",
+  trendsOverridden: false,
 
   topContent: [],
   topContentStatus: "idle",
@@ -301,12 +303,16 @@ export const analyticsSlice = createSlice({
   name: "analytics",
   initialState,
   reducers: {
+    clearTrendsOverride: (state) => {
+      state.trendsOverridden = false;
+    },
     resetAnalyticsState: (state) => {
       state.logState = "idle";
       state.summaryStatus = "idle";
       state.summary = null;
       state.trends = [];
       state.trendsStatus = "idle";
+      state.trendsOverridden = false;
       state.topContent = [];
       state.topContentStatus = "idle";
       state.leaderboard = [];
@@ -331,8 +337,10 @@ export const analyticsSlice = createSlice({
         (state, action: PayloadAction<AnalyticsSummary>) => {
           state.summaryStatus = "success";
           state.summary = action.payload;
-          state.trends = action.payload?.trends || [];
-          state.trendsStatus = "success";
+          if (!state.trendsOverridden) {
+            state.trends = action.payload?.trends || [];
+            state.trendsStatus = "success";
+          }
           state.topContent = action.payload?.topContent || [];
           state.topContentStatus = "success";
           state.leaderboard = action.payload?.leaderboard || [];
@@ -348,8 +356,10 @@ export const analyticsSlice = createSlice({
       .addCase(fetchAnalyticsSummary.rejected, (state, action) => {
         state.summaryStatus = "failed";
         state.summary = null;
-        state.trends = [];
-        state.trendsStatus = "failed";
+        if (!state.trendsOverridden) {
+          state.trends = [];
+          state.trendsStatus = "failed";
+        }
         state.topContent = [];
         state.topContentStatus = "failed";
         state.leaderboard = [];
@@ -366,14 +376,17 @@ export const analyticsSlice = createSlice({
       // Standalone Trends Reducer
       .addCase(fetchAnalyticsTrends.pending, (state) => {
         state.trendsStatus = "loading";
+        state.trendsOverridden = true;
       })
       .addCase(fetchAnalyticsTrends.fulfilled, (state, action) => {
         state.trends = action.payload || [];
         state.trendsStatus = "success";
+        state.trendsOverridden = true;
       })
       .addCase(fetchAnalyticsTrends.rejected, (state, action) => {
         state.trends = [];
         state.trendsStatus = "failed";
+        state.trendsOverridden = true;
         state.error = (action.payload as string) || action.error.message || "Failed to fetch analytics trends";
       })
 
@@ -449,5 +462,5 @@ export const analyticsSlice = createSlice({
   },
 });
 
-export const { resetAnalyticsState } = analyticsSlice.actions;
+export const { clearTrendsOverride, resetAnalyticsState } = analyticsSlice.actions;
 export default analyticsSlice.reducer;

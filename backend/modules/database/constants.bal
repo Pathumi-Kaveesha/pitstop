@@ -20,3 +20,8 @@ const DEFAULT_CONTENTS_LIMIT = 50;
 const DEFAULT_CONTENTS_OFFSET = 0;
 const DEFAULT_TRENDING_CONTENTS_LIMIT = 6;
 const DEFAULT_TRENDING_CONTENTS_OFFSET = 0;
+
+// Timezone offset constants (in minutes)
+public const int DEFAULT_TZ_OFFSET_MINUTES = 330;
+public const int MIN_TZ_OFFSET_MINUTES = -840;
+public const int MAX_TZ_OFFSET_MINUTES = 840;

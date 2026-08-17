@@ -558,25 +558,39 @@ public isolated function formatDueDateWithOffset(string dueDateStr, string? offs
 # + timezoneOffsetMinutes - Optional timezone offset input in minutes
 # + return - Validated timezone offset integer
 isolated function getValidatedTzOffset(int? timezoneOffsetMinutes) returns int {
-    int rawTzOffset = timezoneOffsetMinutes ?: 330;
-    return (rawTzOffset >= -840 && rawTzOffset <= 840) ? rawTzOffset : 330;
+    int rawTzOffset = timezoneOffsetMinutes ?: DEFAULT_TZ_OFFSET_MINUTES;
+
+    if rawTzOffset < MIN_TZ_OFFSET_MINUTES || rawTzOffset > MAX_TZ_OFFSET_MINUTES {
+        log:printWarn(string `Invalid timezone offset received: ${rawTzOffset}. Falling back to UTC (0).`);
+        return 0;
+    }
+
+    return rawTzOffset;
 }
 
 # Constructs parameterized SQL predicates for date range filtering.
+# Converts local date inputs to UTC timestamp boundaries to enable index-seeking on event_timestamp.
 #
 # + startDate - Optional start date string (YYYY-MM-DD)
 # + endDate - Optional end date string (YYYY-MM-DD)
 # + tzOffset - Timezone offset in minutes for local day alignment
 # + return - Parameterized SQL query fragment
-isolated function buildDateRangePredicates(string? startDate, string? endDate, int tzOffset = 330) 
+isolated function buildDateRangePredicates(string? startDate, string? endDate, int tzOffset = DEFAULT_TZ_OFFSET_MINUTES) 
     returns sql:ParameterizedQuery {
 
-    if startDate is string && startDate != "" && endDate is string && endDate != "" {
-        return ` AND DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') >= ${startDate} AND DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') <= ${endDate}`;
-    } else if startDate is string && startDate != "" {
-        return ` AND DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') >= ${startDate}`;
-    } else if endDate is string && endDate != "" {
-        return ` AND DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') <= ${endDate}`;
+    string? cleanStart = startDate is string ? startDate.trim() : ();
+    string? cleanEnd = endDate is string ? endDate.trim() : ();
+
+    boolean hasStart = cleanStart is string && cleanStart != "";
+    boolean hasEnd = cleanEnd is string && cleanEnd != "";
+
+    if hasStart && hasEnd {
+        return ` AND l.event_timestamp >= DATE_SUB(${cleanStart}, INTERVAL ${tzOffset} MINUTE)
+                 AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`;
+    } else if hasStart {
+        return ` AND l.event_timestamp >= DATE_SUB(${cleanStart}, INTERVAL ${tzOffset} MINUTE)`;
+    } else if hasEnd {
+        return ` AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`;
     } else {
         return ``;
     }
