@@ -619,6 +619,12 @@ isolated function buildUserEmailPredicate(string? userEmail) returns sql:Paramet
     return ` AND LOWER(TRIM(l.user_email)) = ${userEmail.trim().toLowerAscii()}`;
 }
 
+# Constructs parameterized SQL predicates for page route filtering.
+# Normalizes target routes and applies matching across route paths, labels, and indexed metadata,
+# using a conditional fallback to JSON metadata extraction only when meta_page_route is NULL.
+#
+# + pageRoute - Optional target page route string
+# + return - Parameterized SQL query fragment
 isolated function buildPageRoutePredicate(string? pageRoute) returns sql:ParameterizedQuery {
     if pageRoute is () || pageRoute.trim() == "" {
         return ``;
@@ -635,7 +641,7 @@ isolated function buildPageRoutePredicate(string? pageRoute) returns sql:Paramet
             TRIM(r.route_path) = '/'
             OR TRIM(parent_r.route_path) = '/'
             OR l.meta_page_route = '/'
-            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) = '/'
+            OR (l.meta_page_route IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) = '/')
         )`;
     }
 
@@ -647,6 +653,6 @@ isolated function buildPageRoutePredicate(string? pageRoute) returns sql:Paramet
         OR LOWER(REPLACE(r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
         OR LOWER(REPLACE(parent_r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
         OR l.meta_page_route LIKE CONCAT('%', ${cleanRoute}, '%')
-        OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${cleanRoute}, '%')
+        OR (l.meta_page_route IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${cleanRoute}, '%'))
     )`;
 }
