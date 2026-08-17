@@ -354,7 +354,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
     };
 
     setAppliedFilters(resetApplied);
-    setTrendFilters(null); // Clear chart override on global reset
+    setTrendFilters(null);
+    dispatch(clearTrendsOverride());
     dispatch(fetchAnalyticsSummary(resetApplied));
   };
 
