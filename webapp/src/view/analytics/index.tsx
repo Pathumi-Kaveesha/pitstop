@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Box,
   Container,
@@ -60,16 +60,20 @@ import { purple } from "@mui/material/colors";
 import { useAppDispatch, useAppSelector } from "@slices/store";
 import {
   fetchAnalyticsSummary,
+  fetchAnalyticsTrends,
   fetchTopContent,
   fetchLeaderboard,
   fetchRegionalTimeSpent,
   fetchPeakActivityTimes,
   fetchTopSearches,
+  clearTrendsOverride,
   AnalyticsFilterParams,
+  DailyTrendMetric,
 } from "@slices/analyticsSlice/analytics";
 import { ApiService } from "@utils/apiService";
 import { AppConfig } from "@config/config";
 import { UserEmailAutocomplete } from "../../component/common/UserEmailAutocomplete";
+import AnalyticsTrendsChart, { TrendDataPoint } from "../analytics/AnalyticsTrendsChart";
 
 interface MainRouteOption {
   route_path: string;
@@ -131,7 +135,14 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
     }
 
     setCardDateError("");
-    onApply({ startDate, endDate, region, userEmail, pageRoute });
+    onApply({
+      startDate,
+      endDate,
+      region,
+      userEmail,
+      pageRoute,
+      timezoneOffsetMinutes: globalFilters.timezoneOffsetMinutes,
+    });
     handleClose();
   };
 
@@ -259,7 +270,9 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
 
-  // Global Filter States
+  const timezoneOffsetMinutes = useMemo(() => -new Date().getTimezoneOffset(), []);
+
+  // Unapplied Draft States for global input controls
   const [globalRegion, setGlobalRegion] = useState<string>("");
   const [globalUserEmail, setGlobalUserEmail] = useState<string>("");
   const [globalStartDate, setGlobalStartDate] = useState<string>("");
@@ -267,13 +280,18 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const [globalPageRoute, setGlobalPageRoute] = useState<string>("");
   const [dateError, setDateError] = useState<string>("");
 
-  // Top Content Ranking Criterion State
-  const [topContentSortBy, setTopContentSortBy] = useState<"totalViews" | "uniqueViews">("totalViews");
+  // Applied Global Filters (updated on "Apply Global Filters" / "Reset")
+  const [appliedFilters, setAppliedFilters] = useState<AnalyticsFilterParams>({
+    sortBy: "totalViews",
+    timezoneOffsetMinutes: timezoneOffsetMinutes,
+  });
 
-  // Main Routes State for Dropdown Filters
+  // Dedicated Card-Specific Trend Filter state
+  const [trendFilters, setTrendFilters] = useState<AnalyticsFilterParams | null>(null);
+
+  const [topContentSortBy, setTopContentSortBy] = useState<"totalViews" | "uniqueViews">("totalViews");
   const [mainRoutes, setMainRoutes] = useState<MainRouteOption[]>([]);
 
-  // Snackbar Notification State
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
@@ -290,20 +308,13 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
   const summary = useAppSelector((state) => state.analytics.summary);
   const status = useAppSelector((state) => state.analytics.summaryStatus);
+  const trends = useAppSelector((state) => state.analytics.trends);
+  const trendsOverridden = useAppSelector((state) => state.analytics.trendsOverridden);
   const topContent = useAppSelector((state) => state.analytics.topContent);
   const leaderboard = useAppSelector((state) => state.analytics.leaderboard);
   const regionalTimeSpent = useAppSelector((state) => state.analytics.regionalTimeSpent);
   const peakActivityTimes = useAppSelector((state) => state.analytics.peakActivityTimes);
   const topSearches = useAppSelector((state) => state.analytics.topSearches);
-
-  const globalFilterObj: AnalyticsFilterParams = {
-    startDate: globalStartDate,
-    endDate: globalEndDate,
-    region: globalRegion,
-    userEmail: globalUserEmail,
-    pageRoute: globalPageRoute,
-    sortBy: topContentSortBy,
-  };
 
   const handleApplyGlobalFilters = () => {
     if (globalStartDate && globalEndDate && new Date(globalEndDate) < new Date(globalStartDate)) {
@@ -312,7 +323,20 @@ const AnalyticsAdminDashboard: React.FC = () => {
     }
 
     setDateError("");
-    dispatch(fetchAnalyticsSummary(globalFilterObj));
+    const newApplied: AnalyticsFilterParams = {
+      startDate: globalStartDate,
+      endDate: globalEndDate,
+      region: globalRegion,
+      userEmail: globalUserEmail,
+      pageRoute: globalPageRoute,
+      sortBy: topContentSortBy,
+      timezoneOffsetMinutes: timezoneOffsetMinutes,
+    };
+
+    setAppliedFilters(newApplied);
+    setTrendFilters(null); // Clear card-level popover state
+    dispatch(clearTrendsOverride()); // Reset Redux override so trend chart syncs with new global summary
+    dispatch(fetchAnalyticsSummary(newApplied));
   };
 
   const handleResetGlobalFilters = () => {
@@ -323,7 +347,16 @@ const AnalyticsAdminDashboard: React.FC = () => {
     setGlobalPageRoute("");
     setTopContentSortBy("totalViews");
     setDateError("");
-    dispatch(fetchAnalyticsSummary({ sortBy: "totalViews" }));
+
+    const resetApplied: AnalyticsFilterParams = {
+      sortBy: "totalViews",
+      timezoneOffsetMinutes: timezoneOffsetMinutes,
+    };
+
+    setAppliedFilters(resetApplied);
+    setTrendFilters(null);
+    dispatch(clearTrendsOverride());
+    dispatch(fetchAnalyticsSummary(resetApplied));
   };
 
   const handleSortChange = (
@@ -332,12 +365,16 @@ const AnalyticsAdminDashboard: React.FC = () => {
   ) => {
     if (newSortBy !== null) {
       setTopContentSortBy(newSortBy);
-      dispatch(fetchTopContent({ ...globalFilterObj, sortBy: newSortBy }));
+      dispatch(fetchTopContent({ ...appliedFilters, sortBy: newSortBy }));
     }
   };
 
   useEffect(() => {
-    dispatch(fetchAnalyticsSummary({ sortBy: "totalViews" }));
+    const initialFilters: AnalyticsFilterParams = {
+      sortBy: "totalViews",
+      timezoneOffsetMinutes: timezoneOffsetMinutes,
+    };
+    dispatch(fetchAnalyticsSummary(initialFilters));
 
     const fetchMainRoutes = async () => {
       try {
@@ -371,7 +408,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
     };
 
     fetchMainRoutes();
-  }, [dispatch]);
+  }, [dispatch, timezoneOffsetMinutes]);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -379,10 +416,97 @@ const AnalyticsAdminDashboard: React.FC = () => {
     return `${hours}h ${mins}m`;
   };
 
-  // Directly display backend-calculated Average Actions Per Visit
-  const avgActionsPerVisit = summary?.avgActionsPerVisit != null
-    ? Number(summary.avgActionsPerVisit).toFixed(1)
-    : "0.0";
+  const avgActionsPerVisit =
+    summary?.avgActionsPerVisit != null
+      ? Number(summary.avgActionsPerVisit).toFixed(1)
+      : "0.0";
+
+  // Constructs a continuous daily trend array.
+  // Uses activeTrendFilter (trendFilters if custom-filtered, else appliedFilters).
+  // Generates 0-value points for inactive dates within the requested range.
+  const realTrendData: TrendDataPoint[] = useMemo(() => {
+    const rawTrends = trendsOverridden ? trends : summary?.trends || [];
+
+    const trendMap = new Map<string, DailyTrendMetric>();
+    rawTrends.forEach((item) => {
+      if (item.date) {
+        const cleanDate = item.date.split("T")[0];
+        trendMap.set(cleanDate, item);
+      }
+    });
+
+    const dates = Array.from(trendMap.keys()).sort();
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let start: Date;
+    let end: Date;
+
+    const activeFilter = trendFilters || appliedFilters;
+    const activeStart = activeFilter.startDate;
+    const activeEnd = activeFilter.endDate;
+
+    // Default 7-day lookback baseline when no custom start date is specified
+    const defaultStart = new Date(today);
+    defaultStart.setDate(today.getDate() - 6);
+
+    if (activeStart) {
+      const parts = activeStart.split("-").map(Number);
+      start = new Date(parts[0], parts[1] - 1, parts[2]);
+    } else if (dates.length > 0) {
+      const minParts = dates[0].split("-").map(Number);
+      const minDate = new Date(minParts[0], minParts[1] - 1, minParts[2]);
+      // Start from whichever is earlier: 7 days ago OR the oldest record
+      start = minDate < defaultStart ? minDate : defaultStart;
+    } else {
+      start = defaultStart;
+    }
+
+    if (activeEnd) {
+      const parts = activeEnd.split("-").map(Number);
+      end = new Date(parts[0], parts[1] - 1, parts[2]);
+    } else if (dates.length > 0) {
+      const maxParts = dates[dates.length - 1].split("-").map(Number);
+      const maxDate = new Date(maxParts[0], maxParts[1] - 1, maxParts[2]);
+      end = maxDate > today ? maxDate : today;
+    } else {
+      end = new Date(today);
+    }
+
+    const result: TrendDataPoint[] = [];
+    const current = new Date(start);
+
+    while (current <= end) {
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, "0");
+      const day = String(current.getDate()).padStart(2, "0");
+      const dateKey = `${year}-${month}-${day}`;
+
+      const item = trendMap.get(dateKey);
+
+      const longDate = current.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+      result.push({
+        date: dateKey,
+        formattedDate: longDate,
+        totalViews: Number(item?.totalViews || 0),
+        uniqueViews: Number(item?.uniqueViews || 0),
+        timeSpentSeconds: Number(item?.timeSpentSeconds || 0),
+        totalEngagements: Number(item?.totalEngagements || 0),
+        avgActionsPerVisit: Number(item?.avgActionsPerVisit || 0),
+      });
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    return result;
+  }, [trends, trendsOverridden, summary, trendFilters, appliedFilters]);
 
   return (
     <Box
@@ -767,6 +891,32 @@ const AnalyticsAdminDashboard: React.FC = () => {
               </Grid>
             </Grid>
 
+            {/* Metrics Over Time Chart Card */}
+            <Box sx={{ position: "relative" }}>
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 16,
+                  right: 16,
+                  zIndex: 2,
+                }}
+              >
+                <CardFilterPopover
+                  globalFilters={trendFilters || appliedFilters}
+                  mainRoutes={mainRoutes}
+                  onApply={(filters) => {
+                    setTrendFilters(filters);
+                    dispatch(fetchAnalyticsTrends(filters));
+                  }}
+                  onReset={() => {
+                    setTrendFilters(null);
+                    dispatch(clearTrendsOverride());
+                  }}
+                />
+              </Box>
+              <AnalyticsTrendsChart trendData={realTrendData} />
+            </Box>
+
             {/* Content Performance & Leaderboard Grid */}
             <Grid container spacing={3}>
               {/* Card 1: Top Performing Content Table */}
@@ -820,13 +970,13 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       </ToggleButtonGroup>
 
                       <CardFilterPopover
-                        globalFilters={globalFilterObj}
+                        globalFilters={appliedFilters}
                         mainRoutes={mainRoutes}
                         onApply={(filters) =>
                           dispatch(fetchTopContent({ ...filters, sortBy: topContentSortBy }))
                         }
                         onReset={() =>
-                          dispatch(fetchTopContent({ ...globalFilterObj, sortBy: topContentSortBy }))
+                          dispatch(fetchTopContent({ ...appliedFilters, sortBy: topContentSortBy }))
                         }
                       />
                     </Box>
@@ -1000,10 +1150,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       </Tooltip>
                     </Box>
                     <CardFilterPopover
-                      globalFilters={globalFilterObj}
+                      globalFilters={appliedFilters}
                       mainRoutes={mainRoutes}
                       onApply={(filters) => dispatch(fetchLeaderboard(filters))}
-                      onReset={() => dispatch(fetchLeaderboard(globalFilterObj))}
+                      onReset={() => dispatch(fetchLeaderboard(appliedFilters))}
                     />
                   </Box>
                   <Table size="small">
@@ -1094,10 +1244,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       </Tooltip>
                     </Box>
                     <CardFilterPopover
-                      globalFilters={globalFilterObj}
+                      globalFilters={appliedFilters}
                       mainRoutes={mainRoutes}
                       onApply={(filters) => dispatch(fetchRegionalTimeSpent(filters))}
-                      onReset={() => dispatch(fetchRegionalTimeSpent(globalFilterObj))}
+                      onReset={() => dispatch(fetchRegionalTimeSpent(appliedFilters))}
                     />
                   </Box>
                   <Table size="small">
@@ -1174,10 +1324,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       </Tooltip>
                     </Box>
                     <CardFilterPopover
-                      globalFilters={globalFilterObj}
+                      globalFilters={appliedFilters}
                       mainRoutes={mainRoutes}
                       onApply={(filters) => dispatch(fetchPeakActivityTimes(filters))}
-                      onReset={() => dispatch(fetchPeakActivityTimes(globalFilterObj))}
+                      onReset={() => dispatch(fetchPeakActivityTimes(appliedFilters))}
                     />
                   </Box>
                   <Table size="small">
@@ -1241,10 +1391,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   </Tooltip>
                 </Box>
                 <CardFilterPopover
-                  globalFilters={globalFilterObj}
+                  globalFilters={appliedFilters}
                   mainRoutes={mainRoutes}
                   onApply={(filters) => dispatch(fetchTopSearches(filters))}
-                  onReset={() => dispatch(fetchTopSearches(globalFilterObj))}
+                  onReset={() => dispatch(fetchTopSearches(appliedFilters))}
                 />
               </Box>
               <Table size="small">

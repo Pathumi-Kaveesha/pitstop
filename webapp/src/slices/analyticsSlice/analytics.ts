@@ -71,12 +71,22 @@ export interface TrafficPeakMetric {
   visitCount: number;
 }
 
+export interface DailyTrendMetric {
+  date: string;
+  totalViews: number;
+  uniqueViews: number;
+  timeSpentSeconds: number;
+  totalEngagements: number;
+  avgActionsPerVisit: number;
+}
+
 export interface AnalyticsSummary {
   totalViews: number;
   totalUniqueViews: number;
   totalTimeSpentSeconds: number;
   totalEngagements: number;
   avgActionsPerVisit: number;
+  trends?: DailyTrendMetric[];
   topContent: ContentPerformanceMetric[];
   leaderboard: UserLeaderboardEntry[];
   regionalTimeSpent: RegionalTimeMetric[];
@@ -100,6 +110,10 @@ interface AnalyticsState {
   summary: AnalyticsSummary | null;
 
   // Independent card states
+  trends: DailyTrendMetric[];
+  trendsStatus: "idle" | "loading" | "success" | "failed";
+  trendsOverridden: boolean; 
+
   topContent: ContentPerformanceMetric[];
   topContentStatus: "idle" | "loading" | "success" | "failed";
 
@@ -122,6 +136,10 @@ const initialState: AnalyticsState = {
   logState: "idle",
   summaryStatus: "idle",
   summary: null,
+
+  trends: [],
+  trendsStatus: "idle",
+  trendsOverridden: false,
 
   topContent: [],
   topContentStatus: "idle",
@@ -186,6 +204,21 @@ export const fetchAnalyticsSummary = createAsyncThunk(
     } catch (error: any) {
       return rejectWithValue(
         error?.response?.data?.message || "Failed to fetch analytics summary"
+      );
+    }
+  }
+);
+
+export const fetchAnalyticsTrends = createAsyncThunk(
+  "analytics/fetchTrends",
+  async (params: AnalyticsFilterParams = {}, { rejectWithValue }) => {
+    try {
+      const url = `${AppConfig.serviceUrls.getAnalyticsTrends()}${buildQueryString(params)}`;
+      const response = await ApiService.getInstance().get(url);
+      return response.data as DailyTrendMetric[];
+    } catch (error: any) {
+      return rejectWithValue(
+        error?.response?.data?.message || "Failed to fetch analytics trends"
       );
     }
   }
@@ -270,10 +303,18 @@ export const analyticsSlice = createSlice({
   name: "analytics",
   initialState,
   reducers: {
+    clearTrendsOverride: (state) => {
+      state.trendsOverridden = false;
+      state.trendsStatus = "idle";
+      state.trends = [];
+    },
     resetAnalyticsState: (state) => {
       state.logState = "idle";
       state.summaryStatus = "idle";
       state.summary = null;
+      state.trends = [];
+      state.trendsStatus = "idle";
+      state.trendsOverridden = false;
       state.topContent = [];
       state.topContentStatus = "idle";
       state.leaderboard = [];
@@ -298,6 +339,10 @@ export const analyticsSlice = createSlice({
         (state, action: PayloadAction<AnalyticsSummary>) => {
           state.summaryStatus = "success";
           state.summary = action.payload;
+          if (!state.trendsOverridden) {
+            state.trends = action.payload?.trends || [];
+            state.trendsStatus = "success";
+          }
           state.topContent = action.payload?.topContent || [];
           state.topContentStatus = "success";
           state.leaderboard = action.payload?.leaderboard || [];
@@ -313,6 +358,10 @@ export const analyticsSlice = createSlice({
       .addCase(fetchAnalyticsSummary.rejected, (state, action) => {
         state.summaryStatus = "failed";
         state.summary = null;
+        if (!state.trendsOverridden) {
+          state.trends = [];
+          state.trendsStatus = "failed";
+        }
         state.topContent = [];
         state.topContentStatus = "failed";
         state.leaderboard = [];
@@ -326,7 +375,23 @@ export const analyticsSlice = createSlice({
         state.error = (action.payload as string) || action.error.message || "Failed to fetch summary";
       })
 
-      // Section-specific reducers
+      // Standalone Trends Reducer
+      .addCase(fetchAnalyticsTrends.pending, (state) => {
+        state.trendsStatus = "loading";
+        state.trendsOverridden = true;
+      })
+      .addCase(fetchAnalyticsTrends.fulfilled, (state, action) => {
+        state.trends = action.payload || [];
+        state.trendsStatus = "success";
+        state.trendsOverridden = true;
+      })
+      .addCase(fetchAnalyticsTrends.rejected, (state, action) => {
+        state.trends = [];
+        state.trendsStatus = "failed";
+        state.trendsOverridden = true;
+        state.error = (action.payload as string) || action.error.message || "Failed to fetch analytics trends";
+      })
+
       // Top Content
       .addCase(fetchTopContent.pending, (state) => {
         state.topContentStatus = "loading";
@@ -399,5 +464,5 @@ export const analyticsSlice = createSlice({
   },
 });
 
-export const { resetAnalyticsState } = analyticsSlice.actions;
+export const { clearTrendsOverride, resetAnalyticsState } = analyticsSlice.actions;
 export default analyticsSlice.reducer;

@@ -409,3 +409,26 @@ CREATE TABLE `user_answer` (
   CONSTRAINT `fk_ua_quiz` FOREIGN KEY (`quiz_id`) REFERENCES `quiz` (`quiz_id`),
   CONSTRAINT `fk_ua_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`)
 ) ;
+
+CREATE TABLE `user_activity_logs` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `user_email` VARCHAR(255) NOT NULL,
+  `user_name` VARCHAR(255),
+  `department` VARCHAR(100),
+  `region` VARCHAR(100),
+  `event_type` VARCHAR(50) NOT NULL,
+  `content_id` BIGINT,
+  `session_id` VARCHAR(100),
+  `metadata` JSON,
+  `event_timestamp` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_user_event` (`user_email`, `event_type`),
+  INDEX `idx_event_content` (`event_type`, `content_id`),
+  INDEX `idx_event_time` (`event_type`, `event_timestamp`),
+  INDEX `idx_region_event` (`region`, `event_type`),
+  INDEX `idx_session` (`session_id`)
+);
+
+ALTER TABLE `user_activity_logs` 
+ADD COLUMN `meta_page_route` VARCHAR(255) 
+    GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.pageRoute'))) VIRTUAL,
+ADD INDEX `idx_meta_page_route` (`meta_page_route`);

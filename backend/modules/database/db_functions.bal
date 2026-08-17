@@ -252,6 +252,7 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
     types:RegionalTimeMetric[] regionalTimeSpent = check getRegionalTimeMetrics(filter);
     types:SearchMetric[] topSearches = check getTopSearchesMetrics(filter);
     types:TrafficPeakMetric[] peakActivityTimes = check getPeakActivityMetrics(filter);
+    types:DailyTrendMetric[] trends = check getDailyTrendMetrics(filter);
 
     stream<types:AnalyticsTotals, sql:Error?> totalsStream = dbClient->query(getAnalyticsTotalsQuery(filter));
     types:AnalyticsTotals[]|error totalsList = from var item in totalsStream select item;
@@ -277,12 +278,30 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
         totalTimeSpentSeconds: totals.totalTimeSpentSeconds,
         totalEngagements: totals.totalEngagements,
         avgActionsPerVisit: totals.avgActionsPerVisit,
+        trends: trends,
         topContent: topContent,
         leaderboard: leaderboard,
         regionalTimeSpent: regionalTimeSpent,
         topSearches: topSearches,
         peakActivityTimes: peakActivityTimes
     };
+}
+
+# Fetch Daily Analytics Trends directly from the database.
+#
+# + filter - Applied time range, region, user email, page route, and timezone offset filters
+# + return - Array of DailyTrendMetric records or database error
+public isolated function getDailyTrendMetrics(types:AnalyticsFilter filter) returns types:DailyTrendMetric[]|error {
+    stream<types:DailyTrendMetric, sql:Error?> trendStream = dbClient->query(getDailyTrendsQuery(filter));
+    types:DailyTrendMetric[]|error metrics = from var item in trendStream select item;
+    error? closeErr = trendStream.close();
+    if metrics is error {
+        return metrics;
+    }
+    if closeErr is error {
+        return closeErr;
+    }
+    return metrics;
 }
 
 # Delete section under a given ID.
