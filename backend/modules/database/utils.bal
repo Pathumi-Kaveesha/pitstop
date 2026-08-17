@@ -620,8 +620,6 @@ isolated function buildUserEmailPredicate(string? userEmail) returns sql:Paramet
 }
 
 # Constructs parameterized SQL predicates for page route filtering.
-# Normalizes target routes and applies matching across route paths, labels, and indexed metadata,
-# using a conditional fallback to JSON metadata extraction only when meta_page_route is NULL.
 #
 # + pageRoute - Optional target page route string
 # + return - Parameterized SQL query fragment
@@ -652,7 +650,11 @@ isolated function buildPageRoutePredicate(string? pageRoute) returns sql:Paramet
         OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
         OR LOWER(REPLACE(r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
         OR LOWER(REPLACE(parent_r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
-        OR l.meta_page_route LIKE CONCAT('%', ${cleanRoute}, '%')
-        OR (l.meta_page_route IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT('%', ${cleanRoute}, '%'))
+        OR l.meta_page_route = ${cleanRoute}
+        OR l.meta_page_route LIKE CONCAT(${cleanRoute}, '/%')
+        OR (l.meta_page_route IS NULL AND (
+            JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) = ${cleanRoute}
+            OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT(${cleanRoute}, '/%')
+        ))
     )`;
 }
