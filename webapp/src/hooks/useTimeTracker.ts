@@ -24,7 +24,7 @@ const ACTIVE_TAB_HEARTBEAT_KEY = "pitstop_primary_tab_heartbeat";
 const MAX_IDLE_SECONDS = 300;
 const MAX_ALLOWED_GAP_SECONDS = 300;
 const HEARTBEAT_TIMEOUT_MS = 15000;
-const PERIODIC_FLUSH_SECONDS = 30;
+const PERIODIC_FLUSH_SECONDS = 180;
 
 interface TimeTrackerOptions {
   pageRoute?: string | null;
@@ -119,10 +119,14 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
       const eventIdToSend = activeEventIdRef.current; // Always reuses the same event ID for this route visit!
       const routeToSend = resolvePageRoute();
       const currentSessionId = getOrCreateSessionId();
+      const storageKey = `pitstop_pending_time_${eventIdToSend}`;
 
       // Zero-out active duration baseline without re-generating a new eventId
       activeDurationRef.current = 0;
       lastTickTimeRef.current = performance.now();
+
+      // Clear the local storage crash backup for this event batch
+      localStorage.removeItem(storageKey);
 
       if (secondsToSend < 1) return;
 
@@ -185,6 +189,20 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
 
       if (contentId !== null || idleSeconds <= MAX_IDLE_SECONDS) {
         activeDurationRef.current += currentTickSeconds;
+
+        // Backup un-flushed accumulated seconds to localStorage for crash resilience
+        const eventIdToSend = activeEventIdRef.current;
+        const storageKey = `pitstop_pending_time_${eventIdToSend}`;
+        const pendingData = {
+          durationSeconds: activeDurationRef.current,
+          pageRoute: resolvePageRoute(),
+          eventId: eventIdToSend,
+          trackingType,
+          contentId,
+          sessionId: getOrCreateSessionId(),
+          timestamp: new Date().toISOString(),
+        };
+        localStorage.setItem(storageKey, JSON.stringify(pendingData));
       }
       lastTickTimeRef.current = now;
 
