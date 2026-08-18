@@ -675,7 +675,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
           <Box
             sx={{
               display: "flex",
-              alignItems: "flex-end",
+              alignItems: { xs: "stretch", sm: "flex-end" },
+              flexDirection: { xs: "column", sm: "row" },
               gap: 1.5,
               width: "100%",
             }}
