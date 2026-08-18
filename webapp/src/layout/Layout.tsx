@@ -54,51 +54,59 @@ export default function Layout() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const keys = Object.keys(localStorage);
-    keys.forEach((key) => {
-      if (key.startsWith("pitstop_pending_time_")) {
-        try {
-          const rawData = localStorage.getItem(key);
-          if (!rawData) return;
+    const runCrashRecovery = async () => {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k) keys.push(k);
+      }
 
-          // ATOMIC CLAIM: Delete key synchronously BEFORE making the async network request.
-          // Prevents duplicate sends if multiple tabs restore simultaneously after a crash.
-          localStorage.removeItem(key);
+      for (const key of keys) {
+        if (key.startsWith("pitstop_pending_time_")) {
+          try {
+            const rawData = localStorage.getItem(key);
+            if (!rawData) continue;
 
-          const data = JSON.parse(rawData);
+            localStorage.removeItem(key);
 
-          if (data && data.durationSeconds >= 1) {
-            const metadata = {
-              durationSeconds: data.durationSeconds,
-              pageRoute: data.pageRoute,
-              eventId: data.eventId,
-              trackingType: data.trackingType || "page_view_duration",
-              recoveredFromCrash: true,
-              timestamp: new Date().toISOString(),
-            };
+            const data = JSON.parse(rawData);
 
-            trackEvent(
-              AnalyticsEventType.SESSION_TIME,
-              data.contentId ?? null,
-              metadata,
-              data.sessionId ?? null
-            )
-              .then((res) => {
-                if (!res) {
-                  localStorage.setItem(key, rawData);
-                }
-              })
-              .catch((err) => {
+            if (data && data.durationSeconds >= 1) {
+              const metadata = {
+                durationSeconds: data.durationSeconds,
+                pageRoute: data.pageRoute,
+                eventId: data.eventId,
+                trackingType: data.trackingType || "page_view_duration",
+                recoveredFromCrash: true,
+                timestamp: new Date().toISOString(),
+              };
+
+              const res = await trackEvent(
+                AnalyticsEventType.SESSION_TIME,
+                data.contentId ?? null,
+                metadata,
+                data.sessionId ?? null
+              ).catch((err) => {
                 console.warn("Failed to recover crashed analytics session, restoring backup:", err);
-                // Re-store backup in localStorage if network dispatch throws an error
-                localStorage.setItem(key, rawData);
+                return null;
               });
+
+              if (!res) {
+                // Re-store backup in localStorage if trackEvent resolved null or threw an error
+                localStorage.setItem(key, rawData);
+              }
+            }
+          } catch (e) {
+            localStorage.removeItem(key);
           }
-        } catch (e) {
-          localStorage.removeItem(key);
         }
       }
-    });
+    };
+    if ("locks" in navigator) {
+      void navigator.locks.request("pitstop_analytics_crash_recovery_lock", runCrashRecovery);
+    } else {
+      void runCrashRecovery();
+    }
   }, [trackEvent]);
 
   useEffect(() => {

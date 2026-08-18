@@ -38,6 +38,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
 
   const lastTickTimeRef = useRef<number>(performance.now());
   const activeDurationRef = useRef<number>(0);
+  const inFlightDurationRef = useRef<number>(0);
   const lastUserActivityRef = useRef<number>(performance.now());
 
   const windowHasFocusRef = useRef<boolean>(
@@ -65,6 +66,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     activeEventIdRef.current = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     lastTickTimeRef.current = performance.now();
     activeDurationRef.current = 0;
+    inFlightDurationRef.current = 0;
 
     const routeKeyPart = pageRoute ?? "content";
     const tabKey = `${ACTIVE_TAB_KEY}_${trackingType}_${routeKeyPart}`;
@@ -121,12 +123,10 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
       const currentSessionId = getOrCreateSessionId();
       const storageKey = `pitstop_pending_time_${eventIdToSend}`;
 
-      // Zero-out active duration baseline without re-generating a new eventId
-      activeDurationRef.current = 0;
-      lastTickTimeRef.current = performance.now();
-
       if (secondsToSend < 1) {
-        localStorage.removeItem(storageKey);
+        if (inFlightDurationRef.current < 1) {
+          localStorage.removeItem(storageKey);
+        }
         return;
       }
 
@@ -139,6 +139,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
       };
 
       if (isLeavingPage) {
+        inFlightDurationRef.current = 0;
         localStorage.removeItem(storageKey);
         flushBeaconEvent(
           AnalyticsEventType.SESSION_TIME,
@@ -147,6 +148,10 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
           currentSessionId
         );
       } else if (navigator.onLine) {
+        inFlightDurationRef.current = secondsToSend;
+        activeDurationRef.current = 0;
+        lastTickTimeRef.current = performance.now();
+
         try {
           const res = await trackEvent(
             AnalyticsEventType.SESSION_TIME,
@@ -155,13 +160,29 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
             currentSessionId
           );
           if (res) {
-            localStorage.removeItem(storageKey);
+            inFlightDurationRef.current = 0;
+            if (activeDurationRef.current < 1) {
+              localStorage.removeItem(storageKey);
+            } else {
+              const pendingData = {
+                durationSeconds: activeDurationRef.current,
+                pageRoute: routeToSend,
+                eventId: eventIdToSend,
+                trackingType,
+                contentId,
+                sessionId: currentSessionId,
+                timestamp: new Date().toISOString(),
+              };
+              localStorage.setItem(storageKey, JSON.stringify(pendingData));
+            }
           } else {
-            activeDurationRef.current += secondsToSend;
+            activeDurationRef.current += inFlightDurationRef.current;
+            inFlightDurationRef.current = 0;
           }
         } catch (e) {
           console.warn("Failed to flush time tracking event:", e);
-          activeDurationRef.current += secondsToSend;
+          activeDurationRef.current += inFlightDurationRef.current;
+          inFlightDurationRef.current = 0;
         }
       } else {
         activeDurationRef.current += secondsToSend;
@@ -199,11 +220,13 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
       if (contentId !== null || idleSeconds <= MAX_IDLE_SECONDS) {
         activeDurationRef.current += currentTickSeconds;
 
-        // Backup un-flushed accumulated seconds to localStorage for crash resilience
+        // Backup total un-flushed accumulated seconds (including in-flight) to localStorage
         const eventIdToSend = activeEventIdRef.current;
         const storageKey = `pitstop_pending_time_${eventIdToSend}`;
+        const totalBackupSeconds = activeDurationRef.current + inFlightDurationRef.current;
+
         const pendingData = {
-          durationSeconds: activeDurationRef.current,
+          durationSeconds: totalBackupSeconds,
           pageRoute: resolvePageRoute(),
           eventId: eventIdToSend,
           trackingType,
