@@ -125,10 +125,10 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
       activeDurationRef.current = 0;
       lastTickTimeRef.current = performance.now();
 
-      // Clear the local storage crash backup for this event batch
-      localStorage.removeItem(storageKey);
-
-      if (secondsToSend < 1) return;
+      if (secondsToSend < 1) {
+        localStorage.removeItem(storageKey);
+        return;
+      }
 
       const metadata = {
         durationSeconds: secondsToSend,
@@ -139,6 +139,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
       };
 
       if (isLeavingPage) {
+        localStorage.removeItem(storageKey);
         flushBeaconEvent(
           AnalyticsEventType.SESSION_TIME,
           contentId,
@@ -147,15 +148,23 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
         );
       } else if (navigator.onLine) {
         try {
-          await trackEvent(
+          const res = await trackEvent(
             AnalyticsEventType.SESSION_TIME,
             contentId,
             metadata,
             currentSessionId
           );
+          if (res) {
+            localStorage.removeItem(storageKey);
+          } else {
+            activeDurationRef.current += secondsToSend;
+          }
         } catch (e) {
           console.warn("Failed to flush time tracking event:", e);
+          activeDurationRef.current += secondsToSend;
         }
+      } else {
+        activeDurationRef.current += secondsToSend;
       }
     };
 

@@ -82,11 +82,17 @@ export default function Layout() {
               data.contentId ?? null,
               metadata,
               data.sessionId ?? null
-            ).catch((err) => {
-              console.warn("Failed to recover crashed analytics session, restoring backup:", err);
-              // Re-store key in localStorage if network dispatch fails
-              localStorage.setItem(key, rawData);
-            });
+            )
+              .then((res) => {
+                if (!res) {
+                  localStorage.setItem(key, rawData);
+                }
+              })
+              .catch((err) => {
+                console.warn("Failed to recover crashed analytics session, restoring backup:", err);
+                // Re-store backup in localStorage if network dispatch throws an error
+                localStorage.setItem(key, rawData);
+              });
           }
         } catch (e) {
           localStorage.removeItem(key);
