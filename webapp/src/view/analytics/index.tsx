@@ -74,13 +74,17 @@ import { ApiService } from "@utils/apiService";
 import { AppConfig } from "@config/config";
 import { UserEmailAutocomplete } from "../../component/common/UserEmailAutocomplete";
 import AnalyticsTrendsChart, { TrendDataPoint } from "../analytics/AnalyticsTrendsChart";
-
-interface MainRouteOption {
-  route_path: string;
-  label: string;
-}
+import {
+  CascadingPageRouteSelector,
+  RouteOption,
+} from "../analytics/CascadingPageRouteSelector";
 
 interface RawRouteResponse {
+  route_id?: number;
+  routeId?: number;
+  id?: number;
+  parent_id?: number | null;
+  parentId?: number | null;
   routePath?: string;
   route_path?: string;
   path?: string;
@@ -94,7 +98,7 @@ interface CardFilterPopoverProps {
   onApply: (filters: AnalyticsFilterParams) => void;
   onReset: () => void;
   globalFilters: AnalyticsFilterParams;
-  mainRoutes: MainRouteOption[];
+  mainRoutes: RouteOption[];
 }
 
 const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
@@ -173,7 +177,7 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
       >
-        <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1.5, width: 300 }}>
+        <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1.5, width: 360 }}>
           <Typography variant="subtitle2" fontWeight={700}>
             Card Specific Filter
           </Typography>
@@ -184,21 +188,13 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
             </Alert>
           )}
 
-          <FormControl size="small" fullWidth>
-            <InputLabel>Page Route</InputLabel>
-            <Select
-              value={pageRoute}
-              label="Page Route"
-              onChange={(e) => setPageRoute(e.target.value)}
-            >
-              <MenuItem value="">All Main Pages</MenuItem>
-              {mainRoutes.map((r) => (
-                <MenuItem key={r.route_path} value={r.route_path}>
-                  {r.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <CascadingPageRouteSelector
+            routes={mainRoutes}
+            value={pageRoute}
+            onChange={(selectedPath) => setPageRoute(selectedPath)}
+            size="small"
+            layout="vertical"
+          />
 
           <TextField
             label="Start Date"
@@ -272,7 +268,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
   const timezoneOffsetMinutes = useMemo(() => -new Date().getTimezoneOffset(), []);
 
-  // Unapplied Draft States for global input controls
   const [globalRegion, setGlobalRegion] = useState<string>("");
   const [globalUserEmail, setGlobalUserEmail] = useState<string>("");
   const [globalStartDate, setGlobalStartDate] = useState<string>("");
@@ -280,17 +275,15 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const [globalPageRoute, setGlobalPageRoute] = useState<string>("");
   const [dateError, setDateError] = useState<string>("");
 
-  // Applied Global Filters (updated on "Apply Global Filters" / "Reset")
   const [appliedFilters, setAppliedFilters] = useState<AnalyticsFilterParams>({
     sortBy: "totalViews",
     timezoneOffsetMinutes: timezoneOffsetMinutes,
   });
 
-  // Dedicated Card-Specific Trend Filter state
   const [trendFilters, setTrendFilters] = useState<AnalyticsFilterParams | null>(null);
 
   const [topContentSortBy, setTopContentSortBy] = useState<"totalViews" | "uniqueViews">("totalViews");
-  const [mainRoutes, setMainRoutes] = useState<MainRouteOption[]>([]);
+  const [mainRoutes, setMainRoutes] = useState<RouteOption[]>([]);
 
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
@@ -334,8 +327,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
     };
 
     setAppliedFilters(newApplied);
-    setTrendFilters(null); // Clear card-level popover state
-    dispatch(clearTrendsOverride()); // Reset Redux override so trend chart syncs with new global summary
+    setTrendFilters(null);
+    dispatch(clearTrendsOverride());
     dispatch(fetchAnalyticsSummary(newApplied));
   };
 
@@ -389,8 +382,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
           : [];
 
         if (rawData.length > 0) {
-          const routes: MainRouteOption[] = rawData
+          const routes: RouteOption[] = rawData
             .map((r) => ({
+              route_id: Number(r.route_id || r.routeId || r.id || 0),
+              parent_id: r.parent_id ?? r.parentId ?? null,
               route_path: (r.routePath || r.route_path || r.path || "").trim(),
               label: (r.menuItem || r.menu_item || r.title || r.label || "Unnamed Page").trim(),
             }))
@@ -398,7 +393,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
           setMainRoutes(routes);
         }
       } catch (err) {
-        console.error("Failed to load main routes for analytics filters", err);
+        console.error("Failed to load routes for analytics filters", err);
         setSnackbar({
           open: true,
           message: "Failed to load page routes for analytics filters.",
@@ -421,9 +416,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
       ? Number(summary.avgActionsPerVisit).toFixed(1)
       : "0.0";
 
-  // Constructs a continuous daily trend array.
-  // Uses activeTrendFilter (trendFilters if custom-filtered, else appliedFilters).
-  // Generates 0-value points for inactive dates within the requested range.
   const realTrendData: TrendDataPoint[] = useMemo(() => {
     const rawTrends = trendsOverridden ? trends : summary?.trends || [];
 
@@ -447,7 +439,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
     const activeStart = activeFilter.startDate;
     const activeEnd = activeFilter.endDate;
 
-    // Default 7-day lookback baseline when no custom start date is specified
     const defaultStart = new Date(today);
     defaultStart.setDate(today.getDate() - 6);
 
@@ -457,7 +448,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
     } else if (dates.length > 0) {
       const minParts = dates[0].split("-").map(Number);
       const minDate = new Date(minParts[0], minParts[1] - 1, minParts[2]);
-      // Start from whichever is earlier: 7 days ago OR the oldest record
       start = minDate < defaultStart ? minDate : defaultStart;
     } else {
       start = defaultStart;
@@ -547,7 +537,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
           </Box>
         </Box>
 
-        {/* Global Dynamic Filters Bar */}
+        {/* Global Dynamic Filters Panel */}
         <Paper
           elevation={0}
           sx={{
@@ -556,6 +546,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
             borderRadius: 3,
             border: `1px solid ${theme.palette.divider}`,
             backgroundColor: theme.palette.background.paper,
+            boxShadow: "0 2px 12px 0 rgba(0,0,0,0.03)",
           }}
         >
           {dateError && (
@@ -564,29 +555,71 @@ const AnalyticsAdminDashboard: React.FC = () => {
             </Alert>
           )}
 
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
-            <FilterListIcon color="action" />
+          {/* Panel Header Bar */}
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              mb: 2,
+              pb: 1.5,
+              borderBottom: `1px solid ${theme.palette.divider}`,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <FilterListIcon color="primary" fontSize="small" />
+              <Typography variant="subtitle1" fontWeight={700}>
+                Global Filters
+              </Typography>
+            </Box>
 
-            <FormControl size="small" sx={{ minWidth: 220 }}>
-              <InputLabel>Global Page Route</InputLabel>
-              <Select
-                value={globalPageRoute}
-                label="Global Page Route"
-                onChange={(e) => setGlobalPageRoute(e.target.value)}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Button
+                variant="text"
+                color="inherit"
+                size="small"
+                onClick={handleResetGlobalFilters}
+                startIcon={<RefreshIcon />}
+                sx={{ textTransform: "none", fontWeight: 600 }}
               >
-                <MenuItem value="">All Main Pages</MenuItem>
-                {mainRoutes.map((r) => (
-                  <MenuItem key={r.route_path} value={r.route_path}>
-                    {r.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                Reset
+              </Button>
+              <Button
+                variant="contained"
+                disableElevation
+                size="small"
+                onClick={handleApplyGlobalFilters}
+                sx={{ borderRadius: 2, textTransform: "none", px: 2.5, fontWeight: 600 }}
+              >
+                Apply Filters
+              </Button>
+            </Box>
+          </Box>
 
+          {/* Bottom-aligned Flex Controls Row for Exact Baseline Alignment */}
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "flex-end",
+              gap: 1.5,
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Cascading Page Route Dropdowns */}
+            <CascadingPageRouteSelector
+              routes={mainRoutes}
+              value={globalPageRoute}
+              onChange={(selectedPath) => setGlobalPageRoute(selectedPath)}
+              size="small"
+              layout="horizontal"
+            />
+
+            {/* Start Date */}
             <TextField
               label="Global Start Date"
               type="date"
               size="small"
+              sx={{ width: 160, minWidth: 160, flexShrink: 0 }}
               InputLabelProps={{ shrink: true }}
               inputProps={{ max: globalEndDate || undefined }}
               value={globalStartDate}
@@ -596,10 +629,12 @@ const AnalyticsAdminDashboard: React.FC = () => {
               }}
             />
 
+            {/* End Date */}
             <TextField
               label="Global End Date"
               type="date"
               size="small"
+              sx={{ width: 160, minWidth: 160, flexShrink: 0 }}
               InputLabelProps={{ shrink: true }}
               inputProps={{ min: globalStartDate || undefined }}
               value={globalEndDate}
@@ -609,11 +644,16 @@ const AnalyticsAdminDashboard: React.FC = () => {
               }}
             />
 
-            <FormControl size="small" sx={{ minWidth: 160 }} disabled={Boolean(globalUserEmail)}>
-              <InputLabel>Global Region / Team</InputLabel>
+            {/* Region / Team */}
+            <FormControl
+              size="small"
+              sx={{ width: 170, minWidth: 170, flexShrink: 0 }}
+              disabled={Boolean(globalUserEmail)}
+            >
+              <InputLabel>Region / Team</InputLabel>
               <Select
                 value={globalRegion}
-                label="Global Region / Team"
+                label="Region / Team"
                 onChange={(e) => setGlobalRegion(e.target.value)}
               >
                 <MenuItem value="">All Regions</MenuItem>
@@ -628,7 +668,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
               </Select>
             </FormControl>
 
-            <Box sx={{ minWidth: 240 }}>
+            {/* User Email */}
+            <Box sx={{ width: 220, minWidth: 220, flexShrink: 0 }}>
               <UserEmailAutocomplete
                 value={globalUserEmail}
                 onChange={(selectedEmail) => setGlobalUserEmail(selectedEmail)}
@@ -637,25 +678,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 disabled={Boolean(globalRegion)}
               />
             </Box>
-
-            <Button
-              variant="contained"
-              onClick={handleApplyGlobalFilters}
-              sx={{ borderRadius: 2, textTransform: "none", px: 3 }}
-            >
-              Apply Global Filters
-            </Button>
-
-            <Button
-              variant="text"
-              color="primary"
-              size="small"
-              onClick={handleResetGlobalFilters}
-              startIcon={<RefreshIcon />}
-              sx={{ textTransform: "none" }}
-            >
-              Reset
-            </Button>
           </Box>
         </Paper>
 
@@ -1020,7 +1042,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               color={topContentSortBy === "totalViews" ? "primary.main" : "text.secondary"}
                               sx={{ cursor: "help" }}
                             >
-                              Total Views {topContentSortBy === "totalViews" ? "↓" : ""}
+                              Total Views{" "}
+                              {topContentSortBy === "totalViews" ? "↓" : ""}
                             </Typography>
                           </Tooltip>
                         </TableCell>
@@ -1032,7 +1055,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary"}
                               sx={{ cursor: "help" }}
                             >
-                              Unique Views {topContentSortBy === "uniqueViews" ? "↓" : ""}
+                              Unique Views{" "}
+                              {topContentSortBy === "uniqueViews" ? "↓" : ""}
                             </Typography>
                           </Tooltip>
                         </TableCell>

@@ -283,10 +283,10 @@ service http:InterceptableService / on new http:Listener(9090) {
         return http:CREATED;
     }
 
-    # Endpoint to retrieve main top-level routes for filter dropdowns.
+    # Endpoint to retrieve all flat routes for hierarchical 2-card filter controls.
     #
     # + ctx - Request context
-    # + return - Array of top-level Route records, 403 Forbidden, or 500 Internal Server Error
+    # + return - Array of Route records, 403 Forbidden, or 500 Internal Server Error
     resource function get analytics/routes(http:RequestContext ctx) 
         returns types:Route[]|http:Forbidden|http:InternalServerError {
 
@@ -295,10 +295,10 @@ service http:InterceptableService / on new http:Listener(9090) {
             return authError;
         }
 
-        types:Route[]|error routes = database:getMainRoutes();
+        types:Route[]|error routes = database:getAllRoutesFlat();
         if routes is error {
-            log:printError("Error fetching main routes", routes);
-            return <http:InternalServerError>{ body: "Error retrieving main routes" };
+            log:printError("Error fetching flat routes for analytics filter", routes);
+            return <http:InternalServerError>{ body: "Error retrieving routes" };
         }
         return routes;
     }
