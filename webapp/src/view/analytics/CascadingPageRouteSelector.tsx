@@ -122,6 +122,8 @@ export const CascadingPageRouteSelector: React.FC<
     return routes.filter((r) => r.parent_id === card1SelectedRoute.route_id);
   }, [routes, card1SelectedRoute]);
 
+  const showCard2 = Boolean(card1SelectedRoute && card2Options.length > 0);
+
   const breadcrumbText = useMemo(
     () => `In: ${navigationHistory.map((h) => h.label).join(" > ")}`,
     [navigationHistory]
@@ -172,11 +174,6 @@ export const CascadingPageRouteSelector: React.FC<
     }
   };
 
-  const fieldStyle =
-    layout === "vertical"
-      ? { width: "100%" }
-      : { width: 220, minWidth: 220, maxWidth: 220, flexShrink: 0 };
-
   const menuProps = {
     PaperProps: {
       style: {
@@ -192,7 +189,15 @@ export const CascadingPageRouteSelector: React.FC<
         display: "flex",
         flexDirection: "column",
         justifyContent: "flex-end",
+        flex:
+          layout === "horizontal"
+            ? showCard2
+              ? "2 1 0px"
+              : "1 1 0px"
+            : "none",
+        minWidth: 0,
         width: layout === "vertical" ? "100%" : "auto",
+        pt: 0.8, // Top clearance for notch label text
       }}
     >
       {/* Drilled-in History Tag */}
@@ -242,20 +247,47 @@ export const CascadingPageRouteSelector: React.FC<
         sx={{
           display: "flex",
           flexDirection: layout === "vertical" ? "column" : "row",
-          alignItems: "center",
+          alignItems: "flex-end",
           gap: 1.5,
+          width: "100%",
         }}
       >
         {/* Main Page Route Dropdown */}
-        <FormControl size={size} sx={fieldStyle}>
-          <InputLabel>Main Page Route</InputLabel>
+        <FormControl
+          size={size}
+          sx={{
+            flex: "1 1 0px",
+            minWidth: 0,
+            width: "100%",
+          }}
+        >
+          <InputLabel shrink id="main-page-route-select-label">
+            Main Page Route
+          </InputLabel>
           <Select
+            labelId="main-page-route-select-label"
+            displayEmpty
             value={card1SelectedRoute ? String(card1SelectedRoute.route_id) : ""}
             label="Main Page Route"
             onChange={(e) => handleCard1Change(e.target.value)}
             MenuProps={menuProps}
             renderValue={(selectedId) => {
-              if (!selectedId) return <em>All Main Pages</em>;
+              if (!selectedId)
+                return (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      fontSize: "0.8125rem",
+                      fontStyle: "normal",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    All Main Pages
+                  </Typography>
+                );
               const selected = routes.find(
                 (r) => String(r.route_id) === selectedId
               );
@@ -286,6 +318,7 @@ export const CascadingPageRouteSelector: React.FC<
                 overflow: "hidden !important",
                 textOverflow: "ellipsis !important",
                 whiteSpace: "nowrap !important",
+                paddingRight: "32px !important", // Prevents text from colliding with dropdown arrow
               },
             }}
           >
@@ -309,10 +342,21 @@ export const CascadingPageRouteSelector: React.FC<
         </FormControl>
 
         {/* Sub-Page Route Dropdown */}
-        {card1SelectedRoute && card2Options.length > 0 && (
-          <FormControl size={size} sx={fieldStyle}>
-            <InputLabel>Sub-Page Route</InputLabel>
+        {showCard2 && (
+          <FormControl
+            size={size}
+            sx={{
+              flex: "1 1 0px",
+              minWidth: 0,
+              width: "100%",
+            }}
+          >
+            <InputLabel shrink id="sub-page-route-select-label">
+              Sub-Page Route
+            </InputLabel>
             <Select
+              labelId="sub-page-route-select-label"
+              displayEmpty
               value={
                 card2SelectedRoute ? String(card2SelectedRoute.route_id) : ""
               }
@@ -320,9 +364,24 @@ export const CascadingPageRouteSelector: React.FC<
               onChange={(e) => handleCard2Change(e.target.value)}
               MenuProps={menuProps}
               renderValue={(selectedId) => {
+                const placeholderText = `All Sub-pages of ${card1SelectedRoute?.label}`;
                 if (!selectedId)
                   return (
-                    <em>All Sub-pages of {card1SelectedRoute.label}</em>
+                    <Tooltip title={placeholderText} arrow placement="top">
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{
+                          fontSize: "0.8125rem",
+                          fontStyle: "normal",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {placeholderText}
+                      </Typography>
+                    </Tooltip>
                   );
                 const selected = routes.find(
                   (r) => String(r.route_id) === selectedId
@@ -354,11 +413,12 @@ export const CascadingPageRouteSelector: React.FC<
                   overflow: "hidden !important",
                   textOverflow: "ellipsis !important",
                   whiteSpace: "nowrap !important",
+                  paddingRight: "32px !important", // Prevents text from colliding with dropdown arrow
                 },
               }}
             >
               <MenuItem value="">
-                <em>All Sub-pages of {card1SelectedRoute.label}</em>
+                <em>All Sub-pages of {card1SelectedRoute?.label}</em>
               </MenuItem>
               {card2Options.map((sub) => {
                 const hasSubChildren = routes.some(

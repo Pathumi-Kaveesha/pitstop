@@ -24,6 +24,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   Chip,
@@ -32,6 +33,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Checkbox,
+  ListItemText,
   TextField,
   Button,
   Alert,
@@ -79,6 +82,17 @@ import {
   RouteOption,
 } from "../analytics/CascadingPageRouteSelector";
 
+const AVAILABLE_REGIONS = [
+  "WSO2 Digital",
+  "NA",
+  "ME",
+  "APAC",
+  "AFRICA",
+  "LATAM",
+  "EU",
+  "UK",
+];
+
 interface RawRouteResponse {
   route_id?: number;
   routeId?: number;
@@ -108,16 +122,32 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
   mainRoutes,
 }) => {
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
-  const [region, setRegion] = useState<string>(globalFilters.region || "");
-  const [userEmail, setUserEmail] = useState<string>(globalFilters.userEmail || "");
+  const [regions, setRegions] = useState<string[]>(
+    globalFilters.region
+      ? globalFilters.region.split(",").map((r) => r.trim()).filter(Boolean)
+      : []
+  );
+  const [userEmails, setUserEmails] = useState<string[]>(
+    globalFilters.userEmail
+      ? globalFilters.userEmail.split(",").map((e) => e.trim()).filter(Boolean)
+      : []
+  );
   const [startDate, setStartDate] = useState<string>(globalFilters.startDate || "");
   const [endDate, setEndDate] = useState<string>(globalFilters.endDate || "");
   const [pageRoute, setPageRoute] = useState<string>(globalFilters.pageRoute || "");
   const [cardDateError, setCardDateError] = useState<string>("");
 
   useEffect(() => {
-    setRegion(globalFilters.region || "");
-    setUserEmail(globalFilters.userEmail || "");
+    setRegions(
+      globalFilters.region
+        ? globalFilters.region.split(",").map((r) => r.trim()).filter(Boolean)
+        : []
+    );
+    setUserEmails(
+      globalFilters.userEmail
+        ? globalFilters.userEmail.split(",").map((e) => e.trim()).filter(Boolean)
+        : []
+    );
     setStartDate(globalFilters.startDate || "");
     setEndDate(globalFilters.endDate || "");
     setPageRoute(globalFilters.pageRoute || "");
@@ -142,8 +172,8 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
     onApply({
       startDate,
       endDate,
-      region,
-      userEmail,
+      region: regions.join(","),
+      userEmail: userEmails.join(","),
       pageRoute,
       timezoneOffsetMinutes: globalFilters.timezoneOffsetMinutes,
     });
@@ -151,8 +181,16 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
   };
 
   const handleResetCard = () => {
-    setRegion(globalFilters.region || "");
-    setUserEmail(globalFilters.userEmail || "");
+    setRegions(
+      globalFilters.region
+        ? globalFilters.region.split(",").map((r) => r.trim()).filter(Boolean)
+        : []
+    );
+    setUserEmails(
+      globalFilters.userEmail
+        ? globalFilters.userEmail.split(",").map((e) => e.trim()).filter(Boolean)
+        : []
+    );
     setStartDate(globalFilters.startDate || "");
     setEndDate(globalFilters.endDate || "");
     setPageRoute(globalFilters.pageRoute || "");
@@ -176,6 +214,15 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
         onClose={handleClose}
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 1,
+              borderRadius: 3,
+              boxShadow: "0 16px 40px rgba(15,23,42,0.16)",
+            },
+          },
+        }}
       >
         <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1.5, width: 360 }}>
           <Typography variant="subtitle2" fontWeight={700}>
@@ -221,31 +268,56 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
             }}
           />
 
-          <FormControl size="small" fullWidth disabled={Boolean(userEmail)}>
-            <InputLabel>Region / Team</InputLabel>
+          <FormControl size="small" fullWidth disabled={userEmails.length > 0}>
+            <InputLabel shrink id="card-region-label">
+              Region / Team
+            </InputLabel>
             <Select
-              value={region}
+              labelId="card-region-label"
+              multiple
+              displayEmpty
+              value={regions}
               label="Region / Team"
-              onChange={(e) => setRegion(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setRegions(typeof val === "string" ? val.split(",") : val);
+              }}
+              renderValue={(selected) =>
+                selected.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                    All Regions
+                  </Typography>
+                ) : (
+                  selected.join(", ")
+                )
+              }
+              sx={{ height: 40 }}
             >
-              <MenuItem value="">All Regions</MenuItem>
-              <MenuItem value="WSO2 Digital">WSO2 Digital</MenuItem>
-              <MenuItem value="NA">NA</MenuItem>
-              <MenuItem value="ME">ME</MenuItem>
-              <MenuItem value="APAC">APAC</MenuItem>
-              <MenuItem value="AFRICA">AFRICA</MenuItem>
-              <MenuItem value="LATAM">LATAM</MenuItem>
-              <MenuItem value="EU">EU</MenuItem>
-              <MenuItem value="UK">UK</MenuItem>
+              {AVAILABLE_REGIONS.map((r) => (
+                <MenuItem key={r} value={r}>
+                  <Checkbox size="small" checked={regions.indexOf(r) > -1} />
+                  <ListItemText primary={r} />
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
 
           <UserEmailAutocomplete
-            value={userEmail}
-            onChange={(selectedEmail) => setUserEmail(selectedEmail)}
-            label="User Email"
+            value={userEmails}
+            onChange={(emails) => {
+              if (Array.isArray(emails)) {
+                setUserEmails(emails);
+              } else if (typeof emails === "string") {
+                setUserEmails(emails ? [emails] : []);
+              } else {
+                setUserEmails([]);
+              }
+            }}
+            label="User Email(s)"
+            placeholder={userEmails.length === 0 ? "All Users" : "Type a name..."}
             size="small"
-            disabled={Boolean(region)}
+            disabled={regions.length > 0}
+            multiple
           />
 
           <Box sx={{ display: "flex", justifyContent: "space-between", mt: 1 }}>
@@ -268,8 +340,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
   const timezoneOffsetMinutes = useMemo(() => -new Date().getTimezoneOffset(), []);
 
-  const [globalRegion, setGlobalRegion] = useState<string>("");
-  const [globalUserEmail, setGlobalUserEmail] = useState<string>("");
+  const [globalRegions, setGlobalRegions] = useState<string[]>([]);
+  const [globalUserEmails, setGlobalUserEmails] = useState<string[]>([]);
   const [globalStartDate, setGlobalStartDate] = useState<string>("");
   const [globalEndDate, setGlobalEndDate] = useState<string>("");
   const [globalPageRoute, setGlobalPageRoute] = useState<string>("");
@@ -319,8 +391,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
     const newApplied: AnalyticsFilterParams = {
       startDate: globalStartDate,
       endDate: globalEndDate,
-      region: globalRegion,
-      userEmail: globalUserEmail,
+      region: globalRegions.join(","),
+      userEmail: globalUserEmails.join(","),
       pageRoute: globalPageRoute,
       sortBy: topContentSortBy,
       timezoneOffsetMinutes: timezoneOffsetMinutes,
@@ -333,8 +405,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
   };
 
   const handleResetGlobalFilters = () => {
-    setGlobalRegion("");
-    setGlobalUserEmail("");
+    setGlobalRegions([]);
+    setGlobalUserEmails([]);
     setGlobalStartDate("");
     setGlobalEndDate("");
     setGlobalPageRoute("");
@@ -518,7 +590,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
             sx={{
               width: 56,
               height: 56,
-              borderRadius: 2,
+              borderRadius: 3,
               backgroundColor: `${theme.palette.primary.main}15`,
               display: "flex",
               alignItems: "center",
@@ -543,10 +615,13 @@ const AnalyticsAdminDashboard: React.FC = () => {
           sx={{
             p: 2.5,
             mb: 4,
-            borderRadius: 3,
+            borderRadius: 4,
             border: `1px solid ${theme.palette.divider}`,
             backgroundColor: theme.palette.background.paper,
-            boxShadow: "0 2px 12px 0 rgba(0,0,0,0.03)",
+            boxShadow:
+              theme.palette.mode === "dark"
+                ? "0 4px 20px 0 rgba(0,0,0,0.25)"
+                : "0 4px 20px 0 rgba(15,23,42,0.04)",
           }}
         >
           {dateError && (
@@ -596,13 +671,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
             </Box>
           </Box>
 
-          {/* Bottom-aligned Flex Controls Row for Exact Baseline Alignment */}
+          {/* Symmetrical Controls Row with Baseline Alignment */}
           <Box
             sx={{
               display: "flex",
-              alignItems: "flex-end",
+              alignItems: { xs: "stretch", sm: "flex-end" },
+              flexDirection: { xs: "column", sm: "row" },
               gap: 1.5,
-              flexWrap: "wrap",
+              width: "100%",
             }}
           >
             {/* Cascading Page Route Dropdowns */}
@@ -619,7 +695,11 @@ const AnalyticsAdminDashboard: React.FC = () => {
               label="Global Start Date"
               type="date"
               size="small"
-              sx={{ width: 160, minWidth: 160, flexShrink: 0 }}
+              sx={{
+                flex: "1 1 0px",
+                minWidth: 0,
+                "& .MuiOutlinedInput-root": { height: 40 },
+              }}
               InputLabelProps={{ shrink: true }}
               inputProps={{ max: globalEndDate || undefined }}
               value={globalStartDate}
@@ -634,7 +714,11 @@ const AnalyticsAdminDashboard: React.FC = () => {
               label="Global End Date"
               type="date"
               size="small"
-              sx={{ width: 160, minWidth: 160, flexShrink: 0 }}
+              sx={{
+                flex: "1 1 0px",
+                minWidth: 0,
+                "& .MuiOutlinedInput-root": { height: 40 },
+              }}
               InputLabelProps={{ shrink: true }}
               inputProps={{ min: globalStartDate || undefined }}
               value={globalEndDate}
@@ -644,38 +728,96 @@ const AnalyticsAdminDashboard: React.FC = () => {
               }}
             />
 
-            {/* Region / Team */}
+            {/* Region / Team Multi-Select Dropdown */}
             <FormControl
               size="small"
-              sx={{ width: 170, minWidth: 170, flexShrink: 0 }}
-              disabled={Boolean(globalUserEmail)}
+              sx={{
+                flex: "1 1 0px",
+                minWidth: 0,
+              }}
+              disabled={globalUserEmails.length > 0}
             >
-              <InputLabel>Region / Team</InputLabel>
+              <InputLabel shrink id="global-region-select-label">
+                Region / Team
+              </InputLabel>
               <Select
-                value={globalRegion}
+                labelId="global-region-select-label"
+                multiple
+                displayEmpty
+                value={globalRegions}
                 label="Region / Team"
-                onChange={(e) => setGlobalRegion(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setGlobalRegions(typeof val === "string" ? val.split(",") : val);
+                }}
+                renderValue={(selected) => {
+                  if (selected.length === 0) {
+                    return (
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ fontSize: "0.8125rem", fontStyle: "normal" }}
+                      >
+                        All Regions
+                      </Typography>
+                    );
+                  }
+                  return (
+                    <Tooltip title={selected.join(", ")} arrow placement="top">
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontSize: "0.8125rem",
+                          fontWeight: 500,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {selected.length === 1 ? selected[0] : `${selected.length} Regions Selected (${selected.join(", ")})`}
+                      </Typography>
+                    </Tooltip>
+                  );
+                }}
+                sx={{
+                  height: 40,
+                  "& .MuiSelect-select": {
+                    display: "flex",
+                    alignItems: "center",
+                    overflow: "hidden !important",
+                    textOverflow: "ellipsis !important",
+                    whiteSpace: "nowrap !important",
+                    paddingRight: "32px !important",
+                  },
+                }}
               >
-                <MenuItem value="">All Regions</MenuItem>
-                <MenuItem value="WSO2 Digital">WSO2 Digital</MenuItem>
-                <MenuItem value="NA">NA</MenuItem>
-                <MenuItem value="ME">ME</MenuItem>
-                <MenuItem value="APAC">APAC</MenuItem>
-                <MenuItem value="AFRICA">AFRICA</MenuItem>
-                <MenuItem value="LATAM">LATAM</MenuItem>
-                <MenuItem value="EU">EU</MenuItem>
-                <MenuItem value="UK">UK</MenuItem>
+                {AVAILABLE_REGIONS.map((r) => (
+                  <MenuItem key={r} value={r}>
+                    <Checkbox size="small" checked={globalRegions.indexOf(r) > -1} />
+                    <ListItemText primary={r} />
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
 
-            {/* User Email */}
-            <Box sx={{ width: 220, minWidth: 220, flexShrink: 0 }}>
+            {/* User Email Multi-Select Autocomplete */}
+            <Box sx={{ flex: "1 1 0px", minWidth: 0 }}>
               <UserEmailAutocomplete
-                value={globalUserEmail}
-                onChange={(selectedEmail) => setGlobalUserEmail(selectedEmail)}
-                label="Global User Email"
+                value={globalUserEmails}
+                onChange={(emails) => {
+                  if (Array.isArray(emails)) {
+                    setGlobalUserEmails(emails);
+                  } else if (typeof emails === "string") {
+                    setGlobalUserEmails(emails ? [emails] : []);
+                  } else {
+                    setGlobalUserEmails([]);
+                  }
+                }}
+                label="Global User Email(s)"
+                placeholder={globalUserEmails.length === 0 ? "All Users" : "Type a name..."}
                 size="small"
-                disabled={Boolean(globalRegion)}
+                disabled={globalRegions.length > 0}
+                multiple
               />
             </Box>
           </Box>
@@ -695,11 +837,22 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
+                    backgroundColor: theme.palette.background.paper,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    height: "100%",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.08)",
+                      borderColor: alpha(theme.palette.primary.main, 0.35),
+                      transform: "translateY(-2px)",
+                    },
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -739,11 +892,22 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
+                    backgroundColor: theme.palette.background.paper,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    height: "100%",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.08)",
+                      borderColor: alpha(theme.palette.primary.main, 0.35),
+                      transform: "translateY(-2px)",
+                    },
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -783,11 +947,22 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
+                    backgroundColor: theme.palette.background.paper,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    height: "100%",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.08)",
+                      borderColor: alpha(theme.palette.primary.main, 0.35),
+                      transform: "translateY(-2px)",
+                    },
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -827,11 +1002,22 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
+                    backgroundColor: theme.palette.background.paper,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    height: "100%",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.08)",
+                      borderColor: alpha(theme.palette.primary.main, 0.35),
+                      transform: "translateY(-2px)",
+                    },
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -871,11 +1057,22 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
+                    backgroundColor: theme.palette.background.paper,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    height: "100%",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.08)",
+                      borderColor: alpha(theme.palette.primary.main, 0.35),
+                      transform: "translateY(-2px)",
+                    },
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -946,9 +1143,21 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <Box
                   sx={{
                     p: 3,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
+                    height: "100%",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.06)",
+                      borderColor: alpha(theme.palette.primary.main, 0.25),
+                    },
                   }}
                 >
                   <Box
@@ -1004,147 +1213,159 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     </Box>
                   </Box>
 
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Content Title</TableCell>
-                        <TableCell align="center">Type</TableCell>
-                        <TableCell align="center">
-                          <Tooltip
-                            title="Counted ONLY when content renders successfully in preview AND is viewed for at least 10 seconds. Broken or restricted links do NOT increment preview clicks."
-                            arrow
-                          >
-                            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
-                              <PreviewIcon fontSize="small" color="action" />
-                              <span>Preview Clicks</span>
-                            </Box>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Tooltip
-                            title="Counted when opened in a new window/tab (including clicking 'Open in New Window' on restricted or broken preview screens)."
-                            arrow
-                          >
-                            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
-                              <OpenInNewIcon fontSize="small" color="action" />
-                              <span>Outlinks</span>
-                            </Box>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Tooltip
-                            title="Total times this content modal was opened. Opening a preview counts as 1 view, even if an outlink is also clicked inside that modal."
-                            arrow
-                          >
-                            <Typography
-                              variant="caption"
-                              fontWeight={topContentSortBy === "totalViews" ? 700 : 500}
-                              color={topContentSortBy === "totalViews" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "help" }}
-                            >
-                              Total Views{" "}
-                              {topContentSortBy === "totalViews" ? "↓" : ""}
-                            </Typography>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Tooltip title="Number of distinct team members who viewed or opened this content." arrow>
-                            <Typography
-                              variant="caption"
-                              fontWeight={topContentSortBy === "uniqueViews" ? 700 : 500}
-                              color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "help" }}
-                            >
-                              Unique Views{" "}
-                              {topContentSortBy === "uniqueViews" ? "↓" : ""}
-                            </Typography>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {topContent && topContent.length > 0 ? (
-                        topContent.map((c) => (
-                          <TableRow key={c.contentId} hover>
-                            <TableCell sx={{ maxWidth: 220 }}>
-                              <Typography variant="body2" fontWeight={600} noWrap>
-                                {c.title}
-                              </Typography>
-                            </TableCell>
-
-                            <TableCell align="center">
-                              <Chip label={c.contentType} size="small" variant="outlined" />
-                            </TableCell>
-
-                            <TableCell align="center">
-                              <Chip
-                                icon={<PreviewIcon sx={{ fontSize: "14px !important" }} />}
-                                label={c.previewClicks ?? 0}
-                                size="small"
-                                color="info"
-                                variant="outlined"
-                                sx={{ fontWeight: 600 }}
-                              />
-                            </TableCell>
-
-                            <TableCell align="center">
-                              <Chip
-                                icon={<OpenInNewIcon sx={{ fontSize: "14px !important" }} />}
-                                label={c.outlinkClicks ?? 0}
-                                size="small"
-                                color="warning"
-                                variant="outlined"
-                                sx={{ fontWeight: 600 }}
-                              />
-                            </TableCell>
-
-                            <TableCell align="center">
-                              <Typography
-                                variant="body2"
-                                fontWeight={topContentSortBy === "totalViews" ? 800 : 600}
-                                color={topContentSortBy === "totalViews" ? "primary.main" : "text.primary"}
-                              >
-                                {c.totalViews}
-                              </Typography>
-                            </TableCell>
-
-                            <TableCell align="center">
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  gap: 0.5,
-                                }}
-                              >
-                                <PeopleIcon
-                                  sx={{
-                                    fontSize: 16,
-                                    color: topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary",
-                                  }}
-                                />
-                                <Typography
-                                  variant="body2"
-                                  fontWeight={topContentSortBy === "uniqueViews" ? 800 : 600}
-                                  color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.primary"}
-                                >
-                                  {c.uniqueViews}
-                                </Typography>
-                              </Box>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
+                  <TableContainer sx={{ overflowX: "auto", flexGrow: 1, width: "100%" }}>
+                    <Table size="small" sx={{ minWidth: 600 }}>
+                      <TableHead
+                        sx={{
+                          "& .MuiTableCell-root": {
+                            fontWeight: 700,
+                            color: theme.palette.text.secondary,
+                            borderBottom: `2px solid ${theme.palette.divider}`,
+                            backgroundColor: alpha(theme.palette.primary.main, 0.03),
+                            whiteSpace: "nowrap",
+                          },
+                        }}
+                      >
                         <TableRow>
-                          <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
-                            <Typography variant="body2" color="text.secondary">
-                              No content analytics found for the selected route/filter.
-                            </Typography>
+                          <TableCell>Content Title</TableCell>
+                          <TableCell align="center">Type</TableCell>
+                          <TableCell align="center">
+                            <Tooltip
+                              title="Counted ONLY when content renders successfully in preview AND is viewed for at least 10 seconds. Broken or restricted links do NOT increment preview clicks."
+                              arrow
+                            >
+                              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
+                                <PreviewIcon fontSize="small" color="action" />
+                                <span>Preview Clicks</span>
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip
+                              title="Counted when opened in a new window/tab (including clicking 'Open in New Window' on restricted or broken preview screens)."
+                              arrow
+                            >
+                              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
+                                <OpenInNewIcon fontSize="small" color="action" />
+                                <span>Outlinks</span>
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip
+                              title="Total times this content modal was opened. Opening a preview counts as 1 view, even if an outlink is also clicked inside that modal."
+                              arrow
+                            >
+                              <Typography
+                                variant="caption"
+                                fontWeight={topContentSortBy === "totalViews" ? 700 : 500}
+                                color={topContentSortBy === "totalViews" ? "primary.main" : "text.secondary"}
+                                sx={{ cursor: "help" }}
+                              >
+                                Total Views{" "}
+                                {topContentSortBy === "totalViews" ? "↓" : ""}
+                              </Typography>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title="Number of distinct team members who viewed or opened this content." arrow>
+                              <Typography
+                                variant="caption"
+                                fontWeight={topContentSortBy === "uniqueViews" ? 700 : 500}
+                                color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary"}
+                                sx={{ cursor: "help" }}
+                              >
+                                Unique Views{" "}
+                                {topContentSortBy === "uniqueViews" ? "↓" : ""}
+                              </Typography>
+                            </Tooltip>
                           </TableCell>
                         </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                      </TableHead>
+                      <TableBody>
+                        {topContent && topContent.length > 0 ? (
+                          topContent.map((c) => (
+                            <TableRow key={c.contentId} hover>
+                              <TableCell sx={{ maxWidth: 220 }}>
+                                <Typography variant="body2" fontWeight={600} noWrap>
+                                  {c.title}
+                                </Typography>
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <Chip label={c.contentType} size="small" variant="outlined" />
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <Chip
+                                  icon={<PreviewIcon sx={{ fontSize: "14px !important" }} />}
+                                  label={c.previewClicks ?? 0}
+                                  size="small"
+                                  color="info"
+                                  variant="outlined"
+                                  sx={{ fontWeight: 600 }}
+                                />
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <Chip
+                                  icon={<OpenInNewIcon sx={{ fontSize: "14px !important" }} />}
+                                  label={c.outlinkClicks ?? 0}
+                                  size="small"
+                                  color="warning"
+                                  variant="outlined"
+                                  sx={{ fontWeight: 600 }}
+                                />
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={topContentSortBy === "totalViews" ? 800 : 600}
+                                  color={topContentSortBy === "totalViews" ? "primary.main" : "text.primary"}
+                                >
+                                  {c.totalViews}
+                                </Typography>
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <Box
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: 0.5,
+                                  }}
+                                >
+                                  <PeopleIcon
+                                    sx={{
+                                      fontSize: 16,
+                                      color: topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary",
+                                    }}
+                                  />
+                                  <Typography
+                                    variant="body2"
+                                    fontWeight={topContentSortBy === "uniqueViews" ? 800 : 600}
+                                    color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.primary"}
+                                  >
+                                    {c.uniqueViews}
+                                  </Typography>
+                                </Box>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                              <Typography variant="body2" color="text.secondary">
+                                No content analytics found for the selected route/filter.
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Box>
               </Grid>
 
@@ -1153,9 +1374,21 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <Box
                   sx={{
                     p: 3,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
+                    height: "100%",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.06)",
+                      borderColor: alpha(theme.palette.primary.main, 0.25),
+                    },
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
@@ -1180,62 +1413,74 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       onReset={() => dispatch(fetchLeaderboard(appliedFilters))}
                     />
                   </Box>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>User</TableCell>
-                        <TableCell align="center">Visits</TableCell>
-                        <TableCell align="center">
-                          <Typography variant="caption" fontWeight={700} color="primary.main">
-                            Actions ↓
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">Avg Time Spent</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {leaderboard && leaderboard.length > 0 ? (
-                        leaderboard.map((u, idx) => (
-                          <TableRow key={u.userEmail} hover>
-                            <TableCell>
-                              <Typography variant="body2" fontWeight={600}>
-                                #{idx + 1} {u.userName}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {u.userEmail} {u.region ? `• ${u.region}` : ""}
-                              </Typography>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Typography variant="body2" fontWeight={600}>
-                                {u.visits}
-                              </Typography>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip
-                                label={u.actions}
-                                size="small"
-                                color="primary"
-                                sx={{ fontWeight: 700 }}
-                              />
-                            </TableCell>
-                            <TableCell align="center">
-                              <Typography variant="body2" fontWeight={500}>
-                                {formatTime(u.avgTimeSpentSeconds)}
+                  <TableContainer sx={{ overflowX: "auto", flexGrow: 1, width: "100%" }}>
+                    <Table size="small" sx={{ minWidth: 380 }}>
+                      <TableHead
+                        sx={{
+                          "& .MuiTableCell-root": {
+                            fontWeight: 700,
+                            color: theme.palette.text.secondary,
+                            borderBottom: `2px solid ${theme.palette.divider}`,
+                            backgroundColor: alpha(theme.palette.primary.main, 0.03),
+                            whiteSpace: "nowrap",
+                          },
+                        }}
+                      >
+                        <TableRow>
+                          <TableCell>User</TableCell>
+                          <TableCell align="center">Visits</TableCell>
+                          <TableCell align="center">
+                            <Typography variant="caption" fontWeight={700} color="primary.main">
+                              Actions ↓
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">Avg Time Spent</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {leaderboard && leaderboard.length > 0 ? (
+                          leaderboard.map((u, idx) => (
+                            <TableRow key={u.userEmail} hover>
+                              <TableCell>
+                                <Typography variant="body2" fontWeight={600}>
+                                  #{idx + 1} {u.userName}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {u.userEmail} {u.region ? `• ${u.region}` : ""}
+                                </Typography>
+                              </TableCell>
+                              <TableCell align="center">
+                                <Typography variant="body2" fontWeight={600}>
+                                  {u.visits}
+                                </Typography>
+                              </TableCell>
+                              <TableCell align="center">
+                                <Chip
+                                  label={u.actions}
+                                  size="small"
+                                  color="primary"
+                                  sx={{ fontWeight: 700 }}
+                                />
+                              </TableCell>
+                              <TableCell align="center">
+                                <Typography variant="body2" fontWeight={500}>
+                                  {formatTime(u.avgTimeSpentSeconds)}
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
+                              <Typography variant="body2" color="text.secondary">
+                                No user activity recorded for this route/filter.
                               </Typography>
                             </TableCell>
                           </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
-                            <Typography variant="body2" color="text.secondary">
-                              No user activity recorded for this route/filter.
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Box>
               </Grid>
             </Grid>
@@ -1247,9 +1492,21 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <Box
                   sx={{
                     p: 3,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
+                    height: "100%",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.06)",
+                      borderColor: alpha(theme.palette.primary.main, 0.25),
+                    },
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
@@ -1274,51 +1531,63 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       onReset={() => dispatch(fetchRegionalTimeSpent(appliedFilters))}
                     />
                   </Box>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Region / Team</TableCell>
-                        <TableCell align="center">Unique Visitors</TableCell>
-                        <TableCell align="center">Total Visits</TableCell>
-                        <TableCell align="center">Actions</TableCell>
-                        <TableCell align="center">Avg Time Spent</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {regionalTimeSpent && regionalTimeSpent.length > 0 ? (
-                        regionalTimeSpent.map((r) => (
-                          <TableRow key={r.region} hover>
-                            <TableCell>
-                              <Chip label={r.region} size="small" variant="outlined" color="primary" />
-                            </TableCell>
-                            <TableCell align="center">{r.uniqueVisits}</TableCell>
-                            <TableCell align="center" sx={{ fontWeight: 600 }}>
-                              {r.totalVisits}
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip
-                                label={r.actions}
-                                size="small"
-                                color="info"
-                                sx={{ fontWeight: 700 }}
-                              />
-                            </TableCell>
-                            <TableCell align="center" sx={{ fontWeight: 500 }}>
-                              {formatTime(r.avgTimeSpentSeconds)}
+                  <TableContainer sx={{ overflowX: "auto", flexGrow: 1, width: "100%" }}>
+                    <Table size="small" sx={{ minWidth: 450 }}>
+                      <TableHead
+                        sx={{
+                          "& .MuiTableCell-root": {
+                            fontWeight: 700,
+                            color: theme.palette.text.secondary,
+                            borderBottom: `2px solid ${theme.palette.divider}`,
+                            backgroundColor: alpha(theme.palette.primary.main, 0.03),
+                            whiteSpace: "nowrap",
+                          },
+                        }}
+                      >
+                        <TableRow>
+                          <TableCell>Region / Team</TableCell>
+                          <TableCell align="center">Unique Visitors</TableCell>
+                          <TableCell align="center">Total Visits</TableCell>
+                          <TableCell align="center">Actions</TableCell>
+                          <TableCell align="center">Avg Time Spent</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {regionalTimeSpent && regionalTimeSpent.length > 0 ? (
+                          regionalTimeSpent.map((r) => (
+                            <TableRow key={r.region} hover>
+                              <TableCell>
+                                <Chip label={r.region} size="small" variant="outlined" color="primary" />
+                              </TableCell>
+                              <TableCell align="center">{r.uniqueVisits}</TableCell>
+                              <TableCell align="center" sx={{ fontWeight: 600 }}>
+                                {r.totalVisits}
+                              </TableCell>
+                              <TableCell align="center">
+                                <Chip
+                                  label={r.actions}
+                                  size="small"
+                                  color="info"
+                                  sx={{ fontWeight: 700 }}
+                                />
+                              </TableCell>
+                              <TableCell align="center" sx={{ fontWeight: 500 }}>
+                                {formatTime(r.avgTimeSpentSeconds)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                              <Typography variant="body2" color="text.secondary">
+                                No team metrics found.
+                              </Typography>
                             </TableCell>
                           </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
-                            <Typography variant="body2" color="text.secondary">
-                              No team metrics found.
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Box>
               </Grid>
 
@@ -1327,9 +1596,21 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <Box
                   sx={{
                     p: 3,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
+                    height: "100%",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 10px 30px rgba(0,0,0,0.45)"
+                          : "0 10px 30px rgba(15,23,42,0.06)",
+                      borderColor: alpha(theme.palette.primary.main, 0.25),
+                    },
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
@@ -1354,39 +1635,51 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       onReset={() => dispatch(fetchPeakActivityTimes(appliedFilters))}
                     />
                   </Box>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Day of Week</TableCell>
-                        <TableCell align="center">Peak Hour Window</TableCell>
-                        <TableCell align="center">Visit Count</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {peakActivityTimes && peakActivityTimes.length > 0 ? (
-                        peakActivityTimes.slice(0, 7).map((p, idx) => (
-                          <TableRow key={`${p.dayOfWeek}-${p.peakHour}-${idx}`} hover>
-                            <TableCell>{p.dayOfWeek}</TableCell>
-                            <TableCell align="center" sx={{ fontWeight: 600 }}>
-                              {String(p.peakHour).padStart(2, "0")}:00 -{" "}
-                              {String((p.peakHour + 1) % 24).padStart(2, "0")}:00
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip label={`${p.visitCount} visits`} size="small" color="secondary" />
+                  <TableContainer sx={{ overflowX: "auto", flexGrow: 1, width: "100%" }}>
+                    <Table size="small" sx={{ minWidth: 350 }}>
+                      <TableHead
+                        sx={{
+                          "& .MuiTableCell-root": {
+                            fontWeight: 700,
+                            color: theme.palette.text.secondary,
+                            borderBottom: `2px solid ${theme.palette.divider}`,
+                            backgroundColor: alpha(theme.palette.primary.main, 0.03),
+                            whiteSpace: "nowrap",
+                          },
+                        }}
+                      >
+                        <TableRow>
+                          <TableCell>Day of Week</TableCell>
+                          <TableCell align="center">Peak Hour Window</TableCell>
+                          <TableCell align="center">Visit Count</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {peakActivityTimes && peakActivityTimes.length > 0 ? (
+                          peakActivityTimes.slice(0, 7).map((p, idx) => (
+                            <TableRow key={`${p.dayOfWeek}-${p.peakHour}-${idx}`} hover>
+                              <TableCell>{p.dayOfWeek}</TableCell>
+                              <TableCell align="center" sx={{ fontWeight: 600 }}>
+                                {String(p.peakHour).padStart(2, "0")}:00 -{" "}
+                                {String((p.peakHour + 1) % 24).padStart(2, "0")}:00
+                              </TableCell>
+                              <TableCell align="center">
+                                <Chip label={`${p.visitCount} visits`} size="small" color="secondary" />
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={3} align="center" sx={{ py: 3 }}>
+                              <Typography variant="body2" color="text.secondary">
+                                No traffic peak metrics found.
+                              </Typography>
                             </TableCell>
                           </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={3} align="center" sx={{ py: 3 }}>
-                            <Typography variant="body2" color="text.secondary">
-                              No traffic peak metrics found.
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Box>
               </Grid>
             </Grid>
@@ -1395,9 +1688,18 @@ const AnalyticsAdminDashboard: React.FC = () => {
             <Box
               sx={{
                 p: 3,
-                borderRadius: 3,
+                borderRadius: 4,
                 border: `1px solid ${theme.palette.divider}`,
                 backgroundColor: theme.palette.background.paper,
+                overflow: "hidden",
+                transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+                "&:hover": {
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 10px 30px rgba(0,0,0,0.45)"
+                      : "0 10px 30px rgba(15,23,42,0.06)",
+                  borderColor: alpha(theme.palette.primary.main, 0.25),
+                },
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
@@ -1421,50 +1723,62 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   onReset={() => dispatch(fetchTopSearches(appliedFilters))}
                 />
               </Box>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Search Query / Term</TableCell>
-                    <TableCell align="center">Total Searches</TableCell>
-                    <TableCell align="center">Unique Searches</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {topSearches && topSearches.length > 0 ? (
-                    topSearches.map((s) => (
-                      <TableRow key={s.searchTerm} hover>
-                        <TableCell>
-                          <Chip
-                            label={s.searchTerm}
-                            color="info"
-                            variant="outlined"
-                            size="small"
-                            sx={{ fontWeight: 600 }}
-                          />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Typography variant="body2" fontWeight={600}>
-                            {s.searchCount}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Typography variant="body2" fontWeight={600}>
-                            {s.uniqueSearchCount ?? 0}
+              <TableContainer sx={{ overflowX: "auto", width: "100%" }}>
+                <Table size="small" sx={{ minWidth: 400 }}>
+                  <TableHead
+                    sx={{
+                      "& .MuiTableCell-root": {
+                        fontWeight: 700,
+                        color: theme.palette.text.secondary,
+                        borderBottom: `2px solid ${theme.palette.divider}`,
+                        backgroundColor: alpha(theme.palette.primary.main, 0.03),
+                        whiteSpace: "nowrap",
+                      },
+                    }}
+                  >
+                    <TableRow>
+                      <TableCell>Search Query / Term</TableCell>
+                      <TableCell align="center">Total Searches</TableCell>
+                      <TableCell align="center">Unique Searches</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {topSearches && topSearches.length > 0 ? (
+                      topSearches.map((s) => (
+                        <TableRow key={s.searchTerm} hover>
+                          <TableCell>
+                            <Chip
+                              label={s.searchTerm}
+                              color="info"
+                              variant="outlined"
+                              size="small"
+                              sx={{ fontWeight: 600 }}
+                            />
+                          </TableCell>
+                          <TableCell align="center">
+                            <Typography variant="body2" fontWeight={600}>
+                              {s.searchCount}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Typography variant="body2" fontWeight={600}>
+                              {s.uniqueSearchCount ?? 0}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={3} align="center" sx={{ py: 3 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            No search metrics found for this filter.
                           </Typography>
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={3} align="center" sx={{ py: 3 }}>
-                        <Typography variant="body2" color="text.secondary">
-                          No search metrics found for this filter.
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </Box>
           </Box>
         )}
