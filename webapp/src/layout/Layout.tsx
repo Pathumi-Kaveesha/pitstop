@@ -35,10 +35,13 @@ import pJson from "../../package.json";
 import MatomoTracker from "../analytics/MatomoTracker";
 import Header from "./header";
 import { usePageTimeTracker } from "../hooks/useTimeTracker"; 
+import { useAnalytics } from "../hooks/useAnalytics";
+import { AnalyticsEventType } from "@utils/types";
 
 export default function Layout() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const { trackEvent } = useAnalytics();
   const common = useAppSelector((state: RootState) => state.common);
   const prevPathnameRef = useRef<string>("");
 
@@ -46,6 +49,65 @@ export default function Layout() {
   const location = useLocation();
 
   usePageTimeTracker(location.pathname);
+
+  // Crash Recovery Handler: Scans for un-flushed session times from previous browser crashes
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const runCrashRecovery = async () => {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k) keys.push(k);
+      }
+
+      for (const key of keys) {
+        if (key.startsWith("pitstop_pending_time_")) {
+          try {
+            const rawData = localStorage.getItem(key);
+            if (!rawData) continue;
+
+            localStorage.removeItem(key);
+
+            const data = JSON.parse(rawData);
+
+            if (data && data.durationSeconds >= 1) {
+              const metadata = {
+                durationSeconds: data.durationSeconds,
+                pageRoute: data.pageRoute,
+                eventId: data.eventId,
+                trackingType: data.trackingType || "page_view_duration",
+                recoveredFromCrash: true,
+                timestamp: new Date().toISOString(),
+              };
+
+              const res = await trackEvent(
+                AnalyticsEventType.SESSION_TIME,
+                data.contentId ?? null,
+                metadata,
+                data.sessionId ?? null
+              ).catch((err) => {
+                console.warn("Failed to recover crashed analytics session, restoring backup:", err);
+                return null;
+              });
+
+              if (!res) {
+                // Re-store backup in localStorage if trackEvent resolved null or threw an error
+                localStorage.setItem(key, rawData);
+              }
+            }
+          } catch (e) {
+            localStorage.removeItem(key);
+          }
+        }
+      }
+    };
+    if ("locks" in navigator) {
+      void navigator.locks.request("pitstop_analytics_crash_recovery_lock", runCrashRecovery);
+    } else {
+      void runCrashRecovery();
+    }
+  }, [trackEvent]);
 
   useEffect(() => {
     if (localStorage.getItem("hris-app-redirect-url")) {
