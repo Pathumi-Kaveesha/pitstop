@@ -63,7 +63,12 @@ export const CascadingPageRouteSelector: React.FC<
     }
 
     const target = routes.find((r) => r.route_path === value);
-    if (!target) return;
+    if (!target) {
+      setCard1SelectedRoute(null);
+      setCard2SelectedRoute(null);
+      setNavigationHistory([]);
+      return;
+    }
 
     const pathChain: RouteOption[] = [];
     let current: RouteOption | undefined = target;
