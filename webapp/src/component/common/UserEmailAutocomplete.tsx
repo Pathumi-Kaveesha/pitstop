@@ -28,13 +28,14 @@ import { fetchMentionSuggestions } from "@slices/pageSlice/page";
 import { EmployeeSuggestion } from "@/types/types";
 
 interface UserEmailAutocompleteProps {
-  value: string;
-  onChange: (email: string) => void;
+  value: string | string[];
+  onChange: (email: any) => void;
   label?: string;
   placeholder?: string;
   size?: "small" | "medium";
   fullWidth?: boolean;
   disabled?: boolean;
+  multiple?: boolean;
 }
 
 export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
@@ -45,16 +46,22 @@ export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
   size = "small",
   fullWidth = true,
   disabled = false,
+  multiple = false,
 }) => {
   const dispatch = useAppDispatch();
-  const [inputValue, setInputValue] = useState(value);
+  const [inputValue, setInputValue] = useState(
+    typeof value === "string" ? value : ""
+  );
   const [options, setOptions] = useState<EmployeeSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync internal input value if external value changes (e.g. on Reset)
   useEffect(() => {
-    setInputValue(value);
+    if (typeof value === "string") {
+      setInputValue(value);
+    } else if (Array.isArray(value) && value.length === 0) {
+      setInputValue("");
+    }
   }, [value]);
 
   useEffect(() => {
@@ -67,7 +74,10 @@ export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
 
   const handleInputChange = (newInputValue: string) => {
     setInputValue(newInputValue);
-    onChange(newInputValue); // Allows manual typing of any email address
+
+    if (!multiple) {
+      onChange(newInputValue);
+    }
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -96,21 +106,33 @@ export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
 
   return (
     <Autocomplete
+      multiple={multiple as any}
       disabled={disabled}
       freeSolo
       size={size}
       fullWidth={fullWidth}
       options={options}
       loading={loading}
+      value={value as any}
       inputValue={inputValue}
       onInputChange={(_event, newInputValue) => handleInputChange(newInputValue)}
       onChange={(_event, newValue) => {
-        if (typeof newValue === "string") {
-          onChange(newValue);
-        } else if (newValue && newValue.workEmail) {
-          onChange(newValue.workEmail);
+        if (multiple) {
+          const selectedEmails = (Array.isArray(newValue) ? newValue : [])
+            .map((item) => {
+              if (typeof item === "string") return item.trim();
+              return item?.workEmail || "";
+            })
+            .filter(Boolean);
+          onChange(selectedEmails);
         } else {
-          onChange("");
+          if (typeof newValue === "string") {
+            onChange(newValue);
+          } else if (newValue && !Array.isArray(newValue) && newValue.workEmail) {
+            onChange(newValue.workEmail);
+          } else {
+            onChange("");
+          }
         }
       }}
       getOptionLabel={(option) => {
@@ -155,6 +177,13 @@ export const UserEmailAutocomplete: React.FC<UserEmailAutocompleteProps> = ({
           {...params}
           label={label}
           placeholder={placeholder}
+          InputLabelProps={{ shrink: true }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              height: 40,
+              alignItems: "center",
+            },
+          }}
           InputProps={{
             ...params.InputProps,
             endAdornment: (

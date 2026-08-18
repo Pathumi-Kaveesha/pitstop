@@ -596,30 +596,60 @@ isolated function buildDateRangePredicates(string? startDate, string? endDate, i
     }
 }
 
-# Constructs parameterized SQL predicate for regional team filtering.
+# Constructs parameterized SQL predicate for regional team filtering (supports multi-select).
 #
-# + region - Optional region or team name
+# + region - Optional comma-separated region or team names
 # + return - Parameterized SQL query fragment
 isolated function buildRegionPredicate(string? region) returns sql:ParameterizedQuery {
     if region is () || region.trim() == "" {
         return ``;
     }
-    string cleanRegion = region.trim();
-    return ` AND l.region = ${cleanRegion}`;
+    string[] regions = splitCommaSeparated(region);
+    if regions.length() == 0 {
+        return ``;
+    }
+    if regions.length() == 1 {
+        return ` AND l.region = ${regions[0]}`;
+    }
+    sql:ParameterizedQuery query = ` AND l.region IN (`;
+    foreach int i in 0 ..< regions.length() {
+        if i > 0 {
+            query = sql:queryConcat(query, `, `);
+        }
+        query = sql:queryConcat(query, `${regions[i]}`);
+    }
+    query = sql:queryConcat(query, `)`);
+    return query;
 }
 
-# Constructs parameterized SQL predicate for individual user email filtering.
+# Constructs parameterized SQL predicate for individual user email filtering (supports multi-select).
 #
-# + userEmail - Optional target user email
+# + userEmail - Optional comma-separated target user emails
 # + return - Parameterized SQL query fragment
 isolated function buildUserEmailPredicate(string? userEmail) returns sql:ParameterizedQuery {
     if userEmail is () || userEmail.trim() == "" {
         return ``;
     }
-    return ` AND LOWER(TRIM(l.user_email)) = ${userEmail.trim().toLowerAscii()}`;
+    string[] emails = splitCommaSeparated(userEmail);
+    if emails.length() == 0 {
+        return ``;
+    }
+    if emails.length() == 1 {
+        return ` AND LOWER(TRIM(l.user_email)) = ${emails[0].toLowerAscii()}`;
+    }
+    sql:ParameterizedQuery query = ` AND LOWER(TRIM(l.user_email)) IN (`;
+    foreach int i in 0 ..< emails.length() {
+        string email = emails[i].toLowerAscii();
+        if i > 0 {
+            query = sql:queryConcat(query, `, `);
+        }
+        query = sql:queryConcat(query, `${email}`);
+    }
+    query = sql:queryConcat(query, `)`);
+    return query;
 }
 
-# Constructs parameterized SQL predicates for page route filtering.
+# Constructs parameterized SQL predicates for single page route filtering.
 #
 # + pageRoute - Optional target page route string
 # + return - Parameterized SQL query fragment
@@ -657,4 +687,29 @@ isolated function buildPageRoutePredicate(string? pageRoute) returns sql:Paramet
             OR JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.path')) LIKE CONCAT(${cleanRoute}, '/%')
         ))
     )`;
+}
+
+# Helper function to split comma-separated filter strings into clean arrays.
+#
+# + input - Optional comma-separated string (e.g. "NA, APAC, LATAM")
+# + return - Array of clean string items
+isolated function splitCommaSeparated(string input) returns string[] {
+    string[] parts = [];
+    string current = "";
+    int len = input.length();
+    foreach int i in 0 ..< len {
+        string char = input.substring(i, i + 1);
+        if char == "," {
+            if current.trim() != "" {
+                parts.push(current.trim());
+            }
+            current = "";
+        } else {
+            current += char;
+        }
+    }
+    if current.trim() != "" {
+        parts.push(current.trim());
+    }
+    return parts;
 }

@@ -25,6 +25,7 @@ import {
   FormControlLabel,
   Checkbox,
   useTheme,
+  useMediaQuery,
 } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
@@ -106,6 +107,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
   trendData = [],
 }) => {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   // Selected metrics state (default: Total Views & Unique Visitors)
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([
@@ -158,7 +160,8 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
         ...item,
         displayDate: isValid
           ? parsedDate.toLocaleDateString("en-US", {
-              weekday: isWideRange ? undefined : "short", // Drop weekday for wide ranges
+              // Omit weekday name on small screens or wide ranges to prevent text overlap
+              weekday: isWideRange || isMobile ? undefined : "short",
               month: "short",
               day: "numeric",
             })
@@ -175,7 +178,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
             : item.date),
       };
     });
-  }, [trendData]);
+  }, [trendData, isMobile]);
 
   // Smart calculation for X-Axis tick label sampling based on total range size
   const xAxisInterval = useMemo(() => {
@@ -258,27 +261,27 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
     <Paper
       elevation={0}
       sx={{
-        p: 3,
-        borderRadius: 3,
+        p: { xs: 2, sm: 3 },
+        borderRadius: 4,
         border: `1px solid ${theme.palette.divider}`,
         backgroundColor: theme.palette.background.paper,
       }}
     >
-      <Typography variant="h6" fontWeight={600} sx={{ mb: 3 }}>
+      <Typography variant="h6" fontWeight={600} sx={{ mb: { xs: 2, sm: 3 } }}>
         Metrics Over Time
       </Typography>
 
       {formattedChartData && formattedChartData.length > 0 ? (
         <>
           {/* Dual Y-Axis Line Chart */}
-          <Box sx={{ width: "100%", height: 340 }}>
+          <Box sx={{ width: "100%", height: { xs: 280, sm: 340 } }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={formattedChartData}
                 margin={{
                   top: 10,
-                  right: isTimeSpentSelected ? 50 : 40, // Increased right margin so far-right labels aren't cut off
-                  left: -20,
+                  right: isTimeSpentSelected ? (isMobile ? 35 : 50) : (isMobile ? 20 : 40),
+                  left: isMobile ? -25 : -20,
                   bottom: 0,
                 }}
               >
@@ -290,15 +293,15 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
                   opacity={0.4}
                 />
                 <XAxis
-                    dataKey="displayDate"
-                    interval={xAxisInterval}
-                    minTickGap={15} // Prevents label collisions on narrow screen widths
-                    tickLine={false}
-                    axisLine={{ stroke: theme.palette.divider }}
-                    tick={{
-                        fontSize: isLargeRange ? 11 : 12,
-                        fill: theme.palette.text.secondary,
-                    }}
+                  dataKey="displayDate"
+                  interval={xAxisInterval}
+                  minTickGap={isMobile ? 28 : 15} // Higher gap on mobile prevents tick label collisions
+                  tickLine={false}
+                  axisLine={{ stroke: theme.palette.divider }}
+                  tick={{
+                    fontSize: isMobile ? 10 : isLargeRange ? 11 : 12,
+                    fill: theme.palette.text.secondary,
+                  }}
                 />
 
                 {/* Left Y-Axis for Count & Average Metrics */}
@@ -308,7 +311,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
                   domain={[0, (dataMax: number) => Math.max(dataMax, 4)]}
                   tickLine={false}
                   axisLine={false}
-                  tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
+                  tick={{ fontSize: isMobile ? 10 : 12, fill: theme.palette.text.secondary }}
                 />
 
                 {/* Right Y-Axis for Duration Metrics */}
@@ -323,7 +326,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
                       const mins = Math.floor(seconds / 60);
                       return `${mins}m`;
                     }}
-                    tick={{ fontSize: 12, fill: "#ed6c02" }}
+                    tick={{ fontSize: isMobile ? 10 : 12, fill: "#ed6c02" }}
                   />
                 )}
 
@@ -366,10 +369,10 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
           <Box
             sx={{
               display: "flex",
-              alignItems: "center",
-              gap: 3,
+              alignItems: { xs: "flex-start", sm: "center" },
+              flexDirection: { xs: "column", sm: "row" },
+              gap: 2,
               mt: 2,
-              flexWrap: "wrap",
             }}
           >
             <Button
@@ -457,7 +460,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
               sx={{
                 display: "flex",
                 alignItems: "center",
-                gap: 2.5,
+                gap: 2,
                 flexWrap: "wrap",
               }}
             >
