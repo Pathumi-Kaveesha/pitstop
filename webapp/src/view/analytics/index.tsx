@@ -729,13 +729,17 @@ const AnalyticsAdminDashboard: React.FC = () => {
       }
 
       const existing = aggregatedMap.get(groupKey);
+      const hasActivity = pt.avgActionsPerVisit > 0 || pt.totalEngagements > 0;
+
       if (existing) {
         existing.totalViews += pt.totalViews;
         existing.uniqueViews += pt.uniqueViews;
         existing.timeSpentSeconds += pt.timeSpentSeconds;
         existing.totalEngagements += pt.totalEngagements;
-        existing.avgActionsSum += pt.avgActionsPerVisit;
-        existing.count += 1;
+        if (hasActivity) {
+          existing.avgActionsSum += pt.avgActionsPerVisit;
+          existing.count += 1;
+        }
       } else {
         aggregatedMap.set(groupKey, {
           label,
@@ -744,8 +748,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
           uniqueViews: pt.uniqueViews,
           timeSpentSeconds: pt.timeSpentSeconds,
           totalEngagements: pt.totalEngagements,
-          avgActionsSum: pt.avgActionsPerVisit,
-          count: 1,
+          avgActionsSum: hasActivity ? pt.avgActionsPerVisit : 0,
+          count: hasActivity ? 1 : 0,
         });
       }
     });
