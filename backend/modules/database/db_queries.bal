@@ -646,11 +646,11 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
             CAST(COUNT(DISTINCT l.user_email) AS SIGNED) as uniqueSearchCount
         FROM user_activity_logs l
         INNER JOIN tag t ON (
-            LOWER(TRIM(t.tag_name)) = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query'))))
-            OR LOWER(TRIM(t.tag_name)) = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.rawText'))))
+            t.tag_name = TRIM(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query')))
+            OR t.tag_name = TRIM(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.rawText')))
             OR JSON_CONTAINS(
-                LOWER(COALESCE(JSON_EXTRACT(l.metadata, '$.tagsSelected'), '[]')), 
-                LOWER(JSON_QUOTE(t.tag_name))
+                COALESCE(JSON_EXTRACT(l.metadata, '$.tagsSelected'), '[]'), 
+                JSON_QUOTE(t.tag_name)
             )
         )
         LEFT JOIN content c ON c.content_id = l.content_id
