@@ -714,7 +714,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
     if (granularity === "daily") {
       return dailyPoints.map((pt) => ({
-        date: pt.dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        date: pt.dateKey, 
         formattedDate: pt.dateObj.toLocaleDateString("en-US", {
           weekday: "long",
           year: "numeric",
