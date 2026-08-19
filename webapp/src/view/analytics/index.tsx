@@ -82,6 +82,8 @@ import {
   RouteOption,
 } from "../analytics/CascadingPageRouteSelector";
 
+export type TrendGranularity = "daily" | "weekly" | "monthly" | "quarterly";
+
 const AVAILABLE_REGIONS = [
   "WSO2 Digital",
   "NA",
@@ -334,6 +336,13 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
   );
 };
 
+const getOrdinalSuffix = (num: number): string => {
+  if (num === 1) return "1st";
+  if (num === 2) return "2nd";
+  if (num === 3) return "3rd";
+  return `${num}th`;
+};
+
 const AnalyticsAdminDashboard: React.FC = () => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
@@ -353,8 +362,13 @@ const AnalyticsAdminDashboard: React.FC = () => {
   });
 
   const [trendFilters, setTrendFilters] = useState<AnalyticsFilterParams | null>(null);
+  const [cardLeaderboardFilters, setCardLeaderboardFilters] = useState<AnalyticsFilterParams | null>(null);
+  const [cardRegionalFilters, setCardRegionalFilters] = useState<AnalyticsFilterParams | null>(null);
+  const [granularity, setGranularity] = useState<TrendGranularity>("daily");
 
   const [topContentSortBy, setTopContentSortBy] = useState<"totalViews" | "uniqueViews">("totalViews");
+  const [leaderboardSortBy, setLeaderboardSortBy] = useState<"actions" | "visits" | "avgTimeSpentSeconds">("actions");
+  const [regionalSortBy, setRegionalSortBy] = useState<"totalVisits" | "uniqueVisits" | "actions" | "avgTimeSpentSeconds">("totalVisits");
   const [mainRoutes, setMainRoutes] = useState<RouteOption[]>([]);
 
   const [snackbar, setSnackbar] = useState<{
@@ -400,8 +414,17 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
     setAppliedFilters(newApplied);
     setTrendFilters(null);
+    setCardLeaderboardFilters(null);
+    setCardRegionalFilters(null);
     dispatch(clearTrendsOverride());
-    dispatch(fetchAnalyticsSummary(newApplied));
+    dispatch(fetchAnalyticsSummary(newApplied)).then(() => {
+      if (leaderboardSortBy !== "actions") {
+        dispatch(fetchLeaderboard({ ...newApplied, sortBy: leaderboardSortBy }));
+      }
+      if (regionalSortBy !== "totalVisits") {
+        dispatch(fetchRegionalTimeSpent({ ...newApplied, sortBy: regionalSortBy }));
+      }
+    });
   };
 
   const handleResetGlobalFilters = () => {
@@ -411,6 +434,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
     setGlobalEndDate("");
     setGlobalPageRoute("");
     setTopContentSortBy("totalViews");
+    setLeaderboardSortBy("actions");
+    setRegionalSortBy("totalVisits");
     setDateError("");
 
     const resetApplied: AnalyticsFilterParams = {
@@ -420,6 +445,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
     setAppliedFilters(resetApplied);
     setTrendFilters(null);
+    setCardLeaderboardFilters(null);
+    setCardRegionalFilters(null);
     dispatch(clearTrendsOverride());
     dispatch(fetchAnalyticsSummary(resetApplied));
   };
@@ -431,6 +458,28 @@ const AnalyticsAdminDashboard: React.FC = () => {
     if (newSortBy !== null) {
       setTopContentSortBy(newSortBy);
       dispatch(fetchTopContent({ ...appliedFilters, sortBy: newSortBy }));
+    }
+  };
+
+  const handleLeaderboardSortChange = (
+    _event: React.MouseEvent<HTMLElement> | null,
+    newSortBy: "actions" | "visits" | "avgTimeSpentSeconds" | null
+  ) => {
+    if (newSortBy !== null) {
+      setLeaderboardSortBy(newSortBy);
+      const activeFilters = cardLeaderboardFilters || appliedFilters;
+      dispatch(fetchLeaderboard({ ...activeFilters, sortBy: newSortBy }));
+    }
+  };
+
+  const handleRegionalSortChange = (
+    _event: React.MouseEvent<HTMLElement> | null,
+    newSortBy: "totalVisits" | "uniqueVisits" | "actions" | "avgTimeSpentSeconds" | null
+  ) => {
+    if (newSortBy !== null) {
+      setRegionalSortBy(newSortBy);
+      const activeFilters = cardRegionalFilters || appliedFilters;
+      dispatch(fetchRegionalTimeSpent({ ...activeFilters, sortBy: newSortBy }));
     }
   };
 
@@ -477,6 +526,34 @@ const AnalyticsAdminDashboard: React.FC = () => {
     fetchMainRoutes();
   }, [dispatch, timezoneOffsetMinutes]);
 
+  useEffect(() => {
+    const activeFilter = trendFilters || appliedFilters;
+    let sDate: Date | null = null;
+    let eDate: Date | null = null;
+
+    if (activeFilter.startDate) {
+      const parts = activeFilter.startDate.split("-").map(Number);
+      sDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    if (activeFilter.endDate) {
+      const parts = activeFilter.endDate.split("-").map(Number);
+      eDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    } else if (sDate) {
+      eDate = new Date();
+    }
+
+    if (sDate && eDate) {
+      const diffDays = Math.round((eDate.getTime() - sDate.getTime()) / 86400000) + 1;
+      if (diffDays > 60) {
+        setGranularity("monthly");
+      } else if (diffDays > 14) {
+        setGranularity("weekly");
+      } else {
+        setGranularity("daily");
+      }
+    }
+  }, [trendFilters, appliedFilters]);
+
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
@@ -511,32 +588,48 @@ const AnalyticsAdminDashboard: React.FC = () => {
     const activeStart = activeFilter.startDate;
     const activeEnd = activeFilter.endDate;
 
-    const defaultStart = new Date(today);
-    defaultStart.setDate(today.getDate() - 6);
+    let defaultDays = 6;
+    if (granularity === "weekly") defaultDays = 55;
+    else if (granularity === "monthly") defaultDays = 364;
+    else if (granularity === "quarterly") defaultDays = 729;
 
-    if (activeStart) {
-      const parts = activeStart.split("-").map(Number);
-      start = new Date(parts[0], parts[1] - 1, parts[2]);
+    const defaultStart = new Date(today);
+    defaultStart.setDate(today.getDate() - defaultDays);
+
+    if (activeStart && activeEnd) {
+      const sParts = activeStart.split("-").map(Number);
+      start = new Date(sParts[0], sParts[1] - 1, sParts[2]);
+      const eParts = activeEnd.split("-").map(Number);
+      end = new Date(eParts[0], eParts[1] - 1, eParts[2]);
+    } else if (activeStart) {
+      const sParts = activeStart.split("-").map(Number);
+      start = new Date(sParts[0], sParts[1] - 1, sParts[2]);
+      end = new Date(today);
+    } else if (activeEnd) {
+      const eParts = activeEnd.split("-").map(Number);
+      end = new Date(eParts[0], eParts[1] - 1, eParts[2]);
+      start = new Date(end);
+      start.setDate(end.getDate() - defaultDays);
     } else if (dates.length > 0) {
       const minParts = dates[0].split("-").map(Number);
       const minDate = new Date(minParts[0], minParts[1] - 1, minParts[2]);
       start = minDate < defaultStart ? minDate : defaultStart;
+      end = new Date(today);
     } else {
       start = defaultStart;
-    }
-
-    if (activeEnd) {
-      const parts = activeEnd.split("-").map(Number);
-      end = new Date(parts[0], parts[1] - 1, parts[2]);
-    } else if (dates.length > 0) {
-      const maxParts = dates[dates.length - 1].split("-").map(Number);
-      const maxDate = new Date(maxParts[0], maxParts[1] - 1, maxParts[2]);
-      end = maxDate > today ? maxDate : today;
-    } else {
       end = new Date(today);
     }
 
-    const result: TrendDataPoint[] = [];
+    const dailyPoints: {
+      dateKey: string;
+      dateObj: Date;
+      totalViews: number;
+      uniqueViews: number;
+      timeSpentSeconds: number;
+      totalEngagements: number;
+      avgActionsPerVisit: number;
+    }[] = [];
+
     const current = new Date(start);
 
     while (current <= end) {
@@ -547,16 +640,9 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
       const item = trendMap.get(dateKey);
 
-      const longDate = current.toLocaleDateString("en-US", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-
-      result.push({
-        date: dateKey,
-        formattedDate: longDate,
+      dailyPoints.push({
+        dateKey,
+        dateObj: new Date(current),
         totalViews: Number(item?.totalViews || 0),
         uniqueViews: Number(item?.uniqueViews || 0),
         timeSpentSeconds: Number(item?.timeSpentSeconds || 0),
@@ -567,8 +653,105 @@ const AnalyticsAdminDashboard: React.FC = () => {
       current.setDate(current.getDate() + 1);
     }
 
-    return result;
-  }, [trends, trendsOverridden, summary, trendFilters, appliedFilters]);
+    if (granularity === "daily") {
+      return dailyPoints.map((pt) => ({
+        date: pt.dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        formattedDate: pt.dateObj.toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        totalViews: pt.totalViews,
+        uniqueViews: pt.uniqueViews,
+        timeSpentSeconds: pt.timeSpentSeconds,
+        totalEngagements: pt.totalEngagements,
+        avgActionsPerVisit: pt.avgActionsPerVisit,
+      }));
+    }
+
+    const aggregatedMap = new Map<
+      string,
+      {
+        label: string;
+        fullLabel: string;
+        totalViews: number;
+        uniqueViews: number;
+        timeSpentSeconds: number;
+        totalEngagements: number;
+        avgActionsSum: number;
+        count: number;
+      }
+    >();
+
+    dailyPoints.forEach((pt) => {
+      const d = pt.dateObj;
+      let groupKey = "";
+      let label = "";
+      let fullLabel = "";
+
+      if (granularity === "weekly") {
+        const monthShort = d.toLocaleDateString("en-US", { month: "short" });
+        const monthLong = d.toLocaleDateString("en-US", { month: "long" });
+        const year = d.getFullYear();
+        const weekNum = Math.min(4, Math.floor((d.getDate() - 1) / 7) + 1);
+        const ordinal = getOrdinalSuffix(weekNum);
+
+        groupKey = `${year}-${d.getMonth() + 1}-W${weekNum}`;
+        label = `${monthShort} ${ordinal} week`;
+        fullLabel = `${monthLong} ${year} - ${ordinal} Week`;
+      } else if (granularity === "monthly") {
+        const year = d.getFullYear();
+        const yearTwoDigits = String(year).slice(-2);
+        const monthShort = d.toLocaleDateString("en-US", { month: "short" });
+        const monthLong = d.toLocaleDateString("en-US", { month: "long" });
+
+        groupKey = `${year}-${d.getMonth() + 1}`;
+        label = `${monthShort} '${yearTwoDigits}`;
+        fullLabel = `${monthLong} ${year}`;
+      } else if (granularity === "quarterly") {
+        const year = d.getFullYear();
+        const yearTwoDigits = String(year).slice(-2);
+        const q = Math.floor(d.getMonth() / 3) + 1;
+
+        groupKey = `${year}-Q${q}`;
+        label = `Q${q} '${yearTwoDigits}`;
+        fullLabel = `Q${q} ${year}`;
+      }
+
+      const existing = aggregatedMap.get(groupKey);
+      if (existing) {
+        existing.totalViews += pt.totalViews;
+        existing.uniqueViews += pt.uniqueViews;
+        existing.timeSpentSeconds += pt.timeSpentSeconds;
+        existing.totalEngagements += pt.totalEngagements;
+        existing.avgActionsSum += pt.avgActionsPerVisit;
+        existing.count += 1;
+      } else {
+        aggregatedMap.set(groupKey, {
+          label,
+          fullLabel,
+          totalViews: pt.totalViews,
+          uniqueViews: pt.uniqueViews,
+          timeSpentSeconds: pt.timeSpentSeconds,
+          totalEngagements: pt.totalEngagements,
+          avgActionsSum: pt.avgActionsPerVisit,
+          count: 1,
+        });
+      }
+    });
+
+    return Array.from(aggregatedMap.values()).map((agg) => ({
+      date: agg.label,
+      formattedDate: agg.fullLabel,
+      totalViews: agg.totalViews,
+      uniqueViews: agg.uniqueViews,
+      timeSpentSeconds: agg.timeSpentSeconds,
+      totalEngagements: agg.totalEngagements,
+      avgActionsPerVisit:
+        agg.count > 0 ? Number((agg.avgActionsSum / agg.count).toFixed(2)) : 0,
+    }));
+  }, [trends, trendsOverridden, summary, trendFilters, appliedFilters, granularity]);
 
   return (
     <Box
@@ -1118,8 +1301,36 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   top: 16,
                   right: 16,
                   zIndex: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.5,
                 }}
               >
+                {/* Granularity Selector */}
+                <ToggleButtonGroup
+                  value={granularity}
+                  exclusive
+                  onChange={(_e, val) => {
+                    if (val !== null) setGranularity(val as TrendGranularity);
+                  }}
+                  size="small"
+                  aria-label="trend aggregation level"
+                  sx={{ backgroundColor: theme.palette.background.paper }}
+                >
+                  <ToggleButton value="daily" sx={{ px: 1.5, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                    Daily
+                  </ToggleButton>
+                  <ToggleButton value="weekly" sx={{ px: 1.5, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                    Weekly
+                  </ToggleButton>
+                  <ToggleButton value="monthly" sx={{ px: 1.5, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                    Monthly
+                  </ToggleButton>
+                  <ToggleButton value="quarterly" sx={{ px: 1.5, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                    Quarterly
+                  </ToggleButton>
+                </ToggleButtonGroup>
+
                 <CardFilterPopover
                   globalFilters={trendFilters || appliedFilters}
                   mainRoutes={mainRoutes}
@@ -1163,28 +1374,27 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   <Box
                     sx={{
                       display: "flex",
-                      alignItems: "center",
+                      alignItems: "flex-start",
                       justifyContent: "space-between",
-                      flexWrap: "wrap",
                       gap: 1.5,
                       mb: 2.5,
                     }}
                   >
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <Typography variant="h6" fontWeight={600}>
-                        Top Performing Content Breakdown
-                      </Typography>
-                      <Tooltip
-                        title="Breaks down engagement per material. Preview Clicks requires successful embedding and 10s+ view time. Outlinks tracks direct external opens. Total Views counts modal openings once."
-                        arrow
-                      >
-                        <IconButton size="small" aria-label="Top Performing Content info">
-                          <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", flex: 1 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Typography variant="h6" fontWeight={600}>
+                          Top Performing Content Breakdown
+                        </Typography>
+                        <Tooltip
+                          title="Breaks down engagement per material. Preview Clicks requires successful embedding and 10s+ view time. Outlinks tracks direct external opens. Total Views counts modal openings once."
+                          arrow
+                        >
+                          <IconButton size="small" aria-label="Top Performing Content info">
+                            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
 
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
                       <ToggleButtonGroup
                         value={topContentSortBy}
                         exclusive
@@ -1199,7 +1409,9 @@ const AnalyticsAdminDashboard: React.FC = () => {
                           By Unique Views
                         </ToggleButton>
                       </ToggleButtonGroup>
+                    </Box>
 
+                    <Box sx={{ flexShrink: 0 }}>
                       <CardFilterPopover
                         globalFilters={appliedFilters}
                         mainRoutes={mainRoutes}
@@ -1260,7 +1472,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                 variant="caption"
                                 fontWeight={topContentSortBy === "totalViews" ? 700 : 500}
                                 color={topContentSortBy === "totalViews" ? "primary.main" : "text.secondary"}
-                                sx={{ cursor: "help" }}
+                                sx={{ cursor: "pointer" }}
+                                onClick={(e) => handleSortChange(e, "totalViews")}
                               >
                                 Total Views{" "}
                                 {topContentSortBy === "totalViews" ? "↓" : ""}
@@ -1273,7 +1486,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                 variant="caption"
                                 fontWeight={topContentSortBy === "uniqueViews" ? 700 : 500}
                                 color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary"}
-                                sx={{ cursor: "help" }}
+                                sx={{ cursor: "pointer" }}
+                                onClick={(e) => handleSortChange(e, "uniqueViews")}
                               >
                                 Unique Views{" "}
                                 {topContentSortBy === "uniqueViews" ? "↓" : ""}
@@ -1391,28 +1605,66 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     },
                   }}
                 >
-                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <EmojiEventsIcon sx={{ color: "#FFD700" }} />
-                      <Typography variant="h6" fontWeight={600}>
-                        User Activity Leaderboard
-                      </Typography>
-                      <Tooltip
-                        title="Team members ranked by total active actions taken (slide previews, search queries, link opens), along with total visits and average time spent."
-                        arrow
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 1.5,
+                      mb: 2,
+                    }}
+                  >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", flex: 1 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <EmojiEventsIcon sx={{ color: "#FFD700" }} />
+                        <Typography variant="h6" fontWeight={600}>
+                          User Activity Leaderboard
+                        </Typography>
+                        <Tooltip
+                          title="Team members ranked by your selected metric (actions, visits, or average time spent)."
+                          arrow
+                        >
+                          <IconButton size="small" aria-label="User Activity Leaderboard info">
+                            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+
+                      <ToggleButtonGroup
+                        value={leaderboardSortBy}
+                        exclusive
+                        onChange={handleLeaderboardSortChange}
+                        size="small"
+                        aria-label="leaderboard ranking criteria"
                       >
-                        <IconButton size="small" aria-label="User Activity Leaderboard info">
-                          <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
-                        </IconButton>
-                      </Tooltip>
+                        <ToggleButton value="actions" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                          By Actions
+                        </ToggleButton>
+                        <ToggleButton value="visits" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                          By Visits
+                        </ToggleButton>
+                        <ToggleButton value="avgTimeSpentSeconds" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                          By Avg Time
+                        </ToggleButton>
+                      </ToggleButtonGroup>
                     </Box>
-                    <CardFilterPopover
-                      globalFilters={appliedFilters}
-                      mainRoutes={mainRoutes}
-                      onApply={(filters) => dispatch(fetchLeaderboard(filters))}
-                      onReset={() => dispatch(fetchLeaderboard(appliedFilters))}
-                    />
+
+                    <Box sx={{ flexShrink: 0 }}>
+                      <CardFilterPopover
+                        globalFilters={appliedFilters}
+                        mainRoutes={mainRoutes}
+                        onApply={(filters) => {
+                          setCardLeaderboardFilters(filters);
+                          dispatch(fetchLeaderboard({ ...filters, sortBy: leaderboardSortBy }));
+                        }}
+                        onReset={() => {
+                          setCardLeaderboardFilters(null);
+                          dispatch(fetchLeaderboard({ ...appliedFilters, sortBy: leaderboardSortBy }));
+                        }}
+                      />
+                    </Box>
                   </Box>
+
                   <TableContainer sx={{ overflowX: "auto", flexGrow: 1, width: "100%" }}>
                     <Table size="small" sx={{ minWidth: 380 }}>
                       <TableHead
@@ -1428,13 +1680,39 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       >
                         <TableRow>
                           <TableCell>User</TableCell>
-                          <TableCell align="center">Visits</TableCell>
                           <TableCell align="center">
-                            <Typography variant="caption" fontWeight={700} color="primary.main">
-                              Actions ↓
+                            <Typography
+                              variant="caption"
+                              fontWeight={leaderboardSortBy === "visits" ? 700 : 500}
+                              color={leaderboardSortBy === "visits" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "pointer", userSelect: "none" }}
+                              onClick={() => handleLeaderboardSortChange(null, "visits")}
+                            >
+                              Visits {leaderboardSortBy === "visits" ? "↓" : ""}
                             </Typography>
                           </TableCell>
-                          <TableCell align="center">Avg Time Spent</TableCell>
+                          <TableCell align="center">
+                            <Typography
+                              variant="caption"
+                              fontWeight={leaderboardSortBy === "actions" ? 700 : 500}
+                              color={leaderboardSortBy === "actions" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "pointer", userSelect: "none" }}
+                              onClick={() => handleLeaderboardSortChange(null, "actions")}
+                            >
+                              Actions {leaderboardSortBy === "actions" ? "↓" : ""}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Typography
+                              variant="caption"
+                              fontWeight={leaderboardSortBy === "avgTimeSpentSeconds" ? 700 : 500}
+                              color={leaderboardSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "pointer", userSelect: "none" }}
+                              onClick={() => handleLeaderboardSortChange(null, "avgTimeSpentSeconds")}
+                            >
+                              Avg Time Spent {leaderboardSortBy === "avgTimeSpentSeconds" ? "↓" : ""}
+                            </Typography>
+                          </TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1450,7 +1728,11 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                 </Typography>
                               </TableCell>
                               <TableCell align="center">
-                                <Typography variant="body2" fontWeight={600}>
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={leaderboardSortBy === "visits" ? 800 : 600}
+                                  color={leaderboardSortBy === "visits" ? "primary.main" : "text.primary"}
+                                >
                                   {u.visits}
                                 </Typography>
                               </TableCell>
@@ -1458,12 +1740,17 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                 <Chip
                                   label={u.actions}
                                   size="small"
-                                  color="primary"
+                                  color={leaderboardSortBy === "actions" ? "primary" : "default"}
+                                  variant={leaderboardSortBy === "actions" ? "filled" : "outlined"}
                                   sx={{ fontWeight: 700 }}
                                 />
                               </TableCell>
                               <TableCell align="center">
-                                <Typography variant="body2" fontWeight={500}>
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={leaderboardSortBy === "avgTimeSpentSeconds" ? 800 : 500}
+                                  color={leaderboardSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.primary"}
+                                >
                                   {formatTime(u.avgTimeSpentSeconds)}
                                 </Typography>
                               </TableCell>
@@ -1509,27 +1796,67 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     },
                   }}
                 >
-                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <PublicIcon color="primary" />
-                      <Typography variant="h6" fontWeight={600}>
-                        Global Team Performance
-                      </Typography>
-                      <Tooltip
-                        title="Platform activity broken down by regional teams, comparing unique visitors, total visits, total actions, and average time spent per visit."
-                        arrow
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 1.5,
+                      mb: 2,
+                    }}
+                  >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", flex: 1 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <PublicIcon color="primary" />
+                        <Typography variant="h6" fontWeight={600}>
+                          Global Team Performance
+                        </Typography>
+                        <Tooltip
+                          title="Platform activity broken down by regional teams, comparing unique visitors, total visits, total actions, and average time spent per visit."
+                          arrow
+                        >
+                          <IconButton size="small" aria-label="Global Team Performance info">
+                            <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+
+                      <ToggleButtonGroup
+                        value={regionalSortBy}
+                        exclusive
+                        onChange={handleRegionalSortChange}
+                        size="small"
+                        aria-label="regional ranking criteria"
                       >
-                        <IconButton size="small" aria-label="Global Team Performance info">
-                          <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
-                        </IconButton>
-                      </Tooltip>
+                        <ToggleButton value="totalVisits" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                          By Visits
+                        </ToggleButton>
+                        <ToggleButton value="uniqueVisits" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                          By Unique
+                        </ToggleButton>
+                        <ToggleButton value="actions" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                          By Actions
+                        </ToggleButton>
+                        <ToggleButton value="avgTimeSpentSeconds" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                          By Avg Time
+                        </ToggleButton>
+                      </ToggleButtonGroup>
                     </Box>
-                    <CardFilterPopover
-                      globalFilters={appliedFilters}
-                      mainRoutes={mainRoutes}
-                      onApply={(filters) => dispatch(fetchRegionalTimeSpent(filters))}
-                      onReset={() => dispatch(fetchRegionalTimeSpent(appliedFilters))}
-                    />
+
+                    <Box sx={{ flexShrink: 0 }}>
+                      <CardFilterPopover
+                        globalFilters={appliedFilters}
+                        mainRoutes={mainRoutes}
+                        onApply={(filters) => {
+                          setCardRegionalFilters(filters);
+                          dispatch(fetchRegionalTimeSpent({ ...filters, sortBy: regionalSortBy }));
+                        }}
+                        onReset={() => {
+                          setCardRegionalFilters(null);
+                          dispatch(fetchRegionalTimeSpent({ ...appliedFilters, sortBy: regionalSortBy }));
+                        }}
+                      />
+                    </Box>
                   </Box>
                   <TableContainer sx={{ overflowX: "auto", flexGrow: 1, width: "100%" }}>
                     <Table size="small" sx={{ minWidth: 450 }}>
@@ -1546,10 +1873,50 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       >
                         <TableRow>
                           <TableCell>Region / Team</TableCell>
-                          <TableCell align="center">Unique Visitors</TableCell>
-                          <TableCell align="center">Total Visits</TableCell>
-                          <TableCell align="center">Actions</TableCell>
-                          <TableCell align="center">Avg Time Spent</TableCell>
+                          <TableCell align="center">
+                            <Typography
+                              variant="caption"
+                              fontWeight={regionalSortBy === "uniqueVisits" ? 700 : 500}
+                              color={regionalSortBy === "uniqueVisits" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "pointer", userSelect: "none" }}
+                              onClick={() => handleRegionalSortChange(null, "uniqueVisits")}
+                            >
+                              Unique Visitors {regionalSortBy === "uniqueVisits" ? "↓" : ""}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Typography
+                              variant="caption"
+                              fontWeight={regionalSortBy === "totalVisits" ? 700 : 500}
+                              color={regionalSortBy === "totalVisits" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "pointer", userSelect: "none" }}
+                              onClick={() => handleRegionalSortChange(null, "totalVisits")}
+                            >
+                              Total Visits {regionalSortBy === "totalVisits" ? "↓" : ""}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Typography
+                              variant="caption"
+                              fontWeight={regionalSortBy === "actions" ? 700 : 500}
+                              color={regionalSortBy === "actions" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "pointer", userSelect: "none" }}
+                              onClick={() => handleRegionalSortChange(null, "actions")}
+                            >
+                              Actions {regionalSortBy === "actions" ? "↓" : ""}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Typography
+                              variant="caption"
+                              fontWeight={regionalSortBy === "avgTimeSpentSeconds" ? 700 : 500}
+                              color={regionalSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.secondary"}
+                              sx={{ cursor: "pointer", userSelect: "none" }}
+                              onClick={() => handleRegionalSortChange(null, "avgTimeSpentSeconds")}
+                            >
+                              Avg Time Spent {regionalSortBy === "avgTimeSpentSeconds" ? "↓" : ""}
+                            </Typography>
+                          </TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1559,20 +1926,41 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               <TableCell>
                                 <Chip label={r.region} size="small" variant="outlined" color="primary" />
                               </TableCell>
-                              <TableCell align="center">{r.uniqueVisits}</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 600 }}>
-                                {r.totalVisits}
+                              <TableCell align="center">
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={regionalSortBy === "uniqueVisits" ? 800 : 500}
+                                  color={regionalSortBy === "uniqueVisits" ? "primary.main" : "text.primary"}
+                                >
+                                  {r.uniqueVisits}
+                                </Typography>
+                              </TableCell>
+                              <TableCell align="center">
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={regionalSortBy === "totalVisits" ? 800 : 600}
+                                  color={regionalSortBy === "totalVisits" ? "primary.main" : "text.primary"}
+                                >
+                                  {r.totalVisits}
+                                </Typography>
                               </TableCell>
                               <TableCell align="center">
                                 <Chip
                                   label={r.actions}
                                   size="small"
-                                  color="info"
+                                  color={regionalSortBy === "actions" ? "primary" : "info"}
+                                  variant={regionalSortBy === "actions" ? "filled" : "outlined"}
                                   sx={{ fontWeight: 700 }}
                                 />
                               </TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 500 }}>
-                                {formatTime(r.avgTimeSpentSeconds)}
+                              <TableCell align="center">
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={regionalSortBy === "avgTimeSpentSeconds" ? 800 : 500}
+                                  color={regionalSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.primary"}
+                                >
+                                  {formatTime(r.avgTimeSpentSeconds)}
+                                </Typography>
                               </TableCell>
                             </TableRow>
                           ))

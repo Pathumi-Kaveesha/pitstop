@@ -412,9 +412,9 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
     return query;
 }
 
-# Dynamic query to fetch top 10 users for the leaderboard ranked by total actions.
+# Dynamic query to fetch top 10 users for the leaderboard ranked by total actions, visits, or average time spent.
 #
-# + filter - Analytics filter parameters including dates, region, user email, and page route
+# + filter - Analytics filter parameters including dates, region, user email, page route, and sortBy
 # + return - Constructed SQL parameterized query
 isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
     int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
@@ -450,7 +450,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
-    return sql:queryConcat(query, `
+    query = sql:queryConcat(query, `
         ),
         UniqueSessionTimes AS (
             SELECT 
@@ -482,14 +482,25 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
         FROM DeduplicatedLogs d
         LEFT JOIN UserTimeSummary uts ON uts.user_email = d.user_email
         GROUP BY d.user_email
-        ORDER BY actions DESC, visits DESC
-        LIMIT 10
     `);
+
+    string rawSort = filter.sortBy ?: "actions";
+    string sortMetric = rawSort.trim().toLowerAscii();
+
+    if sortMetric == "visits" {
+        query = sql:queryConcat(query, ` ORDER BY visits DESC, actions DESC, avgTimeSpentSeconds DESC LIMIT 10`);
+    } else if sortMetric == "avgtimespentseconds" || sortMetric == "avgtimespent" {
+        query = sql:queryConcat(query, ` ORDER BY avgTimeSpentSeconds DESC, actions DESC, visits DESC LIMIT 10`);
+    } else {
+        query = sql:queryConcat(query, ` ORDER BY actions DESC, visits DESC, avgTimeSpentSeconds DESC LIMIT 10`);
+    }
+
+    return query;
 }
 
-# Query to fetch global team performance metrics with route filtering and deduplication guard.
+# Query to fetch global team performance metrics with route filtering, deduplication guard, and dynamic sorting.
 #
-# + filter - Applied time range, user, regional, and route filters
+# + filter - Applied time range, user, regional, route, and sortBy filters
 # + return - Constructed SQL parameterized query
 isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
     int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
@@ -549,9 +560,21 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
             ) AS SIGNED) as avgTimeSpentSeconds
         FROM BaseLogs b
         LEFT JOIN RegionalTimeSummary rts ON rts.region = b.region
-        GROUP BY b.region 
-        ORDER BY totalVisits DESC, actions DESC
+        GROUP BY b.region
     `);
+
+    string rawSort = filter.sortBy ?: "totalVisits";
+    string sortMetric = rawSort.trim().toLowerAscii();
+
+    if sortMetric == "uniquevisits" || sortMetric == "uniqueviews" {
+        query = sql:queryConcat(query, ` ORDER BY uniqueVisits DESC, totalVisits DESC, actions DESC`);
+    } else if sortMetric == "actions" {
+        query = sql:queryConcat(query, ` ORDER BY actions DESC, totalVisits DESC, avgTimeSpentSeconds DESC`);
+    } else if sortMetric == "avgtimespentseconds" || sortMetric == "avgtimespent" {
+        query = sql:queryConcat(query, ` ORDER BY avgTimeSpentSeconds DESC, totalVisits DESC, actions DESC`);
+    } else {
+        query = sql:queryConcat(query, ` ORDER BY totalVisits DESC, actions DESC, avgTimeSpentSeconds DESC`);
+    }
 
     return query;
 }
@@ -608,7 +631,8 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
     `);
 }
 
-# Query to fetch the most searched terms from user activity logs with route filtering.
+# Query to fetch the top searched tags from user activity logs.
+# Filters out queries that do not match an existing database tag and normalizes case (e.g. 'ai' -> 'AI').
 #
 # + filter - Analytics filter parameters including dates, region, user email, and page route
 # + return - SQL parameterized query
@@ -617,15 +641,25 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
 
     sql:ParameterizedQuery query = `
         SELECT 
-            JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query')) as searchTerm,
+            t.tag_name as searchTerm,
             CAST(COUNT(*) AS SIGNED) as searchCount,
             CAST(COUNT(DISTINCT l.user_email) AS SIGNED) as uniqueSearchCount
         FROM user_activity_logs l
+        INNER JOIN tag t ON (
+            LOWER(TRIM(t.tag_name)) = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query'))))
+            OR LOWER(TRIM(t.tag_name)) = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.rawText'))))
+            OR JSON_CONTAINS(
+                LOWER(COALESCE(JSON_EXTRACT(l.metadata, '$.tagsSelected'), '[]')), 
+                LOWER(JSON_QUOTE(t.tag_name))
+            )
+        )
         LEFT JOIN content c ON c.content_id = l.content_id
         LEFT JOIN section s ON s.section_id = c.section_id
         LEFT JOIN route r ON r.route_id = s.route_id
         LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-        WHERE UPPER(l.event_type) = 'SEARCH' AND JSON_EXTRACT(l.metadata, '$.query') IS NOT NULL
+        WHERE UPPER(l.event_type) = 'SEARCH' 
+          AND JSON_EXTRACT(l.metadata, '$.query') IS NOT NULL
+          AND COALESCE(t.is_deleted, 0) = 0
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
@@ -633,7 +667,7 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
-    return sql:queryConcat(query, ` GROUP BY searchTerm ORDER BY searchCount DESC LIMIT 10`);
+    return sql:queryConcat(query, ` GROUP BY t.tag_name ORDER BY searchCount DESC, uniqueSearchCount DESC LIMIT 10`);
 }
 
 # Query to fetch platform-wide summary totals (unbounded by top-10 limits).
