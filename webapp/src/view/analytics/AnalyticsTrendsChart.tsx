@@ -147,35 +147,36 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
       const cleanDateStr = item.date.split("T")[0];
       const parts = cleanDateStr.split("-").map(Number);
 
-      let parsedDate: Date;
+      // Only parse YYYY-MM-DD daily date strings
+      let parsedDate: Date | null = null;
       if (parts.length === 3 && !parts.some(isNaN)) {
-        parsedDate = new Date(parts[0], parts[1] - 1, parts[2]); // Local midnight
-      } else {
-        parsedDate = new Date(item.date);
+        parsedDate = new Date(parts[0], parts[1] - 1, parts[2]);
       }
 
-      const isValid = !isNaN(parsedDate.getTime());
+      if (parsedDate && !isNaN(parsedDate.getTime())) {
+        return {
+          ...item,
+          displayDate: parsedDate.toLocaleDateString("en-US", {
+            weekday: isWideRange || isMobile ? undefined : "short",
+            month: "short",
+            day: "numeric",
+          }),
+          formattedDate:
+            item.formattedDate ||
+            parsedDate.toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            }),
+        };
+      }
 
+      // Pre-formatted aggregation strings (weekly, monthly, quarterly)
       return {
         ...item,
-        displayDate: isValid
-          ? parsedDate.toLocaleDateString("en-US", {
-              // Omit weekday name on small screens or wide ranges to prevent text overlap
-              weekday: isWideRange || isMobile ? undefined : "short",
-              month: "short",
-              day: "numeric",
-            })
-          : item.date,
-        formattedDate:
-          item.formattedDate ||
-          (isValid
-            ? parsedDate.toLocaleDateString("en-US", {
-                weekday: "long",
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })
-            : item.date),
+        displayDate: item.date,
+        formattedDate: item.formattedDate || item.date,
       };
     });
   }, [trendData, isMobile]);

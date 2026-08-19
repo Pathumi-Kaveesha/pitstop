@@ -776,6 +776,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + region - Optional region filter
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
+    # + sortBy - Optional sorting metric ("actions", "visits", or "avgTimeSpentSeconds")
     # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
     # + return - Array of UserLeaderboardEntry records or 500 Internal Server Error
     resource function get analytics/summary/leaderboard(
@@ -785,6 +786,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? region, 
         string? userEmail,
         string? pageRoute,
+        string? sortBy,
         int? timezoneOffsetMinutes
     ) returns types:UserLeaderboardEntry[]|http:Forbidden|http:InternalServerError {
 
@@ -799,6 +801,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             region: region, 
             userEmail: userEmail,
             pageRoute: pageRoute,
+            sortBy: sortBy,
             timezoneOffsetMinutes: timezoneOffsetMinutes
         };
         types:UserLeaderboardEntry[]|error data = database:getUserLeaderboardMetrics(filter);
@@ -816,6 +819,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + region - Optional region filter
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
+    # + sortBy - Optional sorting metric ("totalVisits", "uniqueVisits", "actions", or "avgTimeSpentSeconds")
     # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
     # + return - Array of RegionalTimeMetric records or 500 Internal Server Error
     resource function get analytics/summary/regional\-time(
@@ -825,6 +829,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? region, 
         string? userEmail,
         string? pageRoute,
+        string? sortBy,
         int? timezoneOffsetMinutes
     ) returns types:RegionalTimeMetric[]|http:Forbidden|http:InternalServerError {
 
@@ -839,6 +844,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             region: region, 
             userEmail: userEmail,
             pageRoute: pageRoute,
+            sortBy: sortBy,
             timezoneOffsetMinutes: timezoneOffsetMinutes
         };
         types:RegionalTimeMetric[]|error data = database:getRegionalTimeMetrics(filter);
