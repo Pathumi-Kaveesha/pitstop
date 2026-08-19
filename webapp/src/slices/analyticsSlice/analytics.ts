@@ -100,7 +100,14 @@ export interface AnalyticsFilterParams {
   region?: string;
   userEmail?: string;
   pageRoute?: string;
-  sortBy?: "totalViews" | "uniqueViews" | "actions" | "visits" | "avgTimeSpentSeconds" | string;
+  sortBy?:
+    | "totalViews"
+    | "uniqueViews"
+    | "actions"
+    | "visits"
+    | "avgTimeSpentSeconds"
+    | "totalVisits"
+    | "uniqueVisits";
   timezoneOffsetMinutes?: number;
 }
 
