@@ -365,6 +365,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const [cardLeaderboardFilters, setCardLeaderboardFilters] = useState<AnalyticsFilterParams | null>(null);
   const [cardRegionalFilters, setCardRegionalFilters] = useState<AnalyticsFilterParams | null>(null);
   const [granularity, setGranularity] = useState<TrendGranularity>("daily");
+  const [isGranularityManuallySet, setIsGranularityManuallySet] = useState<boolean>(false);
 
   const [topContentSortBy, setTopContentSortBy] = useState<"totalViews" | "uniqueViews">("totalViews");
   const [leaderboardSortBy, setLeaderboardSortBy] = useState<"actions" | "visits" | "avgTimeSpentSeconds">("actions");
@@ -416,6 +417,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
     setTrendFilters(null);
     setCardLeaderboardFilters(null);
     setCardRegionalFilters(null);
+    setIsGranularityManuallySet(false);
     dispatch(clearTrendsOverride());
     dispatch(fetchAnalyticsSummary(newApplied)).then(() => {
       if (leaderboardSortBy !== "actions") {
@@ -436,6 +438,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
     setTopContentSortBy("totalViews");
     setLeaderboardSortBy("actions");
     setRegionalSortBy("totalVisits");
+    setIsGranularityManuallySet(false);
+    setGranularity("daily");
     setDateError("");
 
     const resetApplied: AnalyticsFilterParams = {
@@ -526,7 +530,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
     fetchMainRoutes();
   }, [dispatch, timezoneOffsetMinutes]);
 
+  // Auto-switch granularity when date ranges are selected, unless manually overridden by the user
   useEffect(() => {
+    if (isGranularityManuallySet) return;
+
     const activeFilter = trendFilters || appliedFilters;
     let sDate: Date | null = null;
     let eDate: Date | null = null;
@@ -551,8 +558,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
       } else {
         setGranularity("daily");
       }
+    } else {
+      setGranularity("daily");
     }
-  }, [trendFilters, appliedFilters]);
+  }, [trendFilters, appliedFilters, isGranularityManuallySet]);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -1311,7 +1320,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   value={granularity}
                   exclusive
                   onChange={(_e, val) => {
-                    if (val !== null) setGranularity(val as TrendGranularity);
+                    if (val !== null) {
+                      setGranularity(val as TrendGranularity);
+                      setIsGranularityManuallySet(true);
+                    }
                   }}
                   size="small"
                   aria-label="trend aggregation level"
@@ -1340,6 +1352,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   }}
                   onReset={() => {
                     setTrendFilters(null);
+                    setIsGranularityManuallySet(false);
                     dispatch(clearTrendsOverride());
                   }}
                 />
