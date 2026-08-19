@@ -27,6 +27,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   Chip,
   CircularProgress,
   FormControl,
@@ -343,6 +344,54 @@ const getOrdinalSuffix = (num: number): string => {
   return `${num}th`;
 };
 
+interface SortableHeaderCellProps<T extends string> {
+  metric: T;
+  activeMetric: T;
+  label: string;
+  onSort: (metric: T) => void;
+  tooltipTitle?: string;
+}
+
+const SortableHeaderCell = <T extends string>({
+  metric,
+  activeMetric,
+  label,
+  onSort,
+  tooltipTitle,
+}: SortableHeaderCellProps<T>) => {
+  const active = activeMetric === metric;
+
+  const content = (
+    <TableSortLabel
+      active={active}
+      direction="desc"
+      onClick={() => onSort(metric)}
+    >
+      <Typography
+        variant="caption"
+        fontWeight={active ? 700 : 500}
+        color={active ? "primary.main" : "text.secondary"}
+      >
+        {label}
+      </Typography>
+    </TableSortLabel>
+  );
+
+  return (
+    <TableCell align="center" sortDirection={active ? "desc" : false}>
+      {tooltipTitle ? (
+        <Tooltip title={tooltipTitle} arrow>
+          <Box component="span" sx={{ display: "inline-flex", cursor: "pointer" }}>
+            {content}
+          </Box>
+        </Tooltip>
+      ) : (
+        content
+      )}
+    </TableCell>
+  );
+};
+
 const AnalyticsAdminDashboard: React.FC = () => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
@@ -364,6 +413,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const [trendFilters, setTrendFilters] = useState<AnalyticsFilterParams | null>(null);
   const [cardLeaderboardFilters, setCardLeaderboardFilters] = useState<AnalyticsFilterParams | null>(null);
   const [cardRegionalFilters, setCardRegionalFilters] = useState<AnalyticsFilterParams | null>(null);
+  
   const [granularity, setGranularity] = useState<TrendGranularity>("daily");
   const [isGranularityManuallySet, setIsGranularityManuallySet] = useState<boolean>(false);
 
@@ -456,7 +506,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   };
 
   const handleSortChange = (
-    _event: React.MouseEvent<HTMLElement>,
+    _event: React.MouseEvent<HTMLElement> | null,
     newSortBy: "totalViews" | "uniqueViews" | null
   ) => {
     if (newSortBy !== null) {
@@ -1480,37 +1530,20 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               </Box>
                             </Tooltip>
                           </TableCell>
-                          <TableCell align="center">
-                            <Tooltip
-                              title="Total times this content modal was opened. Opening a preview counts as 1 view, even if an outlink is also clicked inside that modal."
-                              arrow
-                            >
-                              <Typography
-                                variant="caption"
-                                fontWeight={topContentSortBy === "totalViews" ? 700 : 500}
-                                color={topContentSortBy === "totalViews" ? "primary.main" : "text.secondary"}
-                                sx={{ cursor: "pointer" }}
-                                onClick={(e) => handleSortChange(e, "totalViews")}
-                              >
-                                Total Views{" "}
-                                {topContentSortBy === "totalViews" ? "↓" : ""}
-                              </Typography>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Tooltip title="Number of distinct team members who viewed or opened this content." arrow>
-                              <Typography
-                                variant="caption"
-                                fontWeight={topContentSortBy === "uniqueViews" ? 700 : 500}
-                                color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary"}
-                                sx={{ cursor: "pointer" }}
-                                onClick={(e) => handleSortChange(e, "uniqueViews")}
-                              >
-                                Unique Views{" "}
-                                {topContentSortBy === "uniqueViews" ? "↓" : ""}
-                              </Typography>
-                            </Tooltip>
-                          </TableCell>
+                          <SortableHeaderCell
+                            metric="totalViews"
+                            activeMetric={topContentSortBy}
+                            label="Total Views"
+                            onSort={(m) => handleSortChange(null, m)}
+                            tooltipTitle="Total times this content modal was opened. Opening a preview counts as 1 view, even if an outlink is also clicked inside that modal."
+                          />
+                          <SortableHeaderCell
+                            metric="uniqueViews"
+                            activeMetric={topContentSortBy}
+                            label="Unique Views"
+                            onSort={(m) => handleSortChange(null, m)}
+                            tooltipTitle="Number of distinct team members who viewed or opened this content."
+                          />
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1697,39 +1730,24 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       >
                         <TableRow>
                           <TableCell>User</TableCell>
-                          <TableCell align="center">
-                            <Typography
-                              variant="caption"
-                              fontWeight={leaderboardSortBy === "visits" ? 700 : 500}
-                              color={leaderboardSortBy === "visits" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "pointer", userSelect: "none" }}
-                              onClick={() => handleLeaderboardSortChange(null, "visits")}
-                            >
-                              Visits {leaderboardSortBy === "visits" ? "↓" : ""}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Typography
-                              variant="caption"
-                              fontWeight={leaderboardSortBy === "actions" ? 700 : 500}
-                              color={leaderboardSortBy === "actions" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "pointer", userSelect: "none" }}
-                              onClick={() => handleLeaderboardSortChange(null, "actions")}
-                            >
-                              Actions {leaderboardSortBy === "actions" ? "↓" : ""}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Typography
-                              variant="caption"
-                              fontWeight={leaderboardSortBy === "avgTimeSpentSeconds" ? 700 : 500}
-                              color={leaderboardSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "pointer", userSelect: "none" }}
-                              onClick={() => handleLeaderboardSortChange(null, "avgTimeSpentSeconds")}
-                            >
-                              Avg Time Spent {leaderboardSortBy === "avgTimeSpentSeconds" ? "↓" : ""}
-                            </Typography>
-                          </TableCell>
+                          <SortableHeaderCell
+                            metric="visits"
+                            activeMetric={leaderboardSortBy}
+                            label="Visits"
+                            onSort={(m) => handleLeaderboardSortChange(null, m)}
+                          />
+                          <SortableHeaderCell
+                            metric="actions"
+                            activeMetric={leaderboardSortBy}
+                            label="Actions"
+                            onSort={(m) => handleLeaderboardSortChange(null, m)}
+                          />
+                          <SortableHeaderCell
+                            metric="avgTimeSpentSeconds"
+                            activeMetric={leaderboardSortBy}
+                            label="Avg Time Spent"
+                            onSort={(m) => handleLeaderboardSortChange(null, m)}
+                          />
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1890,50 +1908,30 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       >
                         <TableRow>
                           <TableCell>Region / Team</TableCell>
-                          <TableCell align="center">
-                            <Typography
-                              variant="caption"
-                              fontWeight={regionalSortBy === "uniqueVisits" ? 700 : 500}
-                              color={regionalSortBy === "uniqueVisits" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "pointer", userSelect: "none" }}
-                              onClick={() => handleRegionalSortChange(null, "uniqueVisits")}
-                            >
-                              Unique Visitors {regionalSortBy === "uniqueVisits" ? "↓" : ""}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Typography
-                              variant="caption"
-                              fontWeight={regionalSortBy === "totalVisits" ? 700 : 500}
-                              color={regionalSortBy === "totalVisits" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "pointer", userSelect: "none" }}
-                              onClick={() => handleRegionalSortChange(null, "totalVisits")}
-                            >
-                              Total Visits {regionalSortBy === "totalVisits" ? "↓" : ""}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Typography
-                              variant="caption"
-                              fontWeight={regionalSortBy === "actions" ? 700 : 500}
-                              color={regionalSortBy === "actions" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "pointer", userSelect: "none" }}
-                              onClick={() => handleRegionalSortChange(null, "actions")}
-                            >
-                              Actions {regionalSortBy === "actions" ? "↓" : ""}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Typography
-                              variant="caption"
-                              fontWeight={regionalSortBy === "avgTimeSpentSeconds" ? 700 : 500}
-                              color={regionalSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.secondary"}
-                              sx={{ cursor: "pointer", userSelect: "none" }}
-                              onClick={() => handleRegionalSortChange(null, "avgTimeSpentSeconds")}
-                            >
-                              Avg Time Spent {regionalSortBy === "avgTimeSpentSeconds" ? "↓" : ""}
-                            </Typography>
-                          </TableCell>
+                          <SortableHeaderCell
+                            metric="uniqueVisits"
+                            activeMetric={regionalSortBy}
+                            label="Unique Visitors"
+                            onSort={(m) => handleRegionalSortChange(null, m)}
+                          />
+                          <SortableHeaderCell
+                            metric="totalVisits"
+                            activeMetric={regionalSortBy}
+                            label="Total Visits"
+                            onSort={(m) => handleRegionalSortChange(null, m)}
+                          />
+                          <SortableHeaderCell
+                            metric="actions"
+                            activeMetric={regionalSortBy}
+                            label="Actions"
+                            onSort={(m) => handleRegionalSortChange(null, m)}
+                          />
+                          <SortableHeaderCell
+                            metric="avgTimeSpentSeconds"
+                            activeMetric={regionalSortBy}
+                            label="Avg Time Spent"
+                            onSort={(m) => handleRegionalSortChange(null, m)}
+                          />
                         </TableRow>
                       </TableHead>
                       <TableBody>
