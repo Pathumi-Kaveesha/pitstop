@@ -172,7 +172,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
               inFlightDurationRef.current = 0;
               if (activeDurationRef.current < 1) {
                 localStorage.removeItem(storageKey);
-              } else {
+              } else if (userInfo?.email) {
                 const pendingData = {
                   durationSeconds: activeDurationRef.current,
                   pageRoute: routeToSend,
@@ -180,7 +180,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
                   trackingType,
                   contentId,
                   sessionId: currentSessionId,
-                  userEmail: userInfo?.email || "",
+                  userEmail: userInfo.email,
                   timestamp: new Date().toISOString(),
                 };
                 localStorage.setItem(storageKey, JSON.stringify(pendingData));
@@ -238,17 +238,19 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
         const storageKey = `pitstop_pending_time_${eventIdToSend}`;
         const totalBackupSeconds = activeDurationRef.current + inFlightDurationRef.current;
 
-        const pendingData = {
-          durationSeconds: totalBackupSeconds,
-          pageRoute: resolvePageRoute(),
-          eventId: eventIdToSend,
-          trackingType,
-          contentId,
-          sessionId: getOrCreateSessionId(),
-          userEmail: userInfo?.email || "",
-          timestamp: new Date().toISOString(),
-        };
-        localStorage.setItem(storageKey, JSON.stringify(pendingData));
+        if (userInfo?.email) {
+          const pendingData = {
+            durationSeconds: totalBackupSeconds,
+            pageRoute: resolvePageRoute(),
+            eventId: eventIdToSend,
+            trackingType,
+            contentId,
+            sessionId: getOrCreateSessionId(),
+            userEmail: userInfo.email,
+            timestamp: new Date().toISOString(),
+          };
+          localStorage.setItem(storageKey, JSON.stringify(pendingData));
+        }
       }
       lastTickTimeRef.current = now;
 

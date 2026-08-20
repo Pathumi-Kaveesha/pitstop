@@ -69,7 +69,7 @@ export default function Layout() {
             if (!rawData) continue;
 
             const data = JSON.parse(rawData);
-            const isSameUser = !data.userEmail || data.userEmail === userInfo.email;
+            const isSameUser = Boolean(data?.userEmail && data.userEmail === userInfo.email);
 
             if (data && data.durationSeconds >= 1 && isSameUser) {
               localStorage.removeItem(key);
