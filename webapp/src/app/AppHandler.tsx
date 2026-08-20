@@ -35,6 +35,8 @@ import { Role } from "@utils/types";
 // For matomo integration
 export declare let _paq: unknown[];
 
+const PROTECTED_ADMIN_PATHS = ["/quiz-admin", "/analytics-dashboard", "/report"];
+
 const GlobalSnackbarListener = () => {
   const { enqueueSnackbar } = useSnackbar();
   const dispatch = useAppDispatch();
@@ -59,58 +61,65 @@ const AppHandler = () => {
   const route = useAppSelector((state: RootState) => state.route);
   const authorizedRoles: Role[] = auth.roles || [];
 
-  const router = useMemo(() => createBrowserRouter([
-    {
-      path: "/",
-      element: <Layout />,
-      errorElement: <Error />,
-      children: [
-        ...getActiveRoutesV2(route.routes),
-        {
-          path: "/quiz-admin",
-          element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
-            React.createElement(View.QuizAdminDashboard)
-          ) : (
-            <Error />
-          ),
-          errorElement: <Error />,
-        },
-        {
-          path: "/analytics-dashboard",
-          element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
-            React.createElement(View.AnalyticsAdminDashboard)
-          ) : (
-            <Error />
-          ),
-          errorElement: <Error />,
-        },
-      ],
-    },
-    {
-      path: "/search",
-      element: <Search />,
-      errorElement: <Error />,
-    },
-    {
-      path: "/report",
-      element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
-        <Summary />
-      ) : (
-        <Error />
-      ),
-      errorElement: <Error />,
-    },
-    {
-      path: "/my-board",
-      element: React.createElement(View.MyBoard),
-      errorElement: <Error />,
-    },
-    {
-      path: "/vertical/:verticalName/:tags",
-      element: <VerticalTemplate />,
-      errorElement: <Error />,
-    },
-  ]), [route.routes, authorizedRoles]);
+  const router = useMemo(() => {
+    // Filter dynamic DB routes so they cannot shadow protected admin paths
+    const dynamicRoutes = getActiveRoutesV2(route.routes).filter(
+      (r) => !PROTECTED_ADMIN_PATHS.includes(r.path)
+    );
+
+    return createBrowserRouter([
+      {
+        path: "/",
+        element: <Layout />,
+        errorElement: <Error />,
+        children: [
+          ...dynamicRoutes,
+          {
+            path: "/quiz-admin",
+            element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+              React.createElement(View.QuizAdminDashboard)
+            ) : (
+              <Error />
+            ),
+            errorElement: <Error />,
+          },
+          {
+            path: "/analytics-dashboard",
+            element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+              React.createElement(View.AnalyticsAdminDashboard)
+            ) : (
+              <Error />
+            ),
+            errorElement: <Error />,
+          },
+        ],
+      },
+      {
+        path: "/search",
+        element: <Search />,
+        errorElement: <Error />,
+      },
+      {
+        path: "/report",
+        element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+          <Summary />
+        ) : (
+          <Error />
+        ),
+        errorElement: <Error />,
+      },
+      {
+        path: "/my-board",
+        element: React.createElement(View.MyBoard),
+        errorElement: <Error />,
+      },
+      {
+        path: "/vertical/:verticalName/:tags",
+        element: <VerticalTemplate />,
+        errorElement: <Error />,
+      },
+    ]);
+  }, [route.routes, authorizedRoles]);
 
   return (
     <>
