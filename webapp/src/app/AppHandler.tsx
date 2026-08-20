@@ -37,6 +37,18 @@ export declare let _paq: unknown[];
 
 const PROTECTED_ADMIN_PATHS = ["/quiz-admin", "/analytics-dashboard", "/report"];
 
+const removeProtectedDynamicRoutes = (routes: any[] = []): any[] =>
+  routes.flatMap((route) => {
+    if (PROTECTED_ADMIN_PATHS.includes(route.path)) {
+      return [];
+    }
+
+    return [{
+      ...route,
+      ...(route.children ? { children: removeProtectedDynamicRoutes(route.children) } : {}),
+    }];
+  });
+
 const GlobalSnackbarListener = () => {
   const { enqueueSnackbar } = useSnackbar();
   const dispatch = useAppDispatch();
@@ -62,10 +74,7 @@ const AppHandler = () => {
   const authorizedRoles: Role[] = auth.roles || [];
 
   const router = useMemo(() => {
-    // Filter dynamic DB routes so they cannot shadow protected admin paths
-    const dynamicRoutes = getActiveRoutesV2(route.routes).filter(
-      (r) => !PROTECTED_ADMIN_PATHS.includes(r.path)
-    );
+    const dynamicRoutes = removeProtectedDynamicRoutes(getActiveRoutesV2(route.routes));
 
     return createBrowserRouter([
       {
