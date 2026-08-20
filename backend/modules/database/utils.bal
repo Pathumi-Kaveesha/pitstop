@@ -609,14 +609,14 @@ isolated function buildRegionPredicate(string? region) returns sql:Parameterized
         return ``;
     }
     if regions.length() == 1 {
-        return ` AND l.region = ${regions[0]}`;
+        return ` AND UPPER(l.region) = ${regions[0].trim().toUpperAscii()}`;
     }
-    sql:ParameterizedQuery query = ` AND l.region IN (`;
+    sql:ParameterizedQuery query = ` AND UPPER(l.region) IN (`;
     foreach int i in 0 ..< regions.length() {
         if i > 0 {
             query = sql:queryConcat(query, `, `);
         }
-        query = sql:queryConcat(query, `${regions[i]}`);
+        query = sql:queryConcat(query, `${regions[i].trim().toUpperAscii()}`);
     }
     query = sql:queryConcat(query, `)`);
     return query;

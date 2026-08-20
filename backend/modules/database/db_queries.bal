@@ -502,6 +502,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
 }
 
 # Query to fetch global team performance metrics with route filtering, deduplication guard, and dynamic sorting.
+# Query to fetch global team performance metrics with route filtering, deduplication guard, and dynamic sorting.
 #
 # + filter - Applied time range, user, regional, route, and sortBy filters
 # + return - Constructed SQL parameterized query
@@ -511,7 +512,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
     sql:ParameterizedQuery query = `
         WITH BaseLogs AS (
             SELECT 
-                l.region as region,
+                UPPER(l.region) as region,
                 l.user_email,
                 l.session_id,
                 l.event_type,
