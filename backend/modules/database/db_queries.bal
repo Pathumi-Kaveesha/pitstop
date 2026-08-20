@@ -502,6 +502,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
 }
 
 # Query to fetch global team performance metrics with route filtering, deduplication guard, and dynamic sorting.
+# Query to fetch global team performance metrics with route filtering, deduplication guard, and dynamic sorting.
 #
 # + filter - Applied time range, user, regional, route, and sortBy filters
 # + return - Constructed SQL parameterized query
@@ -511,7 +512,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
     sql:ParameterizedQuery query = `
         WITH BaseLogs AS (
             SELECT 
-                COALESCE(NULLIF(l.region, ''), 'Unassigned') as region,
+                UPPER(l.region) as region,
                 l.user_email,
                 l.session_id,
                 l.event_type,
@@ -525,7 +526,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
             LEFT JOIN section s ON s.section_id = c.section_id
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-            WHERE 1=1
+            WHERE UPPER(l.region) IN ('NA', 'ME', 'APAC', 'AFRICA', 'LATAM', 'EU', 'UK')
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
