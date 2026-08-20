@@ -97,7 +97,7 @@ export default function Layout() {
                 // Re-store backup in localStorage if trackEvent resolved null or threw an error
                 localStorage.setItem(key, rawData);
               }
-            } else if (!isSameUser) {
+            } else {
               localStorage.removeItem(key);
             }
           } catch (e) {
