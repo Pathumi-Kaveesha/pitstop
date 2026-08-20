@@ -16,6 +16,8 @@
 
 import { useEffect, useRef } from "react";
 import { useAnalytics, getOrCreateSessionId } from "./useAnalytics";
+import { useAppSelector } from "@slices/store";
+import { selectUserInfo } from "@slices/authSlice";
 import { AnalyticsEventType } from "@utils/types";
 
 const ACTIVE_TAB_KEY = "pitstop_primary_active_tab";
@@ -35,11 +37,14 @@ interface TimeTrackerOptions {
 export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
   const { pageRoute = null, contentId = null, trackingType = "page_view_duration" } = options;
   const { trackEvent, flushBeaconEvent } = useAnalytics();
+  const userInfo = useAppSelector(selectUserInfo);
 
   const lastTickTimeRef = useRef<number>(performance.now());
   const activeDurationRef = useRef<number>(0);
   const inFlightDurationRef = useRef<number>(0);
   const lastUserActivityRef = useRef<number>(performance.now());
+  
+  const isFlushingRef = useRef<boolean>(false);
 
   const windowHasFocusRef = useRef<boolean>(
     typeof document !== "undefined" ? document.hasFocus() : true
@@ -67,6 +72,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     lastTickTimeRef.current = performance.now();
     activeDurationRef.current = 0;
     inFlightDurationRef.current = 0;
+    isFlushingRef.current = false;
 
     const routeKeyPart = pageRoute ?? "content";
     const tabKey = `${ACTIVE_TAB_KEY}_${trackingType}_${routeKeyPart}`;
@@ -107,7 +113,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     );
 
     const flushTimeSpent = async (isLeavingPage: boolean = false) => {
-      if (!isPrimaryTab()) return;
+      if (!isPrimaryTab() || isFlushingRef.current) return;
 
       const now = performance.now();
       const elapsedSeconds = Math.floor((now - lastTickTimeRef.current) / 1000);
@@ -118,7 +124,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
       const finalSecondsToReport = activeDurationRef.current + (isUserIdle ? 0 : validElapsed);
 
       const secondsToSend = finalSecondsToReport;
-      const eventIdToSend = activeEventIdRef.current; // Always reuses the same event ID for this route visit!
+      const eventIdToSend = activeEventIdRef.current;
       const routeToSend = resolvePageRoute();
       const currentSessionId = getOrCreateSessionId();
       const storageKey = `pitstop_pending_time_${eventIdToSend}`;
@@ -130,62 +136,69 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
         return;
       }
 
-      const metadata = {
-        durationSeconds: secondsToSend,
-        pageRoute: routeToSend,
-        eventId: eventIdToSend,
-        trackingType,
-        timestamp: new Date().toISOString(),
-      };
+      activeDurationRef.current = 0;
+      lastTickTimeRef.current = now;
+      isFlushingRef.current = true;
 
-      if (isLeavingPage) {
-        inFlightDurationRef.current = 0;
-        localStorage.removeItem(storageKey);
-        flushBeaconEvent(
-          AnalyticsEventType.SESSION_TIME,
-          contentId,
-          metadata,
-          currentSessionId
-        );
-      } else if (navigator.onLine) {
-        inFlightDurationRef.current = secondsToSend;
-        activeDurationRef.current = 0;
-        lastTickTimeRef.current = performance.now();
+      try {
+        const metadata = {
+          durationSeconds: secondsToSend,
+          pageRoute: routeToSend,
+          eventId: eventIdToSend,
+          trackingType,
+          timestamp: new Date().toISOString(),
+        };
 
-        try {
-          const res = await trackEvent(
+        if (isLeavingPage) {
+          inFlightDurationRef.current = 0;
+          localStorage.removeItem(storageKey);
+          flushBeaconEvent(
             AnalyticsEventType.SESSION_TIME,
             contentId,
             metadata,
             currentSessionId
           );
-          if (res) {
-            inFlightDurationRef.current = 0;
-            if (activeDurationRef.current < 1) {
-              localStorage.removeItem(storageKey);
+        } else if (navigator.onLine) {
+          inFlightDurationRef.current = secondsToSend;
+
+          try {
+            const res = await trackEvent(
+              AnalyticsEventType.SESSION_TIME,
+              contentId,
+              metadata,
+              currentSessionId
+            );
+            if (res) {
+              inFlightDurationRef.current = 0;
+              if (activeDurationRef.current < 1) {
+                localStorage.removeItem(storageKey);
+              } else if (userInfo?.email) {
+                const pendingData = {
+                  durationSeconds: activeDurationRef.current,
+                  pageRoute: routeToSend,
+                  eventId: eventIdToSend,
+                  trackingType,
+                  contentId,
+                  sessionId: currentSessionId,
+                  userEmail: userInfo.email,
+                  timestamp: new Date().toISOString(),
+                };
+                localStorage.setItem(storageKey, JSON.stringify(pendingData));
+              }
             } else {
-              const pendingData = {
-                durationSeconds: activeDurationRef.current,
-                pageRoute: routeToSend,
-                eventId: eventIdToSend,
-                trackingType,
-                contentId,
-                sessionId: currentSessionId,
-                timestamp: new Date().toISOString(),
-              };
-              localStorage.setItem(storageKey, JSON.stringify(pendingData));
+              activeDurationRef.current += inFlightDurationRef.current;
+              inFlightDurationRef.current = 0;
             }
-          } else {
+          } catch (e) {
+            console.warn("Failed to flush time tracking event:", e);
             activeDurationRef.current += inFlightDurationRef.current;
             inFlightDurationRef.current = 0;
           }
-        } catch (e) {
-          console.warn("Failed to flush time tracking event:", e);
-          activeDurationRef.current += inFlightDurationRef.current;
-          inFlightDurationRef.current = 0;
+        } else {
+          activeDurationRef.current += secondsToSend;
         }
-      } else {
-        activeDurationRef.current += secondsToSend;
+      } finally {
+        isFlushingRef.current = false;
       }
     };
 
@@ -225,16 +238,19 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
         const storageKey = `pitstop_pending_time_${eventIdToSend}`;
         const totalBackupSeconds = activeDurationRef.current + inFlightDurationRef.current;
 
-        const pendingData = {
-          durationSeconds: totalBackupSeconds,
-          pageRoute: resolvePageRoute(),
-          eventId: eventIdToSend,
-          trackingType,
-          contentId,
-          sessionId: getOrCreateSessionId(),
-          timestamp: new Date().toISOString(),
-        };
-        localStorage.setItem(storageKey, JSON.stringify(pendingData));
+        if (userInfo?.email) {
+          const pendingData = {
+            durationSeconds: totalBackupSeconds,
+            pageRoute: resolvePageRoute(),
+            eventId: eventIdToSend,
+            trackingType,
+            contentId,
+            sessionId: getOrCreateSessionId(),
+            userEmail: userInfo.email,
+            timestamp: new Date().toISOString(),
+          };
+          localStorage.setItem(storageKey, JSON.stringify(pendingData));
+        }
       }
       lastTickTimeRef.current = now;
 
@@ -298,7 +314,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
 
       void flushTimeSpent(true);
     };
-  }, [pageRoute, contentId, trackingType, trackEvent, flushBeaconEvent]);
+  }, [pageRoute, contentId, trackingType, trackEvent, flushBeaconEvent, userInfo?.email]);
 };
 
 export const usePageTimeTracker = (pageRoute: string) => {

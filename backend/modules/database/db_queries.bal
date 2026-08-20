@@ -403,7 +403,10 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
 
     query = sql:queryConcat(query, ` GROUP BY l.content_id, c.description, c.content_type `);
 
-    if filter.sortBy == "uniqueViews" {
+    string rawSort = filter.sortBy ?: "totalViews";
+    string sortMetric = rawSort.trim().toLowerAscii();
+
+    if sortMetric == "uniqueviews" {
         query = sql:queryConcat(query, ` ORDER BY uniqueViews DESC, totalViews DESC LIMIT 10`);
     } else {
         query = sql:queryConcat(query, ` ORDER BY totalViews DESC, uniqueViews DESC LIMIT 10`);
@@ -456,7 +459,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             SELECT 
                 user_email,
                 dedupeEventId,
-                SUM(durationSecs) as durationSecs
+                MAX(durationSecs) as durationSecs
             FROM DeduplicatedLogs
             WHERE UPPER(event_type) = 'SESSION_TIME'
             GROUP BY user_email, dedupeEventId
@@ -537,7 +540,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
                 region,
                 user_email,
                 dedupeEventId,
-                SUM(durationSecs) as totalDuration
+                MAX(durationSecs) as totalDuration
             FROM BaseLogs
             WHERE UPPER(event_type) = 'SESSION_TIME'
             GROUP BY region, user_email, dedupeEventId
@@ -566,7 +569,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
     string rawSort = filter.sortBy ?: "totalVisits";
     string sortMetric = rawSort.trim().toLowerAscii();
 
-    if sortMetric == "uniquevisits" || sortMetric == "uniqueviews" {
+    if sortMetric == "uniquevisits" {
         query = sql:queryConcat(query, ` ORDER BY uniqueVisits DESC, totalVisits DESC, actions DESC`);
     } else if sortMetric == "actions" {
         query = sql:queryConcat(query, ` ORDER BY actions DESC, totalVisits DESC, avgTimeSpentSeconds DESC`);
@@ -685,7 +688,7 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
+                MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -794,7 +797,7 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
+                MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id

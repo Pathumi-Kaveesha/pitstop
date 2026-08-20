@@ -43,6 +43,7 @@ export default function Layout() {
   const dispatch = useAppDispatch();
   const { trackEvent } = useAnalytics();
   const common = useAppSelector((state: RootState) => state.common);
+  const userInfo = useSelector(selectUserInfo);
   const prevPathnameRef = useRef<string>("");
 
   const route = useAppSelector((state: RootState) => state.route);
@@ -52,7 +53,7 @@ export default function Layout() {
 
   // Crash Recovery Handler: Scans for un-flushed session times from previous browser crashes
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !userInfo?.email) return;
 
     const runCrashRecovery = async () => {
       const keys: string[] = [];
@@ -67,11 +68,12 @@ export default function Layout() {
             const rawData = localStorage.getItem(key);
             if (!rawData) continue;
 
-            localStorage.removeItem(key);
-
             const data = JSON.parse(rawData);
+            const isSameUser = Boolean(data?.userEmail && data.userEmail === userInfo.email);
 
-            if (data && data.durationSeconds >= 1) {
+            if (data && data.durationSeconds >= 1 && isSameUser) {
+              localStorage.removeItem(key);
+
               const metadata = {
                 durationSeconds: data.durationSeconds,
                 pageRoute: data.pageRoute,
@@ -95,6 +97,8 @@ export default function Layout() {
                 // Re-store backup in localStorage if trackEvent resolved null or threw an error
                 localStorage.setItem(key, rawData);
               }
+            } else {
+              localStorage.removeItem(key);
             }
           } catch (e) {
             localStorage.removeItem(key);
@@ -107,7 +111,7 @@ export default function Layout() {
     } else {
       void runCrashRecovery();
     }
-  }, [trackEvent]);
+  }, [trackEvent, userInfo?.email]);
 
   useEffect(() => {
     if (localStorage.getItem("hris-app-redirect-url")) {
@@ -118,7 +122,6 @@ export default function Layout() {
 
   const matches = matchRoutes(route.routes, location.pathname);
   const theme = useTheme();
-  const userInfo = useSelector(selectUserInfo);
 
   const [userConsent, setUserConsent] = useState<boolean>(true);
 
