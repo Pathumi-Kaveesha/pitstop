@@ -86,7 +86,6 @@ import {
 export type TrendGranularity = "daily" | "weekly" | "monthly" | "quarterly";
 
 const AVAILABLE_REGIONS = [
-  "WSO2 Digital",
   "NA",
   "ME",
   "APAC",
