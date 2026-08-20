@@ -30,6 +30,7 @@ import Summary from "@view/summary/index";
 import VerticalTemplate from "@layout/pages/VerticalTemplate";
 import React from "react";
 import { View } from "@root/src/view";
+import { Role } from "@utils/types";
 
 // For matomo integration
 export declare let _paq: unknown[];
@@ -56,6 +57,7 @@ const GlobalSnackbarListener = () => {
 const AppHandler = () => {
   const auth = useAppSelector((state: RootState) => state.auth);
   const route = useAppSelector((state: RootState) => state.route);
+  const authorizedRoles: Role[] = auth.roles || [];
 
   const router = useMemo(() => createBrowserRouter([
     {
@@ -66,12 +68,20 @@ const AppHandler = () => {
         ...getActiveRoutesV2(route.routes),
         {
           path: "/quiz-admin",
-          element: React.createElement(View.QuizAdminDashboard),
+          element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+            React.createElement(View.QuizAdminDashboard)
+          ) : (
+            <Error />
+          ),
           errorElement: <Error />,
         },
         {
           path: "/analytics-dashboard",
-          element: React.createElement(View.AnalyticsAdminDashboard),
+          element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+            React.createElement(View.AnalyticsAdminDashboard)
+          ) : (
+            <Error />
+          ),
           errorElement: <Error />,
         },
       ],
@@ -83,7 +93,11 @@ const AppHandler = () => {
     },
     {
       path: "/report",
-      element: <Summary />,
+      element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+        <Summary />
+      ) : (
+        <Error />
+      ),
       errorElement: <Error />,
     },
     {
@@ -96,7 +110,7 @@ const AppHandler = () => {
       element: <VerticalTemplate />,
       errorElement: <Error />,
     },
-  ]), [route.routes]);
+  ]), [route.routes, authorizedRoles]);
 
   return (
     <>
