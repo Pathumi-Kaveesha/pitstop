@@ -685,6 +685,9 @@ const AnalyticsAdminDashboard: React.FC = () => {
     if (start < PROD_LAUNCH_DATE) {
       start = new Date(PROD_LAUNCH_DATE);
     }
+    if (end < start) {
+      end = new Date(start);
+    }
 
     const dailyPoints: {
       dateKey: string;
