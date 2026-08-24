@@ -75,11 +75,15 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
   const open = Boolean(anchorEl);
   const totalPages = Math.ceil(safeVisitors.length / PAGE_SIZE);
 
-  const handleOpen = (event: React.SyntheticEvent<HTMLElement>) => {
+  const cancelClose = () => {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
+  };
+
+  const handleOpen = (event: React.SyntheticEvent<HTMLElement>) => {
+    cancelClose();
     setAnchorEl(event.currentTarget);
   };
 
@@ -134,13 +138,10 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
         transformOrigin={{ vertical: "top", horizontal: "center" }}
         slotProps={{
           paper: {
-            onMouseEnter: () => {
-              if (closeTimerRef.current) {
-                clearTimeout(closeTimerRef.current);
-                closeTimerRef.current = null;
-              }
-            },
+            onMouseEnter: cancelClose,
             onMouseLeave: handleClose,
+            onFocus: cancelClose,
+            onBlur: handleClose,
             sx: {
               p: 1.5,
               width: 280,
