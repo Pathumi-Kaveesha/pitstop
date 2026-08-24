@@ -389,13 +389,14 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
     query = sql:queryConcat(query, `
         ),
         DistinctContentUsers AS (
-            SELECT DISTINCT
+            SELECT 
                 contentId,
                 user_email,
-                COALESCE(NULLIF(user_name, ''), user_email) as user_name
+                COALESCE(MAX(NULLIF(user_name, '')), user_email) as user_name
             FROM BaseContentLogs
             WHERE UPPER(event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
               AND user_email IS NOT NULL AND user_email != ''
+            GROUP BY contentId, user_email
         ),
         ContentUsersAgg AS (
             SELECT 
@@ -592,12 +593,14 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
             GROUP BY region
         ),
         DistinctRegionalUsers AS (
-            SELECT DISTINCT
+            SELECT 
                 region,
                 user_email,
-                COALESCE(NULLIF(user_name, ''), user_email) as user_name
+                COALESCE(MAX(NULLIF(user_name, '')), user_email) as user_name
             FROM BaseLogs
             WHERE user_email IS NOT NULL AND user_email != ''
+              AND session_id IS NOT NULL AND session_id != ''
+            GROUP BY region, user_email
         ),
         RegionalUsersAgg AS (
             SELECT 
@@ -736,6 +739,11 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
 isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns sql:ParameterizedQuery {
     int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
 
+    sql:ParameterizedQuery datePred = buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset);
+    sql:ParameterizedQuery regionPred = buildRegionPredicate(filter.region);
+    sql:ParameterizedQuery emailPred = buildUserEmailPredicate(filter.userEmail);
+    sql:ParameterizedQuery routePred = buildPageRoutePredicate(filter.pageRoute);
+
     sql:ParameterizedQuery query = `
         WITH DeduplicatedSessionTimes AS (
             SELECT 
@@ -753,12 +761,9 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             WHERE UPPER(l.event_type) = 'SESSION_TIME'
     `;
 
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
-    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
-    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
+    query = sql:queryConcat(query, datePred, regionPred, emailPred, routePred);
 
-    query = sql:queryConcat(query, `
+    sql:ParameterizedQuery part2 = `
             GROUP BY l.user_email, dedupeEventId
         ),
         PlatformEventLogs AS (
@@ -778,23 +783,21 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
             WHERE 1=1
-    `);
+    `;
 
-    query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
-    query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
-    query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
+    query = sql:queryConcat(query, part2, datePred, regionPred, emailPred, routePred);
 
-    query = sql:queryConcat(query, `
+    sql:ParameterizedQuery part3 = `
         ),
         DistinctTotalUsers AS (
-            SELECT DISTINCT
+            SELECT 
                 user_email,
-                COALESCE(NULLIF(user_name, ''), user_email) as user_name
+                COALESCE(MAX(NULLIF(user_name, '')), user_email) as user_name
             FROM PlatformEventLogs
             WHERE UPPER(event_type) = 'SESSION_TIME' 
               AND (trackingType = 'page_view_duration' OR trackingType IS NULL)
               AND user_email IS NOT NULL AND user_email != ''
+            GROUP BY user_email
         ),
         TotalUsersAgg AS (
             SELECT 
@@ -834,9 +837,9 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
             ) AS DECIMAL(10,2)) as avgActionsPerVisit
         FROM PlatformEventLogs p
         LEFT JOIN TotalUsersAgg tua ON 1=1
-    `);
+    `;
 
-    return query;
+    return sql:queryConcat(query, part3);
 }
 
 # Query to fetch daily analytics trend breakdown grouped by date.
