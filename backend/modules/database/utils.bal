@@ -568,11 +568,11 @@ isolated function getValidatedTzOffset(int? timezoneOffsetMinutes) returns int {
     return rawTzOffset;
 }
 
-# Validates whether a date string strictly follows canonical ISO YYYY-MM-DD format.
-# Prevents single-digit month/day strings (e.g., '2026-8-20') from bypassing string date comparisons.
+# Validates whether a date string strictly follows canonical ISO YYYY-MM-DD format with a valid calendar date.
+# Prevents single-digit strings and impossible dates (e.g., '2026-13-40', '2026-02-31') from corrupting SQL predicates.
 #
 # + dateStr - Date string to validate
-# + return - True if strictly YYYY-MM-DD, false otherwise
+# + return - True if strictly YYYY-MM-DD and a valid calendar date, false otherwise
 isolated function isValidCanonicalDate(string dateStr) returns boolean {
     if dateStr.length() != 10 {
         return false;
@@ -589,6 +589,32 @@ isolated function isValidCanonicalDate(string dateStr) returns boolean {
             return false;
         }
     }
+
+    int|error year = int:fromString(dateStr.substring(0, 4));
+    int|error month = int:fromString(dateStr.substring(5, 7));
+    int|error day = int:fromString(dateStr.substring(8, 10));
+
+    if year is error || month is error || day is error {
+        return false;
+    }
+
+    if month < 1 || month > 12 || day < 1 || day > 31 {
+        return false;
+    }
+
+    // Days-per-month validation
+    if month == 4 || month == 6 || month == 9 || month == 11 {
+        if day > 30 {
+            return false;
+        }
+    } else if month == 2 {
+        boolean isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        int maxFebDays = isLeapYear ? 29 : 28;
+        if day > maxFebDays {
+            return false;
+        }
+    }
+
     return true;
 }
 
