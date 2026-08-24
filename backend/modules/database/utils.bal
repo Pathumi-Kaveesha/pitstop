@@ -570,6 +570,7 @@ isolated function getValidatedTzOffset(int? timezoneOffsetMinutes) returns int {
 
 # Constructs parameterized SQL predicates for date range filtering.
 # Converts local date inputs to UTC timestamp boundaries to enable index-seeking on event_timestamp.
+# Enforces a strict minimum start date of PROD_LAUNCH_DATE_STR (2026-08-21) across all analytics queries.
 #
 # + startDate - Optional start date string (YYYY-MM-DD)
 # + endDate - Optional end date string (YYYY-MM-DD)
@@ -581,19 +582,19 @@ isolated function buildDateRangePredicates(string? startDate, string? endDate, i
     string? cleanStart = startDate is string ? startDate.trim() : ();
     string? cleanEnd = endDate is string ? endDate.trim() : ();
 
-    boolean hasStart = cleanStart is string && cleanStart != "";
-    boolean hasEnd = cleanEnd is string && cleanEnd != "";
-
-    if hasStart && hasEnd {
-        return ` AND l.event_timestamp >= DATE_SUB(${cleanStart}, INTERVAL ${tzOffset} MINUTE)
-                 AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`;
-    } else if hasStart {
-        return ` AND l.event_timestamp >= DATE_SUB(${cleanStart}, INTERVAL ${tzOffset} MINUTE)`;
-    } else if hasEnd {
-        return ` AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`;
-    } else {
-        return ``;
+    // Strictly enforce minimum production launch date (2026-08-21)
+    string effectiveStart = PROD_LAUNCH_DATE_STR;
+    if cleanStart is string && cleanStart > PROD_LAUNCH_DATE_STR {
+        effectiveStart = cleanStart;
     }
+
+    sql:ParameterizedQuery query = ` AND l.event_timestamp >= DATE_SUB(${effectiveStart}, INTERVAL ${tzOffset} MINUTE)`;
+
+    if cleanEnd is string && cleanEnd != "" {
+        query = sql:queryConcat(query, ` AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`);
+    }
+
+    return query;
 }
 
 # Constructs parameterized SQL predicate for regional team filtering (supports multi-select).

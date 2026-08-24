@@ -103,6 +103,9 @@ interface AnalyticsTrendsChartProps {
   trendData: TrendDataPoint[];
 }
 
+// Prod launch date threshold (Aug 21, 2026)
+const PROD_LAUNCH_STR = "2026-08-21";
+
 export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
   trendData = [],
 }) => {
@@ -137,11 +140,20 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
 
   const open = Boolean(anchorEl);
 
-  // Timezone-safe local date parser to avoid UTC day-of-week shift bugs
+  // Timezone-safe local date parser with strict Prod Launch Cutoff (Aug 21, 2026)
   const formattedChartData = useMemo(() => {
-    const isWideRange = trendData.length > 14;
+    const filteredTrendData = trendData.filter((item) => {
+      if (!item.date) return false;
+      const cleanDateStr = item.date.split("T")[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(cleanDateStr)) {
+        return cleanDateStr >= PROD_LAUNCH_STR;
+      }
+      return true; 
+    });
 
-    return trendData.map((item) => {
+    const isWideRange = filteredTrendData.length > 14;
+
+    return filteredTrendData.map((item) => {
       if (!item.date) return { ...item, displayDate: "N/A", formattedDate: "N/A" };
 
       const cleanDateStr = item.date.split("T")[0];
@@ -296,7 +308,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
                 <XAxis
                   dataKey="displayDate"
                   interval={xAxisInterval}
-                  minTickGap={isMobile ? 28 : 15} // Higher gap on mobile prevents tick label collisions
+                  minTickGap={isMobile ? 28 : 15}
                   tickLine={false}
                   axisLine={{ stroke: theme.palette.divider }}
                   tick={{
@@ -349,7 +361,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
                       strokeOpacity={0.88}
                       dot={
                         isLargeRange
-                          ? false // Hide dots on large ranges so the line remains crisp & smooth
+                          ? false
                           : {
                               r: dotRadius,
                               fill: config.color,

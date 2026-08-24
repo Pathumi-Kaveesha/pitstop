@@ -267,6 +267,7 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
     types:AnalyticsTotals totals = totalsList.length() > 0 ? totalsList[0] : {
         totalViews: 0,
         totalUniqueViews: 0,
+        totalUniqueVisitorDetails: [],
         totalTimeSpentSeconds: 0,
         totalEngagements: 0,
         avgActionsPerVisit: 0.0d
@@ -275,6 +276,7 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
     return {
         totalViews: totals.totalViews,
         totalUniqueViews: totals.totalUniqueViews,
+        totalUniqueVisitorDetails: totals.totalUniqueVisitorDetails,
         totalTimeSpentSeconds: totals.totalTimeSpentSeconds,
         totalEngagements: totals.totalEngagements,
         avgActionsPerVisit: totals.avgActionsPerVisit,

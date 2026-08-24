@@ -151,6 +151,8 @@ public type AnalyticsTotals record {|
     int totalViews;
     # Total number of distinct users who viewed content
     int totalUniqueViews;
+    # List of distinct platform visitors
+    json totalUniqueVisitorDetails = [];
     # Total cumulative user active time spent in seconds
     int totalTimeSpentSeconds;
     # Total overall platform interaction events
@@ -159,6 +161,13 @@ public type AnalyticsTotals record {|
     decimal avgActionsPerVisit;
 |};
 
+# Visitor identity summary.
+public type VisitorUser record {|
+    # User email
+    string email;
+    # User name
+    string? name = ();
+|};
 
 # Content performance metrics.
 public type ContentPerformanceMetric record {|
@@ -166,9 +175,7 @@ public type ContentPerformanceMetric record {|
     int contentId;
     # Title or name of the content
     string title;
-    # Type of content (e.g. video, document, slide)
-    string contentType;
-    # Number of times preview button was clickeds
+    # Number of times preview button was clicked
     int previewClicks;
     # Number of times outlink button was clicked
     int outlinkClicks;
@@ -176,7 +183,9 @@ public type ContentPerformanceMetric record {|
     int totalViews;
     # Count of distinct user views
     int uniqueViews;
-    # Count of full completions (e.g., video watched 100% or full document read)
+    # List of unique visitor details
+    json uniqueVisitorDetails = [];
+    # Count of full completions
     int fullCompletions;
 |};
 
@@ -210,6 +219,8 @@ public type RegionalTimeMetric record {|
     int actions;
     # Average time spent per visit in seconds
     int avgTimeSpentSeconds;
+    # List of unique visitor details in this region
+    json uniqueVisitorDetails = [];
 |};
 
 # Most searched query metric.
@@ -254,6 +265,8 @@ public type ComprehensiveAnalyticsSummary record {|
     int totalViews;
     # Total unique views across all content
     int totalUniqueViews;
+    # List of distinct platform visitors
+    json totalUniqueVisitorDetails = [];
     # Total cumulative time spent by users in seconds
     int totalTimeSpentSeconds;
     # Total platform engagement interactions
