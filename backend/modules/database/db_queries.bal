@@ -446,7 +446,7 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
 }
 
 # Dynamic query to fetch top 10 users for the leaderboard ranked by total actions, visits, or average time spent.
-# Excludes specified admin users from leaderboard rankings.
+# Excludes admin users dynamically via the isAdmin flag stored in JSON metadata.
 #
 # + filter - Analytics filter parameters including dates, region, user email, page route, and sortBy
 # + return - Constructed SQL parameterized query
@@ -476,15 +476,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             LEFT JOIN section s ON s.section_id = c.section_id
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-            WHERE LOWER(l.user_email) NOT IN (
-                'dilshanf@wso2.com',
-                'harini@wso2.com',
-                'dinara@wso2.com',
-                'rashvini@wso2.com',
-                'yousuf@wso2.com',
-                'dilani@wso2.com',
-                'pathumi@wso2.com'
-            )
+            WHERE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isAdmin')), 'false') != 'true'
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
