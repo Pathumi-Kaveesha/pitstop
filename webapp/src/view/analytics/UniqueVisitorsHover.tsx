@@ -75,7 +75,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
   const open = Boolean(anchorEl);
   const totalPages = Math.ceil(safeVisitors.length / PAGE_SIZE);
 
-  const handleMouseEnter = (event: React.MouseEvent<HTMLElement>) => {
+  const handleOpen = (event: React.SyntheticEvent<HTMLElement>) => {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
@@ -83,7 +83,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
     setAnchorEl(event.currentTarget);
   };
 
-  const handleMouseLeave = () => {
+  const handleClose = () => {
     closeTimerRef.current = setTimeout(() => {
       setAnchorEl(null);
       setPage(0);
@@ -105,11 +105,22 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
   return (
     <Box
       component="span"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      tabIndex={safeVisitors.length > 0 ? 0 : -1}
+      aria-haspopup="dialog"
+      aria-expanded={open && safeVisitors.length > 0}
+      onMouseEnter={handleOpen}
+      onMouseLeave={handleClose}
+      onFocus={handleOpen}
+      onBlur={handleClose}
       sx={{
         cursor: safeVisitors.length > 0 ? "pointer" : "default",
         display: "inline-flex",
+        outline: "none",
+        "&:focus-visible": {
+          borderRadius: "4px",
+          outline: "2px solid #0288d1",
+          outlineOffset: "2px",
+        },
         ...sx,
       }}
     >
@@ -129,7 +140,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
                 closeTimerRef.current = null;
               }
             },
-            onMouseLeave: handleMouseLeave,
+            onMouseLeave: handleClose,
             sx: {
               p: 1.5,
               width: 280,
