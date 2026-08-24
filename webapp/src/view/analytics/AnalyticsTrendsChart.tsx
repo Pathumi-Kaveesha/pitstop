@@ -143,12 +143,15 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
   // Timezone-safe local date parser with strict Prod Launch Cutoff (Aug 21, 2026)
   const formattedChartData = useMemo(() => {
     const filteredTrendData = trendData.filter((item) => {
-      if (!item.date) return false;
-      const cleanDateStr = item.date.split("T")[0];
+      if (!item.date || typeof item.date !== "string" || item.date.trim() === "") {
+        return false;
+      }
+      const cleanDateStr = item.date.trim().split("T")[0];
+
       if (/^\d{4}-\d{2}-\d{2}$/.test(cleanDateStr)) {
         return cleanDateStr >= PROD_LAUNCH_STR;
       }
-      return true; 
+      return true;
     });
 
     const isWideRange = filteredTrendData.length > 14;
