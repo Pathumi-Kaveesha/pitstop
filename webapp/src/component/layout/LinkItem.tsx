@@ -36,13 +36,15 @@ const ListItemLink = (props: ListItemLinkProps) => {
   const [openLeft, setOpenLeft] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { primary, to, theme, isActive, children, routeId, level, label, handleSideBar} = props;
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { primary, to, theme, isActive, children, routeId, level, label, handleSideBar } = props;
   const { pathname } = useLocation();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
 
   const isTopLevel = level === 1;
-
+  
   const [, setTranslateOffset] = useState(0);
 
   useEffect(() => {
@@ -56,7 +58,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
     if (open && dropdownRef.current) {
       const rect = dropdownRef.current.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
-      
+
       if (rect.right > viewportWidth && level > 1) {
         setOpenLeft(true);
         setTranslateOffset(0);
@@ -74,14 +76,20 @@ const ListItemLink = (props: ListItemLinkProps) => {
   }, [open, level]);
 
   const handleMouseEnter = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     if (children && children.length > 0) {
       setOpen(true);
     }
   };
 
   const handleMouseLeave = () => {
-    setOpen(false);
-    setOpenLeft(false);
+    timeoutRef.current = setTimeout(() => {
+      setOpen(false);
+      setOpenLeft(false);
+    }, 150); 
   };
 
   const handleClickOutside = (event: MouseEvent) => {
@@ -98,8 +106,16 @@ const ListItemLink = (props: ListItemLinkProps) => {
     }
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
-  <Box
+    <Box
       ref={navRef}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -132,7 +148,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
           alignItems: "center",
           height: "38px",
           width: "100%",
-          whiteSpace: "nowrap", 
+          whiteSpace: "nowrap",
           pl: level > 2 ? level * 1.5 : 1,
           pr: routeId === INVALID_ROUTE_ID ? 3 : 0,
           borderRadius: theme.spacing(0.5),
@@ -162,7 +178,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
           <ExpandMore
             sx={{
               color: theme.palette.primary.contrastText,
-              ...(isActive &&
+              ...(isActive && 
                 !isTopLevel && { color: theme.palette.primary.main }),
             }}
           />
@@ -171,7 +187,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
           sx={{
             "& .MuiListItemText-primary": {
               color: theme.palette.primary.contrastText,
-              ...(isActive &&
+              ...(isActive && 
                 !isTopLevel && { color: theme.palette.primary.main }),
               fontSize: "14px",
               fontWeight: 500,
@@ -191,14 +207,14 @@ const ListItemLink = (props: ListItemLinkProps) => {
             position: "absolute",
             top: level === 1 ? "calc(100% + 8px)" : "0",
             ...(level === 1 ? {
-              left: "0",
-            } : openLeft ? {
-              right: "100%",
-              mr: "4px",
-            } : {
-              left: "100%",
-              ml: "4px",
-            }),
+                  left: "0",
+                } : openLeft ? {
+                  right: "100%",
+                  mr: "4px",
+                } : {
+                  left: "100%",
+                  ml: "4px",
+                }),
             display: open ? "inline-block" : "none",
             background: theme.palette.secondary.main,
             color: theme.palette.primary.contrastText,
@@ -209,14 +225,31 @@ const ListItemLink = (props: ListItemLinkProps) => {
             minWidth: "180px",
             padding: "8px 4px",
             whiteSpace: "nowrap",
-            "&::before": level === 1 ? {
+
+            "&::before": {
               content: '""',
               position: "absolute",
-              top: "-8px",
-              left: 0,
-              right: 0,
-              height: "8px",
-            } : {},
+              ...(level === 1
+                ? {
+                    top: "-8px",
+                    left: 0,
+                    right: 0,
+                    height: "8px",
+                  }
+                : openLeft
+                ? {
+                    top: 0,
+                    bottom: 0,
+                    right: "-8px",
+                    width: "8px",
+                  }
+                : {
+                    top: 0,
+                    bottom: 0,
+                    left: "-8px",
+                    width: "8px",
+                  }),
+            },
           }}
         >
           {children.map((component) => (
@@ -227,16 +260,16 @@ const ListItemLink = (props: ListItemLinkProps) => {
                 e.preventDefault();
                 if (component.path && component.path.includes("#")) {
                   const boxElement = e.currentTarget as HTMLElement;
-                  const linkElement = boxElement.querySelector('a');
+                  const linkElement = boxElement.querySelector("a");
                   if (linkElement) {
                     linkElement.click();
                   }
                   return;
                 }
-                
-                if ((!component.children || component.children.length === 0) && 
-                    component.path && 
-                    component.path !== "#") {
+
+                if ((!component.children || component.children.length === 0) &&
+                  component.path &&
+                  component.path !== "#") {
                   if (component.path === pathname) {
                     return;
                   }
