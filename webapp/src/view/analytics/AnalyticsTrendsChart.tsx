@@ -41,6 +41,7 @@ import {
 
 export interface TrendDataPoint {
   date: string;
+  startDate?: string;
   formattedDate?: string;
   totalViews: number;
   uniqueViews: number;
@@ -50,7 +51,7 @@ export interface TrendDataPoint {
 }
 
 interface MetricConfig {
-  id: keyof Omit<TrendDataPoint, "date" | "formattedDate">;
+  id: keyof Omit<TrendDataPoint, "date" | "startDate" | "formattedDate">;
   label: string;
   color: string;
   yAxisId: "left" | "right";
@@ -146,12 +147,12 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
       if (!item.date || typeof item.date !== "string" || item.date.trim() === "") {
         return false;
       }
-      const cleanDateStr = item.date.trim().split("T")[0];
+      const checkDate = (item.startDate || item.date).trim().split("T")[0];
 
-      if (/^\d{4}-\d{2}-\d{2}$/.test(cleanDateStr)) {
-        return cleanDateStr >= PROD_LAUNCH_STR;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(checkDate)) {
+        return checkDate >= PROD_LAUNCH_STR;
       }
-      return true;
+      return false;
     });
 
     const isWideRange = filteredTrendData.length > 14;
@@ -159,7 +160,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
     return filteredTrendData.map((item) => {
       if (!item.date) return { ...item, displayDate: "N/A", formattedDate: "N/A" };
 
-      const cleanDateStr = item.date.split("T")[0];
+      const cleanDateStr = (item.startDate || item.date).split("T")[0];
       const parts = cleanDateStr.split("-").map(Number);
 
       // Only parse YYYY-MM-DD daily date strings
@@ -168,7 +169,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
         parsedDate = new Date(parts[0], parts[1] - 1, parts[2]);
       }
 
-      if (parsedDate && !isNaN(parsedDate.getTime())) {
+      if (parsedDate && !isNaN(parsedDate.getTime()) && /^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
         return {
           ...item,
           displayDate: parsedDate.toLocaleDateString("en-US", {

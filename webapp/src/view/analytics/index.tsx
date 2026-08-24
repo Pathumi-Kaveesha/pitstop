@@ -725,6 +725,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
     if (granularity === "daily") {
       return dailyPoints.map((pt) => ({
         date: pt.dateKey,
+        startDate: pt.dateKey,
         formattedDate: pt.dateObj.toLocaleDateString("en-US", {
           weekday: "long",
           year: "numeric",
@@ -742,6 +743,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
     const aggregatedMap = new Map<
       string,
       {
+        startDate: string;
         label: string;
         fullLabel: string;
         totalViews: number;
@@ -802,6 +804,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
         }
       } else {
         aggregatedMap.set(groupKey, {
+          startDate: pt.dateKey,
           label,
           fullLabel,
           totalViews: pt.totalViews,
@@ -816,6 +819,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
     return Array.from(aggregatedMap.values()).map((agg) => ({
       date: agg.label,
+      startDate: agg.startDate,
       formattedDate: agg.fullLabel,
       totalViews: agg.totalViews,
       uniqueViews: agg.uniqueViews,
