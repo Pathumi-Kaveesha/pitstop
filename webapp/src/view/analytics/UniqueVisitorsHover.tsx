@@ -51,8 +51,18 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const safeVisitors: VisitorUser[] = useMemo(() => {
-    if (!Array.isArray(visitors)) return [];
-    return visitors
+    let parsedVisitors = visitors;
+    if (typeof parsedVisitors === "string") {
+      try {
+        parsedVisitors = JSON.parse(parsedVisitors);
+      } catch {
+        parsedVisitors = [];
+      }
+    }
+
+    if (!Array.isArray(parsedVisitors)) return [];
+
+    return parsedVisitors
       .map((v) => {
         if (typeof v === "string") {
           return { email: v, name: v.split("@")[0] };
