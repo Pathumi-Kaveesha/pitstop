@@ -568,6 +568,30 @@ isolated function getValidatedTzOffset(int? timezoneOffsetMinutes) returns int {
     return rawTzOffset;
 }
 
+# Validates whether a date string strictly follows canonical ISO YYYY-MM-DD format.
+# Prevents single-digit month/day strings (e.g., '2026-8-20') from bypassing string date comparisons.
+#
+# + dateStr - Date string to validate
+# + return - True if strictly YYYY-MM-DD, false otherwise
+isolated function isValidCanonicalDate(string dateStr) returns boolean {
+    if dateStr.length() != 10 {
+        return false;
+    }
+    if dateStr.substring(4, 5) != "-" || dateStr.substring(7, 8) != "-" {
+        return false;
+    }
+    foreach int i in 0 ..< 10 {
+        if i == 4 || i == 7 {
+            continue;
+        }
+        string charStr = dateStr.substring(i, i + 1);
+        if charStr < "0" || charStr > "9" {
+            return false;
+        }
+    }
+    return true;
+}
+
 # Constructs parameterized SQL predicates for date range filtering.
 # Converts local date inputs to UTC timestamp boundaries to enable index-seeking on event_timestamp.
 # Enforces a strict minimum start date of PROD_LAUNCH_DATE_STR (2026-08-21) across all analytics queries.
@@ -584,13 +608,13 @@ isolated function buildDateRangePredicates(string? startDate, string? endDate, i
 
     // Strictly enforce minimum production launch date (2026-08-21)
     string effectiveStart = PROD_LAUNCH_DATE_STR;
-    if cleanStart is string && cleanStart > PROD_LAUNCH_DATE_STR {
+    if cleanStart is string && isValidCanonicalDate(cleanStart) && cleanStart > PROD_LAUNCH_DATE_STR {
         effectiveStart = cleanStart;
     }
 
     sql:ParameterizedQuery query = ` AND l.event_timestamp >= DATE_SUB(${effectiveStart}, INTERVAL ${tzOffset} MINUTE)`;
 
-    if cleanEnd is string && cleanEnd != "" {
+    if cleanEnd is string && isValidCanonicalDate(cleanEnd) {
         query = sql:queryConcat(query, ` AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`);
     }
 
