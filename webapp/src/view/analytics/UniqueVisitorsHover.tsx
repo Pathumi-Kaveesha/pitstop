@@ -50,6 +50,9 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
   const [page, setPage] = useState<number>(0);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const triggerRef = useRef<HTMLSpanElement | null>(null);
+  const paperRef = useRef<HTMLDivElement | null>(null);
+
   const safeVisitors: VisitorUser[] = useMemo(() => {
     let parsedVisitors = visitors;
     if (typeof parsedVisitors === "string") {
@@ -87,7 +90,18 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
     setAnchorEl(event.currentTarget);
   };
 
-  const handleClose = () => {
+  const handleClose = (event?: React.SyntheticEvent) => {
+    if (event && "relatedTarget" in event && event.relatedTarget) {
+      const target = event.relatedTarget as Node;
+      if (
+        triggerRef.current?.contains(target) ||
+        paperRef.current?.contains(target)
+      ) {
+        return;
+      }
+    }
+
+    cancelClose();
     closeTimerRef.current = setTimeout(() => {
       setAnchorEl(null);
       setPage(0);
@@ -95,12 +109,16 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
   };
 
   const handleNextPage = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
+    cancelClose();
     if (page < totalPages - 1) setPage((prev) => prev + 1);
   };
 
   const handlePrevPage = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
+    cancelClose();
     if (page > 0) setPage((prev) => prev - 1);
   };
 
@@ -108,6 +126,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
 
   return (
     <Box
+      ref={triggerRef}
       component="span"
       tabIndex={safeVisitors.length > 0 ? 0 : -1}
       aria-haspopup="dialog"
@@ -138,6 +157,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
         transformOrigin={{ vertical: "top", horizontal: "center" }}
         slotProps={{
           paper: {
+            ref: paperRef,
             onMouseEnter: cancelClose,
             onMouseLeave: handleClose,
             onFocus: cancelClose,
@@ -227,7 +247,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
               >
                 <ChevronLeftIcon fontSize="small" />
               </IconButton>
-
+ 
               <Typography variant="caption" sx={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)" }}>
                 Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, safeVisitors.length)}
               </Typography>
@@ -237,7 +257,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
                 onClick={handleNextPage}
                 disabled={page >= totalPages - 1}
                 sx={{ color: "#fff", "&.Mui-disabled": { color: "rgba(255,255,255,0.2)" } }}
-              >
+              >                 
                 <ChevronRightIcon fontSize="small" />
               </IconButton>
             </Box>
