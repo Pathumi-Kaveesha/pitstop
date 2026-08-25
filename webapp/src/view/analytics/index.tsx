@@ -675,7 +675,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
     } else if (dates.length > 0) {
       const minParts = dates[0].split("-").map(Number);
       const minDate = new Date(minParts[0], minParts[1] - 1, minParts[2]);
-      start = minDate < defaultStart ? minDate : defaultStart;
+      start = minDate > defaultStart ? minDate : defaultStart;
       end = new Date(today);
     } else {
       start = defaultStart;
