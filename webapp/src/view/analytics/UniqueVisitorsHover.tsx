@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import {
   Box,
   Popover,
@@ -77,6 +77,13 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
 
   const open = Boolean(anchorEl);
   const totalPages = Math.ceil(safeVisitors.length / PAGE_SIZE);
+
+  useEffect(() => {
+    setPage((prevPage) => {
+      if (totalPages === 0) return 0;
+      return Math.min(prevPage, totalPages - 1);
+    });
+  }, [totalPages]);
 
   const cancelClose = () => {
     if (closeTimerRef.current) {
