@@ -107,6 +107,26 @@ interface AnalyticsTrendsChartProps {
 // Prod launch date threshold (Aug 21, 2026)
 const PROD_LAUNCH_STR = "2026-08-21";
 
+/**
+ * Validates that a string is strictly formatted as YYYY-MM-DD and represents a real calendar date.
+ * Rejects out-of-range dates (e.g. 2026-08-32, 2026-02-29) before Date constructor normalization.
+ */
+const isValidCalendarDate = (dateStr: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return false;
+  }
+  const [year, month, day] = dateStr.split("-").map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+  const dateObj = new Date(year, month - 1, day);
+  return (
+    dateObj.getFullYear() === year &&
+    dateObj.getMonth() === month - 1 &&
+    dateObj.getDate() === day
+  );
+};
+
 export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
   trendData = [],
 }) => {
@@ -149,7 +169,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
       }
       const checkDate = (item.startDate || item.date).trim().split("T")[0];
 
-      if (/^\d{4}-\d{2}-\d{2}$/.test(checkDate)) {
+      if (isValidCalendarDate(checkDate)) {
         return checkDate >= PROD_LAUNCH_STR;
       }
       return false;
@@ -165,11 +185,11 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
 
       // Only parse YYYY-MM-DD daily date strings
       let parsedDate: Date | null = null;
-      if (parts.length === 3 && !parts.some(isNaN)) {
+      if (parts.length === 3 && !parts.some(isNaN) && isValidCalendarDate(cleanDateStr)) {
         parsedDate = new Date(parts[0], parts[1] - 1, parts[2]);
       }
 
-      if (parsedDate && !isNaN(parsedDate.getTime()) && /^\d{4}-\d{2}-\d{2}$/.test(cleanDateStr)) {
+      if (parsedDate && !isNaN(parsedDate.getTime()) && isValidCalendarDate(cleanDateStr)) {
         return {
           ...item,
           displayDate: parsedDate.toLocaleDateString("en-US", {
