@@ -85,6 +85,12 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
     }
   };
 
+  const handleForceClose = () => {
+    cancelClose();
+    setAnchorEl(null);
+    setPage(0);
+  };
+
   const handleOpen = (event: React.SyntheticEvent<HTMLElement>) => {
     cancelClose();
     setAnchorEl(event.currentTarget);
@@ -152,7 +158,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
       <Popover
         open={open && safeVisitors.length > 0}
         anchorEl={anchorEl}
-        onClose={() => setAnchorEl(null)}
+        onClose={handleForceClose}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         transformOrigin={{ vertical: "top", horizontal: "center" }}
         slotProps={{
@@ -247,7 +253,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
               >
                 <ChevronLeftIcon fontSize="small" />
               </IconButton>
- 
+
               <Typography variant="caption" sx={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)" }}>
                 Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, safeVisitors.length)}
               </Typography>
@@ -257,7 +263,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
                 onClick={handleNextPage}
                 disabled={page >= totalPages - 1}
                 sx={{ color: "#fff", "&.Mui-disabled": { color: "rgba(255,255,255,0.2)" } }}
-              >                 
+              >
                 <ChevronRightIcon fontSize="small" />
               </IconButton>
             </Box>
