@@ -25,3 +25,7 @@ const DEFAULT_TRENDING_CONTENTS_OFFSET = 0;
 public const int DEFAULT_TZ_OFFSET_MINUTES = 330;
 public const int MIN_TZ_OFFSET_MINUTES = -840;
 public const int MAX_TZ_OFFSET_MINUTES = 840;
+
+// Production launch date cutoff in analytics feature (August 21, 2026)
+public const string PROD_LAUNCH_DATE_STR = "2026-08-21";
+

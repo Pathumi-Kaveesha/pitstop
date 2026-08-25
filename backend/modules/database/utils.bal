@@ -568,8 +568,59 @@ isolated function getValidatedTzOffset(int? timezoneOffsetMinutes) returns int {
     return rawTzOffset;
 }
 
+# Validates whether a date string strictly follows canonical ISO YYYY-MM-DD format with a valid calendar date.
+# Prevents single-digit strings and impossible dates (e.g., '2026-13-40', '2026-02-31') from corrupting SQL predicates.
+#
+# + dateStr - Date string to validate
+# + return - True if strictly YYYY-MM-DD and a valid calendar date, false otherwise
+isolated function isValidCanonicalDate(string dateStr) returns boolean {
+    if dateStr.length() != 10 {
+        return false;
+    }
+    if dateStr.substring(4, 5) != "-" || dateStr.substring(7, 8) != "-" {
+        return false;
+    }
+    foreach int i in 0 ..< 10 {
+        if i == 4 || i == 7 {
+            continue;
+        }
+        string charStr = dateStr.substring(i, i + 1);
+        if charStr < "0" || charStr > "9" {
+            return false;
+        }
+    }
+
+    int|error year = int:fromString(dateStr.substring(0, 4));
+    int|error month = int:fromString(dateStr.substring(5, 7));
+    int|error day = int:fromString(dateStr.substring(8, 10));
+
+    if year is error || month is error || day is error {
+        return false;
+    }
+
+    if month < 1 || month > 12 || day < 1 || day > 31 {
+        return false;
+    }
+
+    // Days-per-month validation
+    if month == 4 || month == 6 || month == 9 || month == 11 {
+        if day > 30 {
+            return false;
+        }
+    } else if month == 2 {
+        boolean isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        int maxFebDays = isLeapYear ? 29 : 28;
+        if day > maxFebDays {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 # Constructs parameterized SQL predicates for date range filtering.
 # Converts local date inputs to UTC timestamp boundaries to enable index-seeking on event_timestamp.
+# Enforces a strict minimum start date of PROD_LAUNCH_DATE_STR (2026-08-21) across all analytics queries.
 #
 # + startDate - Optional start date string (YYYY-MM-DD)
 # + endDate - Optional end date string (YYYY-MM-DD)
@@ -581,19 +632,23 @@ isolated function buildDateRangePredicates(string? startDate, string? endDate, i
     string? cleanStart = startDate is string ? startDate.trim() : ();
     string? cleanEnd = endDate is string ? endDate.trim() : ();
 
-    boolean hasStart = cleanStart is string && cleanStart != "";
-    boolean hasEnd = cleanEnd is string && cleanEnd != "";
-
-    if hasStart && hasEnd {
-        return ` AND l.event_timestamp >= DATE_SUB(${cleanStart}, INTERVAL ${tzOffset} MINUTE)
-                 AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`;
-    } else if hasStart {
-        return ` AND l.event_timestamp >= DATE_SUB(${cleanStart}, INTERVAL ${tzOffset} MINUTE)`;
-    } else if hasEnd {
-        return ` AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`;
-    } else {
-        return ``;
+    // Strictly enforce minimum production launch date (2026-08-21)
+    string effectiveStart = PROD_LAUNCH_DATE_STR;
+    if cleanStart is string && isValidCanonicalDate(cleanStart) && cleanStart > PROD_LAUNCH_DATE_STR {
+        effectiveStart = cleanStart;
     }
+
+    sql:ParameterizedQuery query = ` AND l.event_timestamp >= DATE_SUB(${effectiveStart}, INTERVAL ${tzOffset} MINUTE)`;
+
+    if cleanEnd is string && isValidCanonicalDate(cleanEnd) {
+        string effectiveEnd = cleanEnd;
+        if effectiveEnd < effectiveStart {
+            effectiveEnd = effectiveStart;
+        }
+        query = sql:queryConcat(query, ` AND l.event_timestamp < DATE_SUB(DATE_ADD(${effectiveEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`);
+    }
+
+    return query;
 }
 
 # Constructs parameterized SQL predicate for regional team filtering (supports multi-select).

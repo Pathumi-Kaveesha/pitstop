@@ -82,6 +82,7 @@ import {
   CascadingPageRouteSelector,
   RouteOption,
 } from "../analytics/CascadingPageRouteSelector";
+import { UniqueVisitorsHover } from "./UniqueVisitorsHover";
 
 export type TrendGranularity = "daily" | "weekly" | "monthly" | "quarterly";
 
@@ -94,6 +95,9 @@ const AVAILABLE_REGIONS = [
   "EU",
   "UK",
 ];
+
+const PROD_LAUNCH_DATE = new Date(2026, 7, 21);
+PROD_LAUNCH_DATE.setHours(0, 0, 0, 0);
 
 interface RawRouteResponse {
   route_id?: number;
@@ -412,7 +416,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const [trendFilters, setTrendFilters] = useState<AnalyticsFilterParams | null>(null);
   const [cardLeaderboardFilters, setCardLeaderboardFilters] = useState<AnalyticsFilterParams | null>(null);
   const [cardRegionalFilters, setCardRegionalFilters] = useState<AnalyticsFilterParams | null>(null);
-  
+
   const [granularity, setGranularity] = useState<TrendGranularity>("daily");
   const [isGranularityManuallySet, setIsGranularityManuallySet] = useState<boolean>(false);
 
@@ -671,11 +675,18 @@ const AnalyticsAdminDashboard: React.FC = () => {
     } else if (dates.length > 0) {
       const minParts = dates[0].split("-").map(Number);
       const minDate = new Date(minParts[0], minParts[1] - 1, minParts[2]);
-      start = minDate < defaultStart ? minDate : defaultStart;
+      start = minDate > defaultStart ? minDate : defaultStart;
       end = new Date(today);
     } else {
       start = defaultStart;
       end = new Date(today);
+    }
+
+    if (start < PROD_LAUNCH_DATE) {
+      start = new Date(PROD_LAUNCH_DATE);
+    }
+    if (end < start) {
+      end = new Date(start);
     }
 
     const dailyPoints: {
@@ -713,7 +724,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
     if (granularity === "daily") {
       return dailyPoints.map((pt) => ({
-        date: pt.dateKey, 
+        date: pt.dateKey,
+        startDate: pt.dateKey,
         formattedDate: pt.dateObj.toLocaleDateString("en-US", {
           weekday: "long",
           year: "numeric",
@@ -731,6 +743,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
     const aggregatedMap = new Map<
       string,
       {
+        startDate: string;
         label: string;
         fullLabel: string;
         totalViews: number;
@@ -791,6 +804,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
         }
       } else {
         aggregatedMap.set(groupKey, {
+          startDate: pt.dateKey,
           label,
           fullLabel,
           totalViews: pt.totalViews,
@@ -805,6 +819,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
     return Array.from(aggregatedMap.values()).map((agg) => ({
       date: agg.label,
+      startDate: agg.startDate,
       formattedDate: agg.fullLabel,
       totalViews: agg.totalViews,
       uniqueViews: agg.uniqueViews,
@@ -1131,7 +1146,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 </Paper>
               </Grid>
 
-              {/* Card 2: Unique Visitors */}
+              {/* Card 2: Unique Visitors with Paginated Hover Popover */}
               <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                 <Paper
                   elevation={0}
@@ -1155,7 +1170,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     },
                   }}
                 >
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <UniqueVisitorsHover
+                    visitors={summary?.totalUniqueVisitorDetails || []}
+                    sx={{ display: "flex", alignItems: "center", gap: 2, flex: 1 }}
+                  >
                     <Box
                       sx={{
                         p: 1.5,
@@ -1166,7 +1184,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     >
                       <PeopleIcon />
                     </Box>
-                    <Box>
+                    <Box sx={{ display: "flex", flexDirection: "column" }}>
                       <Typography variant="caption" color="text.secondary">
                         Unique Visitors
                       </Typography>
@@ -1174,7 +1192,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         {summary?.totalUniqueViews ?? 0}
                       </Typography>
                     </Box>
-                  </Box>
+                  </UniqueVisitorsHover>
+
                   <Tooltip
                     title="Number of distinct team members who logged into and accessed the platform within the selected filters."
                     arrow
@@ -1506,7 +1525,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       >
                         <TableRow>
                           <TableCell>Content Title</TableCell>
-                          <TableCell align="center">Type</TableCell>
                           <TableCell align="center">
                             <Tooltip
                               title="Counted ONLY when content renders successfully in preview AND is viewed for at least 10 seconds. Broken or restricted links do NOT increment preview clicks."
@@ -1556,10 +1574,6 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               </TableCell>
 
                               <TableCell align="center">
-                                <Chip label={c.contentType} size="small" variant="outlined" />
-                              </TableCell>
-
-                              <TableCell align="center">
                                 <Chip
                                   icon={<PreviewIcon sx={{ fontSize: "14px !important" }} />}
                                   label={c.previewClicks ?? 0}
@@ -1591,35 +1605,38 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                 </Typography>
                               </TableCell>
 
+                              {/* Unique Views with Paginated Hover Popover */}
                               <TableCell align="center">
-                                <Box
-                                  sx={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    gap: 0.5,
-                                  }}
-                                >
-                                  <PeopleIcon
+                                <UniqueVisitorsHover visitors={c.uniqueVisitorDetails || []}>
+                                  <Box
                                     sx={{
-                                      fontSize: 16,
-                                      color: topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      gap: 0.5,
                                     }}
-                                  />
-                                  <Typography
-                                    variant="body2"
-                                    fontWeight={topContentSortBy === "uniqueViews" ? 800 : 600}
-                                    color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.primary"}
                                   >
-                                    {c.uniqueViews}
-                                  </Typography>
-                                </Box>
+                                    <PeopleIcon
+                                      sx={{
+                                        fontSize: 16,
+                                        color: topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary",
+                                      }}
+                                    />
+                                    <Typography
+                                      variant="body2"
+                                      fontWeight={topContentSortBy === "uniqueViews" ? 800 : 600}
+                                      color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.primary"}
+                                    >
+                                      {c.uniqueViews}
+                                    </Typography>
+                                  </Box>
+                                </UniqueVisitorsHover>
                               </TableCell>
                             </TableRow>
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                            <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
                               <Typography variant="body2" color="text.secondary">
                                 No content analytics found for the selected route/filter.
                               </Typography>
@@ -1940,15 +1957,20 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               <TableCell>
                                 <Chip label={r.region} size="small" variant="outlined" color="primary" />
                               </TableCell>
+
+                              {/* Unique Visitors with Paginated Hover Popover */}
                               <TableCell align="center">
-                                <Typography
-                                  variant="body2"
-                                  fontWeight={regionalSortBy === "uniqueVisits" ? 800 : 500}
-                                  color={regionalSortBy === "uniqueVisits" ? "primary.main" : "text.primary"}
-                                >
-                                  {r.uniqueVisits}
-                                </Typography>
+                                <UniqueVisitorsHover visitors={r.uniqueVisitorDetails || []}>
+                                  <Typography
+                                    variant="body2"
+                                    fontWeight={regionalSortBy === "uniqueVisits" ? 800 : 500}
+                                    color={regionalSortBy === "uniqueVisits" ? "primary.main" : "text.primary"}
+                                  >
+                                    {r.uniqueVisits}
+                                  </Typography>
+                                </UniqueVisitorsHover>
                               </TableCell>
+
                               <TableCell align="center">
                                 <Typography
                                   variant="body2"

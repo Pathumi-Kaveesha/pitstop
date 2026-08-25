@@ -29,15 +29,20 @@ export interface AnalyticsEventPayload {
   metadata?: Record<string, unknown> | null;
 }
 
+export interface VisitorUser {
+  email: string;
+  name?: string;
+}
+
 export interface ContentPerformanceMetric {
   contentId: number;
   title: string;
-  contentType: string;
   isEmbeddable?: boolean;
   previewClicks: number;
   outlinkClicks: number;
   totalViews: number;
   uniqueViews: number;
+  uniqueVisitorDetails?: VisitorUser[];
   fullCompletions: number;
 }
 
@@ -57,6 +62,7 @@ export interface RegionalTimeMetric {
   totalVisits: number;
   actions: number;
   avgTimeSpentSeconds: number;
+  uniqueVisitorDetails?: VisitorUser[];
 }
 
 export interface SearchMetric {
@@ -83,6 +89,7 @@ export interface DailyTrendMetric {
 export interface AnalyticsSummary {
   totalViews: number;
   totalUniqueViews: number;
+  totalUniqueVisitorDetails?: VisitorUser[];
   totalTimeSpentSeconds: number;
   totalEngagements: number;
   avgActionsPerVisit: number;

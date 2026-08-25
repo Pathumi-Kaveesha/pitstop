@@ -625,6 +625,18 @@ service http:InterceptableService / on new http:Listener(9090) {
             eventPayload.region = userProfile.team;
         }
 
+        // Safely extract metadata object or initialize a new map
+        map<json> meta = {};
+        if eventPayload.metadata is map<json> {
+            meta = <map<json>>eventPayload.metadata;
+        }
+
+        // Validate admin role via JWT context and explicitly overwrite `isAdmin`
+        string[]|error userRoles = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
+        boolean isAdminUser = userRoles is string[] && authorization:hasPermission([authorization:authorizedRoles.adminRole], userRoles);
+
+        meta["isAdmin"] = isAdminUser;
+        eventPayload.metadata = meta;
         error? result = database:logUserActivity(eventPayload);
         if result is error {
             string customError = "Error while logging user activity";
