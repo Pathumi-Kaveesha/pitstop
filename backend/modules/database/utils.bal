@@ -641,7 +641,11 @@ isolated function buildDateRangePredicates(string? startDate, string? endDate, i
     sql:ParameterizedQuery query = ` AND l.event_timestamp >= DATE_SUB(${effectiveStart}, INTERVAL ${tzOffset} MINUTE)`;
 
     if cleanEnd is string && isValidCanonicalDate(cleanEnd) {
-        query = sql:queryConcat(query, ` AND l.event_timestamp < DATE_SUB(DATE_ADD(${cleanEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`);
+        string effectiveEnd = cleanEnd;
+        if effectiveEnd < effectiveStart {
+            effectiveEnd = effectiveStart;
+        }
+        query = sql:queryConcat(query, ` AND l.event_timestamp < DATE_SUB(DATE_ADD(${effectiveEnd}, INTERVAL 1 DAY), INTERVAL ${tzOffset} MINUTE)`);
     }
 
     return query;
