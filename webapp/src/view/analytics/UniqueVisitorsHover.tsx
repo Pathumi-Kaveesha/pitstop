@@ -247,6 +247,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <IconButton
                 size="small"
+                aria-label="Previous visitors page"
                 onClick={handlePrevPage}
                 disabled={page === 0}
                 sx={{ color: "#fff", "&.Mui-disabled": { color: "rgba(255,255,255,0.2)" } }}
@@ -260,6 +261,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
 
               <IconButton
                 size="small"
+                aria-label="Next visitors page"
                 onClick={handleNextPage}
                 disabled={page >= totalPages - 1}
                 sx={{ color: "#fff", "&.Mui-disabled": { color: "rgba(255,255,255,0.2)" } }}
