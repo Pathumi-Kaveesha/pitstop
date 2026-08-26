@@ -768,3 +768,13 @@ isolated function splitCommaSeparated(string input) returns string[] {
     }
     return parts;
 }
+
+# Safely parses raw SQL JSON output into a strongly-typed VisitorUser array.
+# Prevents SQL driver mapping errors while preserving OpenAPI schema compatibility.
+#
+# + jsonVal - Raw JSON value retrieved from database JSON column queries
+# + return - Clean array of VisitorUser records
+isolated function parseVisitorDetails(json jsonVal) returns types:VisitorUser[] {
+    types:VisitorUser[]|error parsed = jsonVal.cloneWithType();
+    return parsed is types:VisitorUser[] ? parsed : [];
+}

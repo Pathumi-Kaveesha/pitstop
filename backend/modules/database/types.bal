@@ -830,3 +830,55 @@ public type Feedback record {|
     @sql:Column {name: "created_at"}
     string createdAt;
 |};
+
+# Internal record used to stream SQL query results for top content performance before mapping to public types.
+type DbContentMetric record {|
+    # Unique identifier of the content
+    int contentId;
+    # Title or name of the content
+    string title;
+    # Number of times preview button was clicked
+    int previewClicks;
+    # Number of times outlink button was clicked
+    int outlinkClicks;
+    # Total count of view events
+    int totalViews;
+    # Count of distinct user views
+    int uniqueViews;
+    # Raw JSON array of unique visitor details retrieved from database
+    json uniqueVisitorDetails;
+    # Count of full completions
+    int fullCompletions;
+|};
+
+# Internal record used to stream SQL query results for regional performance before mapping to public types.
+type DbRegionalTimeMetric record {|
+    # Region or team name
+    string region;
+    # Count of distinct visitors in this team
+    int uniqueVisits;
+    # Total number of visits / sessions in this team
+    int totalVisits;
+    # Total active engagement actions performed
+    int actions;
+    # Average time spent per visit in seconds
+    int avgTimeSpentSeconds;
+    # Raw JSON array of unique visitor details retrieved from database
+    json uniqueVisitorDetails;
+|};
+
+# Internal record used to stream SQL query results for global analytics totals before mapping to public types.
+type DbAnalyticsTotals record {|
+    # Total number of content views
+    int totalViews;
+    # Total number of distinct users who viewed content
+    int totalUniqueViews;
+    # Raw JSON array of distinct platform visitors retrieved from database
+    json totalUniqueVisitorDetails;
+    # Total cumulative user active time spent in seconds
+    int totalTimeSpentSeconds;
+    # Total overall platform interaction events
+    int totalEngagements;
+    # Average actions performed per visit
+    decimal avgActionsPerVisit;
+|};
