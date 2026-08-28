@@ -152,17 +152,29 @@ public isolated function logUserActivity(types:AnalyticsEvent event) returns err
     _ = check dbClient->execute(logUserActivityQuery(event));
 }
 
-# Fetch Top Content Performance metrics directly from the database.
+# Fetch Top Content Performance metrics directly from the database and safely parse visitor JSON arrays.
 #
 # + filter - Applied time range, region, user email, and page route filters
 # + return - Array of ContentPerformanceMetric records or database error
 public isolated function getTopContentMetrics(types:AnalyticsFilter filter) returns types:ContentPerformanceMetric[]|error {
-    stream<types:ContentPerformanceMetric, sql:Error?> contentStream = dbClient->query(getTopContentQuery(filter));
-    types:ContentPerformanceMetric[]|error metrics = from var item in contentStream select item;
+    stream<DbContentMetric, sql:Error?> contentStream = dbClient->query(getTopContentQuery(filter));
+    types:ContentPerformanceMetric[] metrics = [];
+    
+    check from DbContentMetric row in contentStream
+        do {
+            metrics.push({
+                contentId: row.contentId,
+                title: row.title,
+                previewClicks: row.previewClicks,
+                outlinkClicks: row.outlinkClicks,
+                totalViews: row.totalViews,
+                uniqueViews: row.uniqueViews,
+                uniqueVisitorDetails: parseVisitorDetails(row.uniqueVisitorDetails),
+                fullCompletions: row.fullCompletions
+            });
+        };
+
     error? closeErr = contentStream.close();
-    if metrics is error {
-        return metrics;
-    }
     if closeErr is error {
         return closeErr;
     }
@@ -186,21 +198,30 @@ public isolated function getUserLeaderboardMetrics(types:AnalyticsFilter filter)
     return entries;
 }
 
-# Fetch Regional Time Spent metrics directly from the database.
+# Fetch Regional Time Spent metrics directly from the database and safely parse visitor JSON arrays.
 #
 # + filter - Applied time range, region, and user email filters
 # + return - Array of RegionalTimeMetric records or database error
 public isolated function getRegionalTimeMetrics(types:AnalyticsFilter filter) returns types:RegionalTimeMetric[]|error {
-    stream<types:RegionalTimeMetric, sql:Error?> regionalStream = dbClient->query(getRegionalTimeSpentQuery(filter));
-    types:RegionalTimeMetric[]|error metrics = from var item in regionalStream select item;
+    stream<DbRegionalTimeMetric, sql:Error?> regionalStream = dbClient->query(getRegionalTimeSpentQuery(filter));
+    types:RegionalTimeMetric[] metrics = [];
+
+    check from DbRegionalTimeMetric row in regionalStream
+        do {
+            metrics.push({
+                region: row.region,
+                uniqueVisits: row.uniqueVisits,
+                totalVisits: row.totalVisits,
+                actions: row.actions,
+                avgTimeSpentSeconds: row.avgTimeSpentSeconds,
+                uniqueVisitorDetails: parseVisitorDetails(row.uniqueVisitorDetails)
+            });
+        };
+
     error? closeErr = regionalStream.close();
-    if metrics is error {
-        return metrics;
-    }
     if closeErr is error {
         return closeErr;
     }
-    
     return metrics;
 }
 
@@ -254,17 +275,20 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
     types:TrafficPeakMetric[] peakActivityTimes = check getPeakActivityMetrics(filter);
     types:DailyTrendMetric[] trends = check getDailyTrendMetrics(filter);
 
-    stream<types:AnalyticsTotals, sql:Error?> totalsStream = dbClient->query(getAnalyticsTotalsQuery(filter));
-    types:AnalyticsTotals[]|error totalsList = from var item in totalsStream select item;
+    stream<DbAnalyticsTotals, sql:Error?> totalsStream = dbClient->query(getAnalyticsTotalsQuery(filter));
+    DbAnalyticsTotals[] totalsList = [];
+
+    check from DbAnalyticsTotals row in totalsStream
+        do {
+            totalsList.push(row);
+        };
+
     error? closeErr = totalsStream.close();
-    if totalsList is error {
-        return totalsList;
-    }
     if closeErr is error {
         return closeErr;
     }
 
-    types:AnalyticsTotals totals = totalsList.length() > 0 ? totalsList[0] : {
+    DbAnalyticsTotals totals = totalsList.length() > 0 ? totalsList[0] : {
         totalViews: 0,
         totalUniqueViews: 0,
         totalUniqueVisitorDetails: [],
@@ -276,7 +300,7 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
     return {
         totalViews: totals.totalViews,
         totalUniqueViews: totals.totalUniqueViews,
-        totalUniqueVisitorDetails: totals.totalUniqueVisitorDetails,
+        totalUniqueVisitorDetails: parseVisitorDetails(totals.totalUniqueVisitorDetails),
         totalTimeSpentSeconds: totals.totalTimeSpentSeconds,
         totalEngagements: totals.totalEngagements,
         avgActionsPerVisit: totals.avgActionsPerVisit,

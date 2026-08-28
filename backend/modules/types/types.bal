@@ -152,7 +152,7 @@ public type AnalyticsTotals record {|
     # Total number of distinct users who viewed content
     int totalUniqueViews;
     # List of distinct platform visitors
-    json totalUniqueVisitorDetails = [];
+    VisitorUser[] totalUniqueVisitorDetails = [];
     # Total cumulative user active time spent in seconds
     int totalTimeSpentSeconds;
     # Total overall platform interaction events
@@ -184,7 +184,7 @@ public type ContentPerformanceMetric record {|
     # Count of distinct user views
     int uniqueViews;
     # List of unique visitor details
-    json uniqueVisitorDetails = [];
+    VisitorUser[] uniqueVisitorDetails = [];
     # Count of full completions
     int fullCompletions;
 |};
@@ -220,7 +220,7 @@ public type RegionalTimeMetric record {|
     # Average time spent per visit in seconds
     int avgTimeSpentSeconds;
     # List of unique visitor details in this region
-    json uniqueVisitorDetails = [];
+    VisitorUser[] uniqueVisitorDetails = [];
 |};
 
 # Most searched query metric.
@@ -266,7 +266,7 @@ public type ComprehensiveAnalyticsSummary record {|
     # Total unique views across all content
     int totalUniqueViews;
     # List of distinct platform visitors
-    json totalUniqueVisitorDetails = [];
+    VisitorUser[] totalUniqueVisitorDetails = [];
     # Total cumulative time spent by users in seconds
     int totalTimeSpentSeconds;
     # Total platform engagement interactions
@@ -274,17 +274,17 @@ public type ComprehensiveAnalyticsSummary record {|
     # Average actions performed per visit session
     decimal avgActionsPerVisit;
     # Daily trend breakdown of performance metrics over time
-    DailyTrendMetric[] trends;
+    DailyTrendMetric[] trends = [];
     # List of top performing content items
-    ContentPerformanceMetric[] topContent;
+    ContentPerformanceMetric[] topContent = [];
     # Ranked list of active users
-    UserLeaderboardEntry[] leaderboard;
+    UserLeaderboardEntry[] leaderboard = [];
     # Regional breakdown of time spent
-    RegionalTimeMetric[] regionalTimeSpent;
+    RegionalTimeMetric[] regionalTimeSpent = [];
     # List of most searched queries
-    SearchMetric[] topSearches;
+    SearchMetric[] topSearches = [];
     # Peak activity times breakdown
-    TrafficPeakMetric[] peakActivityTimes;
+    TrafficPeakMetric[] peakActivityTimes = [];
 |};
 
 
