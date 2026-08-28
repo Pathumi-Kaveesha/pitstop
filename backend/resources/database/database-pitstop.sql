@@ -432,3 +432,16 @@ ALTER TABLE `user_activity_logs`
 ADD COLUMN `meta_page_route` VARCHAR(255) 
     GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.pageRoute'))) VIRTUAL,
 ADD INDEX `idx_meta_page_route` (`meta_page_route`);
+
+UPDATE `user_activity_logs`
+SET `metadata` = JSON_SET(COALESCE(`metadata`, '{}'), '$.isAdmin', true)
+WHERE `id` > 0
+  AND LOWER(`user_email`) IN (
+    'dilshanf@wso2.com',
+    'harini@wso2.com',
+    'dinara@wso2.com',
+    'rashvini@wso2.com',
+    'yousuf@wso2.com',
+    'dilani@wso2.com',
+    'pathumi@wso2.com'
+  );
