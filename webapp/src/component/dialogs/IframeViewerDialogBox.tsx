@@ -286,7 +286,7 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   };
 
   const renderContent = () => {
-    if (!isDirectEmbeddable && backendState === "loading") {
+    if (!isRestrictedState && !isDirectEmbeddable && backendState === "loading") {
       return (
         <Box
           sx={{
