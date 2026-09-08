@@ -108,6 +108,7 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   const isGoogleDriveFile =
     link?.includes("drive.google.com") || link?.includes("docs.google.com");
 
+  const isLmsContent = normalizedContentType === FILETYPE.Lms;
   const isLocalBlocked = isBlockedUrl(link);
   const shouldCropIframe =
     contentType === FILETYPE.External_Link &&
@@ -127,6 +128,7 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     !isDirectEmbeddable &&
     (isGoogleDriveFolder ||
       isLocalBlocked ||
+      isLmsContent ||
       previewInfo?.status === "RESTRICTED" ||
       (previewInfo?.status === "BROKEN" && isGoogleDriveFile));
 
@@ -224,12 +226,12 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
 
   useEffect(() => {
     if (open && link) {
-      if (!isGoogleDriveFolder && !isLocalBlocked && !isDirectEmbeddable) {
+      if (!isGoogleDriveFolder && !isLocalBlocked && !isDirectEmbeddable && !isLmsContent) {
         activeRequestedLinkRef.current = link;
         dispatch(verifyLinkPreview(link));
       }
     }
-  }, [open, link, isGoogleDriveFolder, isLocalBlocked, isDirectEmbeddable, dispatch]);
+  }, [open, link, isGoogleDriveFolder, isLocalBlocked, isDirectEmbeddable, isLmsContent, dispatch]);
 
   useEffect(() => {
     if (!open) {
@@ -245,11 +247,11 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     if (
       open &&
       onPreviewReady &&
-      (isDirectEmbeddable || isGoogleDriveFolder || isLocalBlocked || isBackendReady)
+      (isDirectEmbeddable || isGoogleDriveFolder || isLocalBlocked || isLmsContent || isBackendReady)
     ) {
       onPreviewReady();
     }
-  }, [open, previewInfo?.status, link, isDirectEmbeddable, isGoogleDriveFolder, isLocalBlocked, onPreviewReady]);
+  }, [open, previewInfo?.status, link, isDirectEmbeddable, isGoogleDriveFolder, isLocalBlocked, isLmsContent, onPreviewReady]);
 
   const handleOpenInNewTabClick = () => {
     if (contentId) {
@@ -309,7 +311,10 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
       let errorMessage =
         "This content cannot be displayed in an embedded preview. Click the button below to open it in a new window.";
 
-      if (isGoogleDriveFolder || isGoogleDriveFile) {
+      if (isLmsContent) {
+        errorMessage =
+          "This LMS course needs you to be signed in on the training site directly. Click the button below to open it in a new window.";
+      } else if (isGoogleDriveFolder || isGoogleDriveFile) {
         errorMessage =
           "Google Drive items cannot be previewed directly inside this embedded frame. Click the button below to safely open the resource in a new window.";
       } else if (isLocalBlocked || previewInfo?.status === "RESTRICTED") {
