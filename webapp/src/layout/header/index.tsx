@@ -421,7 +421,7 @@ const Header = (props: HeaderProps) => {
         label={r.menuItem}
         routeId={r.routeId}
         primary={r.menuItem}
-        isActive={matchPath(pathname, r.path) !== null}
+        isActive={matchPath(r.path, pathname) !== null}
         children={r.children}
         level={1}
         handleSideBar={handleCloseSideBar}
