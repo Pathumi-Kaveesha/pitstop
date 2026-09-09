@@ -25,6 +25,7 @@ import pitstop.types;
 import ballerina/http;
 import ballerina/log;
 import ballerina/time;
+import ballerina/url;
 
 configurable int recentContentsLimit = 6;
 configurable int suggestedContentsLimit = 12;
@@ -33,6 +34,36 @@ configurable int suggestedContentsThreshold = 4;
 configurable string frontendBaseUrl = ?;
 
 configurable string appName = ?;
+
+// Smart Search (POC) is implemented as a separate Python service - the AI
+// libraries needed for this kind of feature are far more mature in Python
+// than in Ballerina's ecosystem today. This backend still owns login and
+// admin-permission checks (see the two smart\-search resources below); it
+// only forwards already-authorized requests to the Python service and
+// passes its response straight back.
+configurable string smartSearchServiceUrl = "http://localhost:8001";
+// Forced to plain HTTP/1.1 - Ballerina's client otherwise tries an HTTP/2
+// cleartext upgrade for larger request bodies (like an uploaded PDF),
+// which the Python service's server (uvicorn) doesn't support, and the
+// request body is silently dropped instead of reaching the endpoint.
+// timeout is extended to match the frontend-facing listener - a longer
+// document can take a while to chunk and embed (one paced Gemini call
+// per chunk), and the default 60s is not always enough.
+final http:Client smartSearchServiceClient =
+    check new (smartSearchServiceUrl, {httpVersion: http:HTTP_1_1, timeout: 300});
+
+# One matching document chunk returned by the Smart Search (POC) service.
+#
+# + content - The matching chunk's text
+# + title - The document it came from
+# + page - Which page of the document it came from
+# + similarityScore - How closely it matched the search query (0-1)
+type SmartSearchResult record {|
+    string content;
+    string title;
+    int? page = ();
+    float similarityScore;
+|};
 
 configurable types:AppInfo appInfo = {
     blockedIframeUrls: []
@@ -43,7 +74,14 @@ configurable types:AppInfo appInfo = {
     id: "pitstop"
 }
 
-service http:InterceptableService / on new http:Listener(9090) {
+// timeout raised from the 60s default - PDF uploads for smart search can
+// legitimately take longer than that for a large document, since each
+// piece of text is embedded one at a time with a deliberate pause between
+// requests (see gemini_embedding_provider.bal) to stay within Gemini's
+// rate limit. This applies to the whole app, not just that endpoint, but
+// only matters for requests that are actually slow - it doesn't change
+// how fast anything else responds.
+service http:InterceptableService / on new http:Listener(9090, {timeout: 300}) {
 
     public function createInterceptors() returns [authorization:JwtInterceptor, ResponseInterceptor] =>
         [new authorization:JwtInterceptor(), new ResponseInterceptor()];
@@ -1719,6 +1757,95 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
         return contentResponse;
+    }
+
+    # Upload a PDF document and add it to the smart search index. (POC)
+    #
+    # + ctx - Request object
+    # + request - Raw HTTP request carrying the PDF as its binary body
+    # + title - A human readable title for the uploaded document
+    # + return - Success or error responses
+    resource function post smart\-search/upload(http:RequestContext ctx, http:Request request, string title)
+        returns http:Created|http:Forbidden|http:BadRequest|http:InternalServerError {
+
+        string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
+        if userGroups is error {
+            log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
+            return <http:InternalServerError>{
+                body: constants:GET_USER_ROLE_ERROR
+            };
+        }
+        if !authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
+            log:printError(constants:UNAUTHORIZED_ACCESS_ERROR);
+            return http:FORBIDDEN;
+        }
+
+        byte[]|http:ClientError pdfContent = request.getBinaryPayload();
+        if pdfContent is http:ClientError {
+            log:printError("Error while reading uploaded file payload", pdfContent);
+            return <http:BadRequest>{
+                body: "Could not read the uploaded file."
+            };
+        }
+
+        // Encoded explicitly rather than relying on string interpolation
+        // alone - an unescaped special character (a comma, for instance)
+        // left in a URL can be misread by the receiving side as meaning
+        // something other than plain text. See the userQuery encoding
+        // below for the real bug this once caused.
+        string|url:Error encodedTitle = url:encode(title, "UTF-8");
+        if encodedTitle is url:Error {
+            log:printError("Error while encoding document title", encodedTitle);
+            return <http:BadRequest>{
+                body: "Invalid title."
+            };
+        }
+
+        // Sent via an explicit http:Request rather than a raw byte[] -
+        // that also avoids the HTTP/2-upgrade issue above kicking in for
+        // this larger, binary payload.
+        http:Request ingestRequest = new;
+        ingestRequest.setBinaryPayload(pdfContent, contentType = "application/pdf");
+        json|http:ClientError ingestResponse = smartSearchServiceClient->post(
+                string `/ingest?title=${encodedTitle}`, ingestRequest);
+        if ingestResponse is http:ClientError {
+            log:printError("Error while calling the smart search service", ingestResponse);
+            return <http:InternalServerError>{
+                body: "Error while indexing the uploaded document."
+            };
+        }
+
+        return http:CREATED;
+    }
+
+    # Smart-search the indexed documents using a natural language query. (POC)
+    #
+    # + userQuery - What the user typed into the search box
+    # + return - The closest matching chunks, or an error
+    resource function get smart\-search(string userQuery)
+        returns SmartSearchResult[]|http:InternalServerError {
+
+        // A search query typed by a real person is far more likely than a
+        // title to contain something like a comma - explicit encoding
+        // here is what actually fixed the truncated-query bug found
+        // earlier, now applied on this internal hop too.
+        string|url:Error encodedQuery = url:encode(userQuery, "UTF-8");
+        if encodedQuery is url:Error {
+            log:printError("Error while encoding search query", encodedQuery);
+            return <http:InternalServerError>{
+                body: "Error while searching."
+            };
+        }
+
+        SmartSearchResult[]|http:ClientError results =
+            smartSearchServiceClient->get(string `/search?userQuery=${encodedQuery}`);
+        if results is http:ClientError {
+            log:printError("Error while calling the smart search service", results);
+            return <http:InternalServerError>{
+                body: "Error while searching."
+            };
+        }
+        return results;
     }
 
     # Search contents basic info.

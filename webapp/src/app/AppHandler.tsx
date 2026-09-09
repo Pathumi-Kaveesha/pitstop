@@ -24,6 +24,7 @@ import { useSnackbar } from "notistack";
 import PreLoader from "@components/common/PreLoader";
 import ErrorHandler from "@components/common/ErrorHandler";
 import Search from "@view/search/index";
+import SmartSearchPoc from "@view/smartSearchPoc/index";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import { useMemo, useEffect } from "react";
 import Summary from "@view/summary/index";
@@ -106,6 +107,15 @@ const AppHandler = () => {
       {
         path: "/search",
         element: <Search />,
+        errorElement: <Error />,
+      },
+      {
+        path: "/smart-search-poc",
+        element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+          <SmartSearchPoc />
+        ) : (
+          <Error />
+        ),
         errorElement: <Error />,
       },
       {
