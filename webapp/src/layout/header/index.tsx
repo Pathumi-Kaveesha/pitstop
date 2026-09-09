@@ -169,6 +169,7 @@ const Header = (props: HeaderProps) => {
   }, [publiclyVisibleRoutes]);
 
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const iconsRef = useRef<HTMLDivElement>(null);
   const [paddockVisibleCount, setPaddockVisibleCount] = useState(5);
   const [resizeTick, setResizeTick] = useState(0);
 
@@ -178,10 +179,13 @@ const Header = (props: HeaderProps) => {
 
   useEffect(() => {
     if (!isPaddock || typeof ResizeObserver === "undefined") return;
-    const el = toolbarRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(() => setResizeTick((t) => t + 1));
-    observer.observe(el);
+    const toolbarEl = toolbarRef.current;
+    const iconsEl = iconsRef.current;
+    if (!toolbarEl) return;
+    const bump = () => setResizeTick((t) => t + 1);
+    const observer = new ResizeObserver(bump);
+    observer.observe(toolbarEl);
+    if (iconsEl) observer.observe(iconsEl);
     return () => observer.disconnect();
   }, [isPaddock]);
 
@@ -588,6 +592,7 @@ const Header = (props: HeaderProps) => {
                   Paddock, so spacing stays uniform instead of pinning icons to
                   the far right edge (which left an unbalanced-looking gap). */}
               <Stack
+                ref={iconsRef}
                 flexDirection="row"
                 gap={0.8}
                 sx={{
