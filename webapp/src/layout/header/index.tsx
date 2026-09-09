@@ -174,9 +174,7 @@ const Header = (props: HeaderProps) => {
 
   const knownOverflowCountRef = useRef(Infinity);
 
-  useEffect(() => {
-    knownOverflowCountRef.current = Infinity;
-  }, [baseMenuRoutes, resizeTick]);
+  const lastFitKeyRef = useRef("");
 
   useEffect(() => {
     if (!isPaddock || typeof ResizeObserver === "undefined") return;
@@ -191,6 +189,12 @@ const Header = (props: HeaderProps) => {
     if (!isPaddock) return;
     const el = toolbarRef.current;
     if (!el) return;
+
+    const fitKey = `${resizeTick}:${baseMenuRoutes.length}`;
+    if (lastFitKeyRef.current !== fitKey) {
+      lastFitKeyRef.current = fitKey;
+      knownOverflowCountRef.current = Infinity;
+    }
 
     const isOverflowing = el.scrollWidth > el.clientWidth + 1;
     if (isOverflowing) {
