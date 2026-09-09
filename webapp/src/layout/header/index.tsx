@@ -26,6 +26,7 @@ import {
   Avatar,
   Box,
   CssBaseline,
+  Divider,
   List,
   ListItemButton,
   ListItemIcon,
@@ -44,7 +45,7 @@ import { Theme, alpha, styled, useTheme } from "@mui/material/styles";
 import { useSelector } from "react-redux";
 import { matchPath, useLocation, useNavigate } from "react-router-dom";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import wso2Logo from "@assets/images/wso2-logo.png";
 import wso2LogoWhite from "@assets/images/wso2-logo-white.png";
@@ -136,6 +137,7 @@ const Header = (props: HeaderProps) => {
 
   const scrollButtonRef = useRef<HTMLButtonElement>(null);
   const publiclyVisibleRoutes = useMemo(() => filterPubliclyVisibleRoutes(routes), [routes]);
+  const isPaddock = window.config?.IS_PITSTOP_APP == false;
 
   const navigateWithLoading = useCallback((path: string) => {
     if (path === pathname) return;
@@ -145,7 +147,7 @@ const Header = (props: HeaderProps) => {
     }, 180);
   }, [pathname, navigate, dispatch]);
 
-  const newRoutes = useMemo(() => {
+  const baseMenuRoutes = useMemo<RouteResponse[]>(() => {
     const homeItem = publiclyVisibleRoutes.find((r) => r.routeId === ROUTE_ID_HOME);
     const otherRoutes = publiclyVisibleRoutes.filter(
       (r) => r.routeId !== ROUTE_ID_HOME && r.routeId !== ROUTE_ID_MY_BOARD,
@@ -161,11 +163,62 @@ const Header = (props: HeaderProps) => {
       isRouteVisible: true,
     };
 
-    const baseMenuRoutes = homeItem
+    return homeItem
       ? [homeItem, myBoardItem, ...otherRoutes]
       : [myBoardItem, ...otherRoutes];
+  }, [publiclyVisibleRoutes]);
 
-    const hasMoreItems = baseMenuRoutes.length > 6;
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const iconsRef = useRef<HTMLDivElement>(null);
+  const [paddockVisibleCount, setPaddockVisibleCount] = useState(5);
+  const [resizeTick, setResizeTick] = useState(0);
+
+  const knownOverflowCountRef = useRef(Infinity);
+
+  const lastFitKeyRef = useRef("");
+
+  useEffect(() => {
+    if (!isPaddock || typeof ResizeObserver === "undefined") return;
+    const toolbarEl = toolbarRef.current;
+    const iconsEl = iconsRef.current;
+    if (!toolbarEl) return;
+    const bump = () => setResizeTick((t) => t + 1);
+    const observer = new ResizeObserver(bump);
+    observer.observe(toolbarEl);
+    if (iconsEl) observer.observe(iconsEl);
+    return () => observer.disconnect();
+  }, [isPaddock]);
+
+  useLayoutEffect(() => {
+    if (!isPaddock) return;
+    const el = toolbarRef.current;
+    if (!el) return;
+
+    const fitKey = `${resizeTick}:${baseMenuRoutes.length}`;
+    if (lastFitKeyRef.current !== fitKey) {
+      lastFitKeyRef.current = fitKey;
+      knownOverflowCountRef.current = Infinity;
+    }
+
+    const isOverflowing = el.scrollWidth > el.clientWidth + 1;
+    if (isOverflowing) {
+      knownOverflowCountRef.current = Math.min(knownOverflowCountRef.current, paddockVisibleCount);
+      if (paddockVisibleCount > 1) {
+        setPaddockVisibleCount((c) => c - 1);
+      }
+      return;
+    }
+
+    const nextCount = paddockVisibleCount + 1;
+    if (nextCount <= baseMenuRoutes.length && nextCount < knownOverflowCountRef.current) {
+      setPaddockVisibleCount(nextCount);
+    }
+  }, [isPaddock, paddockVisibleCount, baseMenuRoutes, resizeTick]);
+
+  const newRoutes = useMemo(() => {
+    const visibleItemCount = isPaddock ? paddockVisibleCount : 5;
+
+    const hasMoreItems = baseMenuRoutes.length > visibleItemCount + 1;
     let finalRoutes: RouteResponse[] = [];
 
     if (hasMoreItems) {
@@ -173,11 +226,11 @@ const Header = (props: HeaderProps) => {
         menuItem: "more",
         path: "/MORE",
         routeId: ROUTE_ID_MORE,
-        routeOrder: 6.5,
-        children: baseMenuRoutes.slice(5),
+        routeOrder: visibleItemCount + 1.5,
+        children: baseMenuRoutes.slice(visibleItemCount),
         isRouteVisible: true,
       };
-      finalRoutes = [...baseMenuRoutes.slice(0, 5), moreItem];
+      finalRoutes = [...baseMenuRoutes.slice(0, visibleItemCount), moreItem];
     } else {
       finalRoutes = [...baseMenuRoutes];
     }
@@ -234,7 +287,7 @@ const Header = (props: HeaderProps) => {
     }
 
     return finalRoutes;
-  }, [publiclyVisibleRoutes, authorizedRoles]);
+  }, [baseMenuRoutes, authorizedRoles, isPaddock, paddockVisibleCount]);
 
   const [anchorElUser, setAnchorElUser] = useState<null | HTMLElement>(null);
   const userInfo = useSelector(selectUserInfo);
@@ -287,13 +340,103 @@ const Header = (props: HeaderProps) => {
 
   const isMyBoardActive = matchPath("/my-board", pathname) !== null;
 
+  const renderMenuItem = (r: RouteResponse, key: React.Key) => {
+    if (r.routeId === ROUTE_ID_MY_BOARD) {
+      return (
+        <ListItemButton
+          key={key}
+          onClick={() => navigateWithLoading(r.path)}
+          sx={{
+            mx: isPaddock ? 0.15 : 0.5,
+            px: isPaddock ? 0.75 : 1.5,
+            py: 0.5,
+            borderRadius: "8px",
+            minWidth: "auto",
+            whiteSpace: "nowrap",
+            position: "relative",
+            "&:hover": {
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? "rgba(255, 255, 255, 0.08)"
+                  : "rgba(0, 0, 0, 0.04)",
+            },
+            "&::after": {
+              content: '""',
+              position: "absolute",
+              bottom: "-8px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: isMyBoardActive ? "80%" : "0%",
+              height: "5px",
+              backgroundColor: theme.palette.primary.main,
+              borderRadius: "2px 2px 0 0",
+              transition: "width 0.3s ease",
+            },
+          }}
+        >
+          <DashboardIcon
+            sx={{
+              fontSize: "1.1rem",
+              mr: 0.5,
+              color: theme.palette.primary.main,
+            }}
+          />
+          <ListItemText
+            primary={r.menuItem}
+            primaryTypographyProps={{
+              sx: {
+                fontSize: "0.95rem",
+                fontWeight: isMyBoardActive ? 500 : 400,
+                color: theme.palette.primary.main,
+              },
+            }}
+          />
+        </ListItemButton>
+      );
+    }
+
+    if (r.routeId === ROUTE_ID_ADMIN_PANEL) {
+      return (
+        <ListItemLink
+          key={key}
+          theme={props.theme}
+          to={"#"}
+          label={r.menuItem}
+          routeId={INVALID_ROUTE_ID}
+          primary={r.menuItem}
+          isActive={false}
+          children={r.children}
+          level={1}
+          handleSideBar={handleCloseSideBar}
+          isRouteVisible={r.isRouteVisible ? 1 : 0}
+        />
+      );
+    }
+
+    return (
+      <ListItemLink
+        key={key}
+        theme={props.theme}
+        to={r.path}
+        label={r.menuItem}
+        routeId={r.routeId}
+        primary={r.menuItem}
+        isActive={matchPath(r.path, pathname) !== null}
+        children={r.children}
+        level={1}
+        handleSideBar={handleCloseSideBar}
+        isRouteVisible={r.isRouteVisible ? 1 : 0}
+      />
+    );
+  };
+
   return (
     <ColorModeContext.Consumer>
       {(colorMode) => (
         <Box>
           <CssBaseline />
           <StyledAppBar>
-            <Toolbar sx={{ alignItems: "center" }}>
+            <Toolbar ref={toolbarRef} sx={{ alignItems: "center" }}>
               <IconButton
                 aria-label="open drawer"
                 edge="start"
@@ -315,11 +458,14 @@ const Header = (props: HeaderProps) => {
               </IconButton>
 
               {/* Brand area */}
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ flexGrow: 1 }}>
+              {/* This area absorbs any leftover space, so "Home" onward stays
+                  flush against the right edge instead of trailing space after
+                  the avatar. Safe now that the fit logic doesn't depend on it. */}
+              <Stack direction="row" alignItems="center" spacing={isPaddock ? 0.5 : 1} sx={{ flexGrow: 1 }}>
                 <img
                   alt="wso2"
                   style={{
-                    marginRight: "10px",
+                    marginRight: isPaddock ? "6px" : "10px",
                     height: "20px",
                     maxWidth: "100px",
                   }}
@@ -327,22 +473,25 @@ const Header = (props: HeaderProps) => {
                 />
 
                 <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
-                <Typography
-                  noWrap
-                  component="div"
-                  sx={{
-                    fontWeight: 500,
-                    fontSize: "1.25rem",
-                    color: theme.palette.primary.contrastText,
-                    lineHeight: 1,
-                    display: "flex",
-                    alignItems: "center",
-                  }}
-                >
-                    {window.config?.APP_DETAILS?.NAME || ""}
-                  </Typography>
+                  {/* Paddock drops the app title to free up space for extra menu items */}
+                  {!isPaddock && (
+                    <Typography
+                      noWrap
+                      component="div"
+                      sx={{
+                        fontWeight: 500,
+                        fontSize: "1.25rem",
+                        color: theme.palette.primary.contrastText,
+                        lineHeight: 1,
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      {window.config?.APP_DETAILS?.NAME || ""}
+                    </Typography>
+                  )}
 
-                  {window.config?.IS_PITSTOP_APP == false && (
+                  {isPaddock && (
                     <Tooltip
                       title={`Switch to ${
                         window.config.REDIRECT_APP_NAME 
@@ -360,12 +509,13 @@ const Header = (props: HeaderProps) => {
                         sx={{
                           display: "flex",
                           alignItems: "center",
-                          px: 1.5,
-                          py: 0.5,
+                          px: 0.75,
+                          py: 0.3,
                           fontWeight: 500,
                           borderRadius: "8px",
                           textDecoration: "none",
-                          fontSize: "0.9rem",
+                          fontSize: "0.85rem",
+                          whiteSpace: "nowrap",
                           letterSpacing: "0.01em",
                           color: theme.palette.primary.main,
                           background:
@@ -413,106 +563,40 @@ const Header = (props: HeaderProps) => {
                   },
                   flexDirection: "row",
                   alignItems: "center",
-                  flexShrink: 0, 
+                  flexShrink: 0,
+                  ml: isPaddock ? 1.5 : 0,
                 }}
               >
-                {newRoutes.map((r, idx) => {
-                  if (r.routeId === ROUTE_ID_MY_BOARD) {
-                    return (
-                      <ListItemButton
-                        key={idx}
-                        onClick={() => navigateWithLoading(r.path)}
+                {newRoutes.map((r, idx) => (
+                  <React.Fragment key={r.routeId ?? idx}>
+                    {renderMenuItem(r, idx)}
+                    {isPaddock && idx < newRoutes.length - 1 && (
+                      <Divider
+                        orientation="vertical"
                         sx={{
-                          mx: 0.5,
-                          px: 1.5,
-                          py: 0.5,
-                          borderRadius: "8px",
-                          minWidth: "auto",
-                          whiteSpace: "nowrap",
-                          position: "relative",
-                          "&:hover": {
-                            backgroundColor:
-                              theme.palette.mode === "dark"
-                                ? "rgba(255, 255, 255, 0.08)"
-                                : "rgba(0, 0, 0, 0.04)",
-                          },
-                          "&::after": {
-                            content: '""',
-                            position: "absolute",
-                            bottom: "-8px",
-                            left: "50%",
-                            transform: "translateX(-50%)",
-                            width: isMyBoardActive ? "80%" : "0%",
-                            height: "5px",
-                            backgroundColor: theme.palette.primary.main,
-                            borderRadius: "2px 2px 0 0",
-                            transition: "width 0.3s ease",
-                          },
+                          height: "18px",
+                          alignSelf: "center",
+                          mx: 0.25,
+                          borderColor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(255, 255, 255, 0.15)"
+                              : "rgba(0, 0, 0, 0.12)",
                         }}
-                      >
-                        <DashboardIcon
-                          sx={{
-                            fontSize: "1.1rem",
-                            mr: 0.5,
-                            color: theme.palette.primary.main,
-                          }}
-                        />
-                        <ListItemText
-                          primary={r.menuItem}
-                          primaryTypographyProps={{
-                            sx: {
-                              fontSize: "0.95rem",
-                              fontWeight: isMyBoardActive ? 500 : 400,
-                              color: theme.palette.primary.main,
-                            },
-                          }}
-                        />
-                      </ListItemButton>
-                    );
-                  }
-
-                  if (r.routeId === ROUTE_ID_ADMIN_PANEL) {
-                    return (
-                      <ListItemLink
-                        key={idx}
-                        theme={props.theme}
-                        to={"#"}
-                        label={r.menuItem}
-                        routeId={INVALID_ROUTE_ID}
-                        primary={r.menuItem}
-                        isActive={false}
-                        children={r.children}
-                        level={1}
-                        handleSideBar={handleCloseSideBar}
-                        isRouteVisible={r.isRouteVisible ? 1 : 0}
                       />
-                    );
-                  }
-
-                  return (
-                    <ListItemLink
-                      key={idx}
-                      theme={props.theme}
-                      to={r.path}
-                      label={r.menuItem}
-                      routeId={r.routeId}
-                      primary={r.menuItem}
-                      isActive={matchPath(pathname, r.path) !== null}
-                      children={r.children}
-                      level={1}
-                      handleSideBar={handleCloseSideBar}
-                      isRouteVisible={r.isRouteVisible ? 1 : 0}
-                    />
-                  );
-                })}
+                    )}
+                  </React.Fragment>
+                ))}
               </List>
 
-              {/* Right-side utility icons */}
+              {/* Right-side utility icons — same fixed gap as every other item in
+                  Paddock, so spacing stays uniform instead of pinning icons to
+                  the far right edge (which left an unbalanced-looking gap). */}
               <Stack
+                ref={iconsRef}
                 flexDirection="row"
                 gap={0.8}
                 sx={{
-                  marginLeft: theme.spacing(2),
+                  marginLeft: isPaddock ? theme.spacing(1.5) : theme.spacing(2),
                   marginRight: -0.5,
                   alignItems: "center",
                   flexShrink: 0,

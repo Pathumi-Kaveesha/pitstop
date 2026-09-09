@@ -44,7 +44,8 @@ const ListItemLink = (props: ListItemLinkProps) => {
   const navigate = useNavigate();
 
   const isTopLevel = level === 1;
-  
+  const isCompact = isTopLevel && window.config?.IS_PITSTOP_APP == false;
+
   const [, setTranslateOffset] = useState(0);
 
   useEffect(() => {
@@ -153,7 +154,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
           pr: routeId === INVALID_ROUTE_ID ? 3 : 0,
           borderRadius: theme.spacing(0.5),
           margin: 0,
-          padding: "0 8px",
+          padding: isCompact ? "0 3px" : "0 8px",
           position: "relative",
           cursor: (children && children.length > 0) || routeId !== INVALID_ROUTE_ID ? "pointer" : "default",
           "&:hover": {
@@ -192,7 +193,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
               fontSize: "14px",
               fontWeight: 500,
               margin: 0,
-              padding: "0 4px",
+              padding: isCompact ? "0 1px" : "0 4px",
             },
           }}
           primary={primary}
