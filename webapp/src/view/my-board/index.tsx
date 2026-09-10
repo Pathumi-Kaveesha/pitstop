@@ -55,7 +55,8 @@ import QuizCard from "@view/quiz/components/QuizCard";
 
 const PINNED_CONTENT_SECTION_ID = -2;
 const ESSENTIALS_SECTION_ID = -4;
-const ITEMS_PER_PAGE = 3;
+// Paddock shows 6 tiles per panel before "See more"; Pitstop keeps 3.
+const ITEMS_PER_PAGE = window.config?.IS_PITSTOP_APP === false ? 6 : 3;
 const QUIZZES_PER_PAGE = 5;
 
 type LoadState = string;

@@ -52,7 +52,8 @@ export const SECTION_LIMIT = 15;
 export const NA_VALUE = "N/A";
 
 export const ADMIN_QUIZZES_PER_PAGE = 5;
-export const CONTENTS_PER_SECTION = 3;
+// Paddock shows 6 tiles per section before "See more"; Pitstop keeps 3.
+export const CONTENTS_PER_SECTION = window.config?.IS_PITSTOP_APP === false ? 6 : 3;
 export const CONTENT_STATE_SUCCESS = "success";
 export const CONTENT_STATE_IDLE = "idle";
 export const CONTENT_STATE_FAILED = "failed";
