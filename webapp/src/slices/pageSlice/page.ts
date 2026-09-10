@@ -43,7 +43,8 @@ import {
 } from "@config/constant";
 import {MyBoardPanelTypes} from "@utils/types";
 
-const MY_BOARD_ITEMS_PER_PAGE = 3;
+// Paddock shows 6 tiles per panel before "See more"; Pitstop keeps 3.
+const MY_BOARD_ITEMS_PER_PAGE = window.config?.IS_PITSTOP_APP === false ? 6 : 3;
 const MY_BOARD_ESSENTIALS_SECTION_ID = -4;
 
 type MyBoardSectionState = {
