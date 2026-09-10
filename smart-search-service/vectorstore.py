@@ -25,6 +25,7 @@ from dataclasses import dataclass
 import requests
 
 from config import (
+    MAX_CHUNKS_PER_DOCUMENT,
     MAX_SCORE_GAP_FROM_TOP_MATCH,
     MINIMUM_SIMILARITY_SCORE,
     PINECONE_API_KEY,
@@ -44,17 +45,27 @@ class SearchResult:
     title: str
     page: int
     similarity_score: float
+    document_id: str
 
 
-def upsert_chunks(vectors: list[list[float]], texts: list[str], title: str, pages: list[int]) -> None:
+def upsert_chunks(
+    vectors: list[list[float]],
+    texts: list[str],
+    title: str,
+    pages: list[int],
+    document_id: str,
+) -> None:
     """Stores each (vector, text, metadata) triple in Pinecone. Each
     vector gets its own random id - nothing meaningful is encoded in the
-    id itself, all the useful info lives in the metadata."""
+    id itself, all the useful info lives in the metadata. document_id is
+    the same for every chunk of one upload - it's how a search result
+    later points back to the actual saved PDF file (see main.py's
+    /documents/{document_id})."""
     records = [
         {
             "id": str(uuid.uuid4()),
             "values": vector,
-            "metadata": {"fileName": title, "page": page, "content": text},
+            "metadata": {"fileName": title, "page": page, "content": text, "documentId": document_id},
         }
         for vector, text, page in zip(vectors, texts, pages)
     ]
@@ -69,8 +80,12 @@ def upsert_chunks(vectors: list[list[float]], texts: list[str], title: str, page
 
 def search(query_vector: list[float], top_results_count: int, pool_multiplier: int) -> list[SearchResult]:
     """Embeds-and-compares step: pulls a wider pool of raw chunk matches
-    than requested (several of the closest chunks often belong to the same
-    document), then narrows it down to the top distinct documents."""
+    than requested, then narrows it down to the strongest, most relevant
+    ones - allowing more than one chunk from the same document through
+    (up to MAX_CHUNKS_PER_DOCUMENT), since a document can genuinely be
+    relevant in more than one place and Tool 2 needs to see all of the
+    real matches to answer completely, not just whichever single passage
+    happened to score highest."""
     raw_pool_size = top_results_count * pool_multiplier
     response = requests.post(
         f"{PINECONE_SERVICE_URL}/query",
@@ -81,36 +96,50 @@ def search(query_vector: list[float], top_results_count: int, pool_multiplier: i
     response.raise_for_status()
     matches = response.json().get("matches", [])
 
-    # Keep only the single best-scoring chunk per document title. Anything
-    # below the noise floor is dropped here - see MINIMUM_SIMILARITY_SCORE
+    # Drop anything below the noise floor - see MINIMUM_SIMILARITY_SCORE
     # in config.py for why that number.
-    best_per_document: dict[str, SearchResult] = {}
-    for match in matches:
-        score = match["score"]
-        if score < MINIMUM_SIMILARITY_SCORE:
-            continue
+    candidates = [m for m in matches if m["score"] >= MINIMUM_SIMILARITY_SCORE]
+    if not candidates:
+        return []
 
+    # Pinecone already returns matches sorted by score, but sort explicitly
+    # so the "top score" used just below is reliable regardless.
+    candidates.sort(key=lambda m: m["score"], reverse=True)
+
+    # Drop anything trailing too far behind the single best match of *this*
+    # search - see MAX_SCORE_GAP_FROM_TOP_MATCH in config.py for why. This
+    # compares against the best score across *all* candidates, not per
+    # document, so a document's second-best chunk is judged the same way
+    # a different document's only chunk would be.
+    top_score = candidates[0]["score"]
+    candidates = [m for m in candidates if top_score - m["score"] <= MAX_SCORE_GAP_FROM_TOP_MATCH]
+
+    # Walk down the survivors in score order, keeping up to
+    # MAX_CHUNKS_PER_DOCUMENT chunks per document title rather than only
+    # ever the single best one.
+    chunks_used_per_document: dict[str, int] = {}
+    results: list[SearchResult] = []
+    for match in candidates:
         metadata = match.get("metadata", {})
         title = metadata.get("fileName", "Untitled")
-        existing = best_per_document.get(title)
-        if existing is None or score > existing.similarity_score:
-            best_per_document[title] = SearchResult(
+        used = chunks_used_per_document.get(title, 0)
+        if used >= MAX_CHUNKS_PER_DOCUMENT:
+            continue
+        chunks_used_per_document[title] = used + 1
+
+        results.append(
+            SearchResult(
                 content=metadata.get("content", ""),
                 title=title,
                 page=metadata.get("page", 1),
-                similarity_score=score,
+                similarity_score=match["score"],
+                document_id=metadata.get("documentId", ""),
             )
+        )
+        if len(results) >= top_results_count:
+            break
 
-    sorted_results = sorted(best_per_document.values(), key=lambda r: r.similarity_score, reverse=True)
-
-    # On top of the floor already applied above, also drop anything
-    # trailing too far behind the single best match of *this* search - see
-    # MAX_SCORE_GAP_FROM_TOP_MATCH in config.py for why.
-    if sorted_results:
-        top_score = sorted_results[0].similarity_score
-        sorted_results = [r for r in sorted_results if top_score - r.similarity_score <= MAX_SCORE_GAP_FROM_TOP_MATCH]
-
-    return sorted_results[:top_results_count]
+    return results
 
 
 def delete_document(title: str) -> None:

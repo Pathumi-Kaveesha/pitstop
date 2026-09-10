@@ -17,13 +17,30 @@
 """All tunable settings for the smart search service, in one place -
 mirrors the values previously used in the Ballerina version, so search
 behavior (filtering, chunk sizes, scoring) doesn't change with the
-language switch."""
+language switch.
+
+Tool 1 (retrieve.py/vectorstore.py) is unchanged by any of this: it still
+finds and filters matching chunks using embedding-score math only, nothing
+read by an AI. Tool 2 (generation.py) is new, and is the one deliberate
+exception to that rule - explicitly approved to send the *already-filtered*
+chunk content to an LLM, to turn a list of matches into one written answer.
+"""
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Where uploaded PDFs are kept so a search result can be opened and
+# verified against the real document, not just trusted from a snippet.
+# POC-only choice: a local folder next to this service. Fine for now, but
+# doesn't survive the service moving to a different machine or restarting
+# on ephemeral infrastructure - real cloud storage (S3/GCS/Blob Storage)
+# is the correct replacement before this goes to production.
+UPLOADED_PDFS_DIR = Path(__file__).parent / "uploaded_pdfs"
+UPLOADED_PDFS_DIR.mkdir(exist_ok=True)
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
@@ -77,8 +94,19 @@ EMBED_RETRY_DELAY_SECONDS = 5
 
 # How many raw chunk matches to pull per distinct document we want back -
 # several of the closest chunks are often from the same document, so we
-# over-fetch before de-duplicating by document title.
+# over-fetch before narrowing down.
 RAW_MATCH_POOL_MULTIPLIER = 6
+
+# A single document can genuinely be relevant to a search in more than one
+# place - a brief mention in one passage, a fuller explanation somewhere
+# else. Keeping only that document's single highest-scoring chunk (the
+# earlier approach) risks handing Tool 2 the weaker of the two just
+# because it happened to score a little higher, and hiding the passage
+# that actually answers the question. This caps how many chunks from the
+# *same* document are allowed through, rather than limiting it to one -
+# still bounded, so one very strong document can't crowd out every other
+# result, but no longer throwing away real, relevant content.
+MAX_CHUNKS_PER_DOCUMENT = 2
 
 # Filtering is embedding-score-only, on purpose - document content is never
 # sent anywhere for an AI to read/judge, only the meaning-code (the list of
@@ -96,3 +124,25 @@ RAW_MATCH_POOL_MULTIPLIER = 6
 #     since a real second-best match tends to sit close to the top one.
 MINIMUM_SIMILARITY_SCORE = 0.70
 MAX_SCORE_GAP_FROM_TOP_MATCH = 0.06
+
+# Tool 2: the model used to turn Tool 1's matched chunks into one written
+# answer. A separate model from GEMINI_EMBEDDING_MODEL above - this one
+# reads and reasons about text, the embedding model never does. Intended to
+# be swapped for Claude in production - everything provider-specific for
+# this step lives in generation.py, so that swap shouldn't touch anything
+# else in this service.
+GEMINI_GENERATION_MODEL = "gemini-flash-latest"
+
+# Low but not zero - keeps the answer grounded in the given excerpts rather
+# than creative, without making it robotic.
+GENERATION_TEMPERATURE = 0.2
+
+# Generation calls take noticeably longer than embedding calls (real
+# reasoning happens here, not just a lookup), and can occasionally fail
+# with a transient error on Google's end (a 503, or a slow response) even
+# when nothing is wrong with the request - so this gets the same
+# retry-with-a-pause treatment as embeddings, just with more time allowed
+# per attempt.
+GENERATION_TIMEOUT_SECONDS = 60
+GENERATION_MAX_RETRIES = 3
+GENERATION_RETRY_DELAY_SECONDS = 3

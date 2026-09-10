@@ -80,6 +80,7 @@ export const AppConfig = {
     searchContentBasic: ServiceBaseUrl + "/search-content/basic",
     smartSearchUpload: ServiceBaseUrl + "/smart-search/upload",
     smartSearch: ServiceBaseUrl + "/smart-search",
+    smartSearchDocument: (documentId: string) => ServiceBaseUrl + "/smart-search/documents/" + documentId,
     getPageData: ServiceBaseUrl + "/routes",
     getAllTags: ServiceBaseUrl + "/tags",
     createTag: ServiceBaseUrl + "/tags",

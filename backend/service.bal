@@ -52,17 +52,34 @@ configurable string smartSearchServiceUrl = "http://localhost:8001";
 final http:Client smartSearchServiceClient =
     check new (smartSearchServiceUrl, {httpVersion: http:HTTP_1_1, timeout: 300});
 
-# One matching document chunk returned by the Smart Search (POC) service.
+# One matching document chunk found by Tool 1 (embedding-score search) -
+# used as a source/citation backing up Tool 2's generated answer below.
 #
 # + content - The matching chunk's text
 # + title - The document it came from
 # + page - Which page of the document it came from
 # + similarityScore - How closely it matched the search query (0-1)
+# + documentId - Id of the original uploaded PDF this chunk came from - used
+# to fetch and preview that file via the smart\-search/documents/[documentId]
+# resource below
 type SmartSearchResult record {|
     string content;
     string title;
     int? page = ();
     float similarityScore;
+    string documentId = "";
+|};
+
+# Full response from the Smart Search (POC) service: Tool 2's written
+# answer, grounded in Tool 1's matches, plus those matches themselves so
+# the user can see exactly which real documents it was drawn from.
+#
+# + answer - A written answer generated from the sources below, or () if
+# Tool 1 found nothing worth answering from
+# + sources - The underlying document chunks the answer was based on
+type SmartSearchResponse record {|
+    string? answer;
+    SmartSearchResult[] sources;
 |};
 
 configurable types:AppInfo appInfo = {
@@ -1820,10 +1837,15 @@ service http:InterceptableService / on new http:Listener(9090, {timeout: 300}) {
 
     # Smart-search the indexed documents using a natural language query. (POC)
     #
+    # Tool 1 (embedding-score search) finds the matching chunks; Tool 2
+    # (an LLM call) turns those into one written answer. Both run inside
+    # the Python service - this resource just forwards the request and
+    # passes back whatever it returns.
+    #
     # + userQuery - What the user typed into the search box
-    # + return - The closest matching chunks, or an error
+    # + return - A generated answer plus its sources, or an error
     resource function get smart\-search(string userQuery)
-        returns SmartSearchResult[]|http:InternalServerError {
+        returns SmartSearchResponse|http:InternalServerError {
 
         // A search query typed by a real person is far more likely than a
         // title to contain something like a comma - explicit encoding
@@ -1837,15 +1859,41 @@ service http:InterceptableService / on new http:Listener(9090, {timeout: 300}) {
             };
         }
 
-        SmartSearchResult[]|http:ClientError results =
+        SmartSearchResponse|http:ClientError result =
             smartSearchServiceClient->get(string `/search?userQuery=${encodedQuery}`);
-        if results is http:ClientError {
-            log:printError("Error while calling the smart search service", results);
+        if result is http:ClientError {
+            log:printError("Error while calling the smart search service", result);
             return <http:InternalServerError>{
                 body: "Error while searching."
             };
         }
-        return results;
+        return result;
+    }
+
+    # Fetch the original PDF behind one smart-search result, so it can be
+    # opened and checked against the real document. (POC)
+    #
+    # Same access level as smart\-search above - any logged in user can
+    # already see this document's content in a search result, so being
+    # able to open the underlying file adds no new exposure. documentId
+    # itself is validated on the Python side (see main.py's
+    # get_document) before it's ever touched as a file path.
+    #
+    # + documentId - Id of the document to fetch, taken from a search
+    # result's documentId field
+    # + return - The raw PDF, or an error response
+    resource function get smart\-search/documents/[string documentId]()
+        returns http:Response|http:InternalServerError {
+
+        http:Response|http:ClientError pdfResponse =
+            smartSearchServiceClient->get(string `/documents/${documentId}`);
+        if pdfResponse is http:ClientError {
+            log:printError("Error while calling the smart search service", pdfResponse);
+            return <http:InternalServerError>{
+                body: "Error while fetching the document."
+            };
+        }
+        return pdfResponse;
     }
 
     # Search contents basic info.
