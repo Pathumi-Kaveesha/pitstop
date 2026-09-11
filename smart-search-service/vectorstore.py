@@ -46,6 +46,8 @@ class SearchResult:
     page: int
     similarity_score: float
     document_id: str
+    unit_label: str
+    file_extension: str
 
 
 def upsert_chunks(
@@ -54,18 +56,29 @@ def upsert_chunks(
     title: str,
     pages: list[int],
     document_id: str,
+    unit_label: str,
+    file_extension: str,
 ) -> None:
     """Stores each (vector, text, metadata) triple in Pinecone. Each
     vector gets its own random id - nothing meaningful is encoded in the
     id itself, all the useful info lives in the metadata. document_id is
     the same for every chunk of one upload - it's how a search result
-    later points back to the actual saved PDF file (see main.py's
-    /documents/{document_id})."""
+    later points back to the actual saved file (see main.py's
+    /documents/{document_id}). unit_label and file_extension travel with
+    every chunk so a result can say "Slide 7" rather than "Page 7", and so
+    the browser knows which kind of file it is about to render."""
     records = [
         {
             "id": str(uuid.uuid4()),
             "values": vector,
-            "metadata": {"fileName": title, "page": page, "content": text, "documentId": document_id},
+            "metadata": {
+                "fileName": title,
+                "page": page,
+                "content": text,
+                "documentId": document_id,
+                "unitLabel": unit_label,
+                "fileExtension": file_extension,
+            },
         }
         for vector, text, page in zip(vectors, texts, pages)
     ]
@@ -134,6 +147,8 @@ def search(query_vector: list[float], top_results_count: int, pool_multiplier: i
                 page=metadata.get("page", 1),
                 similarity_score=match["score"],
                 document_id=metadata.get("documentId", ""),
+                unit_label=metadata.get("unitLabel", "Page"),
+                file_extension=metadata.get("fileExtension", "pdf"),
             )
         )
         if len(results) >= top_results_count:

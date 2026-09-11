@@ -30,13 +30,13 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
-from chunking import chunk_document
+from chunking import UNIT_LABELS, chunk_document, normalize_extension, read_sheet_grid
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     RAW_MATCH_POOL_MULTIPLIER,
     TASK_TYPE_QUERY,
     EMBED_REQUEST_SPACING_SECONDS,
-    UPLOADED_PDFS_DIR,
+    UPLOADED_DOCUMENTS_DIR,
 )
 from embeddings import embed_chunks, embed_text
 from generation import generate_answer
@@ -47,6 +47,20 @@ logger = logging.getLogger("smart-search-service")
 
 app = FastAPI(title="Pitstop Smart Search (POC)")
 
+# What to tell the browser each stored file actually is. Without the right
+# type, a browser will not know how to hand the file to the code that
+# renders it, and may just download it instead.
+# A spreadsheet can be tens of thousands of rows long; nobody scrolls a
+# preview that far, and sending them all would be slow for no benefit.
+MAX_PREVIEW_SHEET_ROWS = 500
+
+MEDIA_TYPES = {
+    "pdf": "application/pdf",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
 
 @app.get("/health")
 def health() -> dict:
@@ -54,18 +68,32 @@ def health() -> dict:
 
 
 @app.post("/ingest")
-async def ingest(request: Request, title: str = Query(..., min_length=1)) -> dict:
-    """Reads a PDF from the raw request body, chunks it, embeds each
-    chunk, and stores the results in Pinecone."""
-    pdf_bytes = await request.body()
-    if not pdf_bytes:
+async def ingest(
+    request: Request,
+    title: str = Query(..., min_length=1),
+    fileName: str = Query(..., min_length=1),
+) -> dict:
+    """Reads a document from the raw request body, chunks it, embeds each
+    chunk, and stores the results in Pinecone. fileName is needed only for
+    its extension - that is what decides how the bytes get read (a slide
+    deck and a spreadsheet are pulled apart very differently), and it is
+    stored alongside the file so it can be served back correctly later."""
+    file_bytes = await request.body()
+    if not file_bytes:
         raise HTTPException(status_code=400, detail="No file content received.")
+
+    try:
+        extension = normalize_extension(fileName)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
     # A fresh, random id for this specific upload - used both to tag every
     # chunk that comes from it (so a search result can point back to the
     # right file) and as the saved file's name on disk.
     document_id = str(uuid.uuid4())
-    await run_in_threadpool((UPLOADED_PDFS_DIR / f"{document_id}.pdf").write_bytes, pdf_bytes)
+    await run_in_threadpool(
+        (UPLOADED_DOCUMENTS_DIR / f"{document_id}.{extension}").write_bytes, file_bytes
+    )
 
     # Everything below is blocking, synchronous work (PDF parsing, and a
     # deliberately paced sequence of Gemini/Pinecone calls that can take a
@@ -74,7 +102,7 @@ async def ingest(request: Request, title: str = Query(..., min_length=1)) -> dic
     # unrelated requests like /health or /search, would freeze for the
     # entire duration of one upload.
     try:
-        chunks = await run_in_threadpool(chunk_document, pdf_bytes)
+        chunks = await run_in_threadpool(chunk_document, file_bytes, extension)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -87,7 +115,14 @@ async def ingest(request: Request, title: str = Query(..., min_length=1)) -> dic
     try:
         vectors = await run_in_threadpool(embed_chunks, [c.text for c in chunks], EMBED_REQUEST_SPACING_SECONDS)
         await run_in_threadpool(
-            upsert_chunks, vectors, [c.text for c in chunks], title, [c.page for c in chunks], document_id
+            upsert_chunks,
+            vectors,
+            [c.text for c in chunks],
+            title,
+            [c.page for c in chunks],
+            document_id,
+            UNIT_LABELS[extension],
+            extension,
         )
     except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
         logger.exception("Failed to index uploaded document")
@@ -122,6 +157,8 @@ def search_endpoint(
             "page": r.page,
             "similarityScore": r.similarity_score,
             "documentId": r.document_id,
+            "unitLabel": r.unit_label,
+            "fileExtension": r.file_extension,
         }
         for r in results
     ]
@@ -143,23 +180,57 @@ def search_endpoint(
     return {"answer": answer, "sources": sources}
 
 
-@app.get("/documents/{document_id}")
-def get_document(document_id: str):
-    """Serves back the original uploaded PDF for a search result, so a
-    match can be opened and checked against the real document instead of
-    just trusted from a snippet.
+def _resolve_document(document_id: str):
+    """Finds a stored file by its id, whatever extension it was saved with.
 
     document_id comes straight from the URL, so it's validated as a real
     UUID before it's ever combined with a file path - otherwise a crafted
     id like "../../some/other/file" could be used to read files outside
-    of uploaded_pdfs/ (a path traversal attack)."""
+    of uploaded_documents/ (a path traversal attack)."""
     try:
         uuid.UUID(document_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document id.")
 
-    file_path = UPLOADED_PDFS_DIR / f"{document_id}.pdf"
-    if not file_path.is_file():
+    matches = sorted(UPLOADED_DOCUMENTS_DIR.glob(f"{document_id}.*"))
+    if not matches:
         raise HTTPException(status_code=404, detail="Document not found.")
+    return matches[0]
 
-    return FileResponse(file_path, media_type="application/pdf")
+
+@app.get("/documents/{document_id}/sheets")
+def get_document_sheets(document_id: str) -> dict:
+    """Returns a spreadsheet as plain rows and columns, for display.
+
+    This exists so the browser doesn't have to parse .xlsx itself. This
+    service already opens the file to index it, so reading it here costs
+    nothing extra - whereas doing it in the browser meant shipping a large
+    spreadsheet library to every user to redo work already done here."""
+    file_path = _resolve_document(document_id)
+    if file_path.suffix.lower() != ".xlsx":
+        raise HTTPException(status_code=400, detail="This document is not a spreadsheet.")
+
+    try:
+        sheets = read_sheet_grid(file_path.read_bytes(), MAX_PREVIEW_SHEET_ROWS)
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+        logger.exception("Failed to read spreadsheet for preview")
+        raise HTTPException(status_code=500, detail=f"Error while reading spreadsheet: {error}") from error
+
+    return {"sheets": sheets, "maxRows": MAX_PREVIEW_SHEET_ROWS}
+
+
+@app.get("/documents/{document_id}")
+def get_document(document_id: str):
+    """Serves back the original uploaded file for a search result, so a
+    match can be opened and checked against the real document instead of
+    just trusted from a snippet.
+
+    The extension isn't part of the URL, so the file is looked up by id
+    alone and whatever extension it was stored under decides the media
+    type sent back - which is what tells the browser how to render it."""
+    file_path = _resolve_document(document_id)
+    extension = file_path.suffix.lstrip(".").lower()
+    return FileResponse(
+        file_path,
+        media_type=MEDIA_TYPES.get(extension, "application/octet-stream"),
+    )

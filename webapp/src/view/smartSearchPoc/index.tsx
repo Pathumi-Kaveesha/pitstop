@@ -23,7 +23,6 @@ import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Divider from "@mui/material/Divider";
 import Dialog from "@mui/material/Dialog";
@@ -36,6 +35,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import CloseIcon from "@mui/icons-material/Close";
 import { AppConfig } from "@config/config";
 import { ApiService } from "@utils/apiService";
+import DocumentPreview from "./DocumentPreview";
 
 // Proof-of-concept page for the smart search feature. Not linked from the
 // main navigation yet - reachable directly at /smart-search-poc while this
@@ -53,6 +53,8 @@ interface SmartSearchResult {
   page: number | null;
   similarityScore: number;
   documentId: string;
+  unitLabel: string;
+  fileExtension: string;
 }
 
 interface SmartSearchResponse {
@@ -78,10 +80,6 @@ function formatSnippet(content: string): string {
   return `${truncated.slice(0, lastSpace > 0 ? lastSpace : SNIPPET_MAX_LENGTH)}…`;
 }
 
-function matchColor(score: number): "success" | "warning" {
-  return score >= 0.8 ? "success" : "warning";
-}
-
 // One excerpt, plus its position in the original flat `sources` list - kept
 // around so each excerpt can be opened/previewed individually, even after
 // grouping several of them under one card below.
@@ -93,7 +91,7 @@ interface SourceExcerpt {
 interface GroupedSource {
   documentId: string;
   title: string;
-  topScore: number;
+  fileExtension: string;
   excerpts: SourceExcerpt[];
 }
 
@@ -114,11 +112,15 @@ function groupSourcesByDocument(sources: SmartSearchResult[]): GroupedSource[] {
     const key = source.documentId || `title:${source.title}`;
     let group = groupsByKey.get(key);
     if (!group) {
-      group = { documentId: source.documentId, title: source.title, topScore: source.similarityScore, excerpts: [] };
+      group = {
+        documentId: source.documentId,
+        title: source.title,
+        fileExtension: source.fileExtension,
+        excerpts: [],
+      };
       groupsByKey.set(key, group);
       groups.push(group);
     }
-    group.topScore = Math.max(group.topScore, source.similarityScore);
     group.excerpts.push({ source, originalIndex });
   });
 
@@ -149,11 +151,24 @@ export default function SmartSearchPoc() {
 
   // The document currently shown in the preview dialog below, if any.
   // title is the human-readable title the user gave it at upload time
-  // (never the raw documentId/filename) - blobUrl is the fetched PDF's
-  // in-browser address, and page is which page to jump straight to.
-  const [previewDoc, setPreviewDoc] = useState<{ title: string; blobUrl: string; page: number | null } | null>(
-    null
-  );
+  // (never the raw documentId/filename), file is the downloaded document
+  // itself, extension decides how it gets rendered, and page is which
+  // page/slide/section/sheet to open at.
+  const [previewDoc, setPreviewDoc] = useState<{
+    title: string;
+    file: Blob | null;
+    extension: string;
+    page: number | null;
+    unitLabel: string;
+    matchedExcerpt: string;
+    documentId: string;
+  } | null>(null);
+
+  // Percent of the document downloaded so far, or null when the size
+  // isn't known up front. Shown inside the dialog - a large slide deck can
+  // be tens of megabytes, and a spinner with no numbers on it is
+  // indistinguishable from the page having hung.
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
   // Upload success/error messages are transient - clear them on their own
   // after a few seconds instead of sitting there until the next upload.
@@ -169,7 +184,7 @@ export default function SmartSearchPoc() {
     const file = event.target.files?.[0] ?? null;
     setSelectedFile(file);
     if (file && !title) {
-      setTitle(file.name.replace(/\.pdf$/i, ""));
+      setTitle(file.name.replace(/\.(pdf|pptx|docx|xlsx)$/i, ""));
     }
   };
 
@@ -185,7 +200,7 @@ export default function SmartSearchPoc() {
     try {
       const fileBytes = await selectedFile.arrayBuffer();
       await ApiService.getInstance().post(AppConfig.serviceUrls.smartSearchUpload, fileBytes, {
-        params: { title: title.trim() },
+        params: { title: title.trim(), fileName: selectedFile.name },
         headers: { "Content-Type": "application/pdf" },
       });
       setUploadMessage({ type: "success", text: `"${title}" was indexed successfully.` });
@@ -212,22 +227,33 @@ export default function SmartSearchPoc() {
       return;
     }
 
+    // The dialog opens straight away with no file in it yet, so the title
+    // and download progress are visible while the bytes are still coming
+    // down, rather than nothing happening until they've all arrived.
     setOpeningIndex(index);
+    setDownloadProgress(null);
+    setPreviewDoc({
+      title: source.title,
+      file: null,
+      extension: (source.fileExtension || "pdf").toLowerCase(),
+      page: source.page,
+      unitLabel: source.unitLabel || "Page",
+      matchedExcerpt: source.content,
+      documentId: source.documentId,
+    });
+
     try {
       const response = await ApiService.getInstance().get(AppConfig.serviceUrls.smartSearchDocument(source.documentId), {
         responseType: "blob",
+        onDownloadProgress: (event) => {
+          if (event.total) {
+            setDownloadProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        },
       });
-      const blobUrl = URL.createObjectURL(response.data);
-      setPreviewDoc((current) => {
-        // Switching to a different excerpt while the dialog is already
-        // open would otherwise leak the previous blob URL - it's never
-        // needed again once replaced.
-        if (current) {
-          URL.revokeObjectURL(current.blobUrl);
-        }
-        return { title: source.title, blobUrl, page: source.page };
-      });
+      setPreviewDoc((current) => (current ? { ...current, file: response.data } : current));
     } catch (error) {
+      setPreviewDoc(null);
       setSearchError("Couldn't open that document. Check the console/backend logs for details.");
       // eslint-disable-next-line no-console
       console.error(error);
@@ -237,20 +263,21 @@ export default function SmartSearchPoc() {
   };
 
   const handleClosePreview = () => {
-    setPreviewDoc((current) => {
-      if (current) {
-        URL.revokeObjectURL(current.blobUrl);
-      }
-      return null;
-    });
+    setPreviewDoc(null);
+    setDownloadProgress(null);
   };
 
+  // Only meaningful for PDFs, which browsers can open in a tab of their
+  // own. For the Office formats this hands over the original file, which
+  // is what someone wanting it outside the app actually wants anyway.
   const handleOpenPreviewInNewTab = () => {
-    if (!previewDoc) {
+    if (!previewDoc?.file) {
       return;
     }
-    const pageFragment = previewDoc.page ? `#page=${previewDoc.page}` : "";
-    window.open(`${previewDoc.blobUrl}${pageFragment}`, "_blank", "noopener,noreferrer");
+    const url = URL.createObjectURL(previewDoc.file);
+    const pageFragment = previewDoc.extension === "pdf" && previewDoc.page ? `#page=${previewDoc.page}` : "";
+    window.open(`${url}${pageFragment}`, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
   const handleSearch = async () => {
@@ -290,7 +317,7 @@ export default function SmartSearchPoc() {
         Smart Search (POC)
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-        Upload a PDF, then search it in plain language below. This page is a proof of concept only.
+        Upload a PDF, PowerPoint, Word or Excel file, then search it in plain language below. This page is a proof of concept only.
       </Typography>
 
       <Card variant="outlined" sx={{ mb: 4 }}>
@@ -300,8 +327,8 @@ export default function SmartSearchPoc() {
           </Typography>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <Button component="label" variant="outlined" startIcon={<UploadFileIcon />} sx={{ alignSelf: "flex-start" }}>
-              {selectedFile ? selectedFile.name : "Choose PDF file"}
-              <input type="file" accept="application/pdf" hidden onChange={handleFileChange} />
+              {selectedFile ? selectedFile.name : "Choose a file"}
+              <input type="file" accept=".pdf,.pptx,.docx,.xlsx" hidden onChange={handleFileChange} />
             </Button>
             <TextField
               label="Title"
@@ -378,7 +405,6 @@ export default function SmartSearchPoc() {
               <Stack spacing={1.5}>
                 {groupedSources.map((group) => {
                   const canPreview = Boolean(group.documentId);
-                  const multipleExcerpts = group.excerpts.length > 1;
                   return (
                     <Card key={group.documentId || group.title} variant="outlined">
                       <CardContent sx={{ "&:last-child": { pb: 2 } }}>
@@ -387,19 +413,17 @@ export default function SmartSearchPoc() {
                           <Typography variant="subtitle1" fontWeight={600} sx={{ flexGrow: 1 }}>
                             {group.title}
                           </Typography>
-                          <Chip
-                            size="small"
-                            label={`${(group.topScore * 100).toFixed(0)}% match`}
-                            color={matchColor(group.topScore)}
-                            variant="outlined"
-                          />
                         </Stack>
 
                         {group.excerpts.map(({ source, originalIndex }, excerptPosition) => {
                           const isOpening = openingIndex === originalIndex;
+                          const location = source.page !== null ? `${source.unitLabel || "Page"} ${source.page}` : null;
                           return (
                             <Box key={originalIndex}>
                               {excerptPosition > 0 && <Divider sx={{ my: 1 }} />}
+                              {/* The whole block is the click target, including the
+                                  "Open" line at the bottom - a prompt to click that
+                                  isn't itself clickable is worse than no prompt. */}
                               <Box
                                 onClick={canPreview ? () => handleOpenDocument(source, originalIndex) : undefined}
                                 sx={
@@ -409,46 +433,37 @@ export default function SmartSearchPoc() {
                                         borderRadius: 1,
                                         mx: -0.5,
                                         px: 0.5,
+                                        py: 0.5,
                                         transition: "background-color 0.15s",
                                         "&:hover": { bgcolor: "action.hover" },
                                       }
                                     : undefined
                                 }
                               >
-                                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                                  {source.page !== null && (
-                                    <Typography variant="caption" color="text.secondary">
-                                      Page {source.page}
-                                    </Typography>
-                                  )}
-                                  {/* Only shown once there's more than one excerpt - with just
-                                      one, it would just repeat the "top match" chip above. */}
-                                  {multipleExcerpts && (
-                                    <Typography variant="caption" color="text.secondary">
-                                      {(source.similarityScore * 100).toFixed(0)}% match
-                                    </Typography>
-                                  )}
-                                  <Box sx={{ flexGrow: 1 }} />
-                                  {canPreview &&
-                                    (isOpening ? (
-                                      <CircularProgress size={14} />
-                                    ) : (
-                                      <OpenInNewIcon sx={{ fontSize: 14 }} color="action" />
-                                    ))}
-                                </Stack>
+                                {location && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                                    {location}
+                                  </Typography>
+                                )}
                                 <Typography variant="body2" color="text.secondary">
                                   {formatSnippet(source.content)}
                                 </Typography>
+                                {canPreview && (
+                                  <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
+                                    {isOpening ? (
+                                      <CircularProgress size={14} />
+                                    ) : (
+                                      <OpenInNewIcon sx={{ fontSize: 14 }} color="primary" />
+                                    )}
+                                    <Typography variant="caption" color="primary">
+                                      {isOpening ? "Opening…" : location ? `Open at ${location}` : "Open this document"}
+                                    </Typography>
+                                  </Stack>
+                                )}
                               </Box>
                             </Box>
                           );
                         })}
-
-                        {canPreview && (
-                          <Typography variant="caption" color="primary" sx={{ display: "block", mt: 1 }}>
-                            {multipleExcerpts ? "Click an excerpt to open that page" : "Click to preview the PDF"}
-                          </Typography>
-                        )}
                       </CardContent>
                     </Card>
                   );
@@ -510,7 +525,7 @@ export default function SmartSearchPoc() {
           >
             <Typography variant="subtitle1" fontWeight={600} noWrap sx={{ color: "grey.100", flexGrow: 1, mr: 2 }}>
               {previewDoc?.title}
-              {previewDoc?.page ? ` — Page ${previewDoc.page}` : ""}
+              {previewDoc?.page ? ` — ${previewDoc.unitLabel} ${previewDoc.page}` : ""}
             </Typography>
             <IconButton
               size="small"
@@ -525,12 +540,20 @@ export default function SmartSearchPoc() {
               <CloseIcon fontSize="small" />
             </IconButton>
           </Box>
-          <Box sx={{ flexGrow: 1, position: "relative" }}>
+          {/* minHeight: 0 matters here. A flex child defaults to
+              min-height: auto, which lets it grow to fit its content
+              rather than being clamped to the dialog - so a long document
+              would stretch this box past the dialog's edge and the
+              scrolling inside DocumentPreview would never kick in. */}
+          <Box sx={{ flexGrow: 1, position: "relative", minHeight: 0, overflow: "hidden" }}>
             {previewDoc && (
-              <iframe
-                title={previewDoc.title}
-                src={`${previewDoc.blobUrl}${previewDoc.page ? `#page=${previewDoc.page}` : ""}`}
-                style={{ border: "none", width: "100%", height: "100%" }}
+              <DocumentPreview
+                file={previewDoc.file}
+                extension={previewDoc.extension}
+                page={previewDoc.page}
+                downloadProgress={downloadProgress}
+                matchedExcerpt={previewDoc.matchedExcerpt}
+                documentId={previewDoc.documentId}
               />
             )}
           </Box>

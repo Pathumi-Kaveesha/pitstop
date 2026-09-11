@@ -14,80 +14,99 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Tool 2: turns Tool 1's matched chunks into one written answer.
+"""Tool 2: turns the chunks Tool 1 already matched into one written answer.
 
-This is the one deliberate exception to this project's earlier rule of
-never sending document content to an AI - explicitly approved, and kept
-isolated to this single file. Only ever called with chunks that already
-passed Tool 1's similarity floor (vectorstore.py), so nothing unrelated
-reaches the model here either.
+This is the single place in the service where document text is sent to an
+AI to be *read and reasoned about* - and only ever text that Tool 1 has
+already decided is relevant, never a whole document. Everything else
+(searching, filtering, ranking) is arithmetic on embedding vectors.
 
-Swapping providers (Gemini now, Claude for production) is meant to stay
-contained to this file - the rest of the app only ever calls
-generate_answer(query, results) and doesn't know or care which model
-answers it."""
+This is also the only file that knows which AI provider is in use, which
+is what made swapping Gemini for Claude a change to this file alone.
+"""
 
+import logging
 import time
 
-import requests
+import anthropic
 
 from config import (
-    GEMINI_API_KEY,
-    GEMINI_BASE_URL,
-    GEMINI_GENERATION_MODEL,
+    ANTHROPIC_API_KEY,
+    CLAUDE_GENERATION_MODEL,
+    GENERATION_EFFORT,
     GENERATION_MAX_RETRIES,
+    GENERATION_MAX_TOKENS,
     GENERATION_RETRY_DELAY_SECONDS,
-    GENERATION_TEMPERATURE,
     GENERATION_TIMEOUT_SECONDS,
 )
 from vectorstore import SearchResult
 
+logger = logging.getLogger("smart-search-service")
 
-def build_prompt(query: str, results: list[SearchResult]) -> str:
-    """Lays out the matched chunks as labeled excerpts, then asks for one
-    answer grounded only in what's given - not the model's general
-    knowledge, and not anything beyond these specific excerpts."""
-    excerpts = "\n\n".join(f"[Source: {r.title}, page {r.page}]\n{r.content}" for r in results)
+# Built once and reused. The SDK retries connection errors, 429s and 5xx
+# by itself, so the retry loop below only handles what it gives up on.
+_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=GENERATION_TIMEOUT_SECONDS)
 
-    return f"""You are answering a question using only the excerpts below, taken from internal company documents. Answer clearly, in a few sentences.
+SYSTEM_PROMPT = """You answer questions using only the excerpts you are given, which come from internal company documents.
 
 Rules:
-- Use only the information in the excerpts below. Do not add anything from outside them.
+- Use only the information in the excerpts. Never add anything from outside them.
 - If the excerpts don't actually answer the question, say so plainly instead of guessing.
 - Mention which source(s) your answer is drawn from, by name.
+- Answer in a few clear sentences. No preamble."""
 
-Question: {query}
+
+def build_prompt(query: str, results: list[SearchResult]) -> str:
+    excerpts = "\n\n".join(f"[Source: {r.title}, {r.unit_label.lower()} {r.page}]\n{r.content}" for r in results)
+    return f"""Question: {query}
 
 Excerpts:
-{excerpts}
-
-Answer:"""
+{excerpts}"""
 
 
 def generate_answer(query: str, results: list[SearchResult]) -> str:
-    """Sends the already-filtered chunks plus the user's question to
-    Gemini, and returns one synthesized, grounded answer. Retries a couple
-    of times on a transient failure (a slow response, or an occasional 503
-    from Google's side) rather than failing the whole search over it."""
+    """Asks Claude to write one answer grounded in the given excerpts.
+
+    Note there is no temperature setting: current Claude models reject
+    sampling parameters outright. Groundedness comes from the system
+    prompt and from the fact that only already-matched text is sent."""
     prompt = build_prompt(query, results)
 
-    url = f"{GEMINI_BASE_URL}/models/{GEMINI_GENERATION_MODEL}:generateContent"
-    headers = {"x-goog-api-key": GEMINI_API_KEY}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": GENERATION_TEMPERATURE},
-    }
-
-    last_error = None
+    last_error: Exception | None = None
     for attempt in range(GENERATION_MAX_RETRIES + 1):
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=GENERATION_TIMEOUT_SECONDS)
-            response.raise_for_status()
-            data = response.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except Exception as error:  # noqa: BLE001 - genuinely want to retry on anything
-            last_error = error
-            if attempt < GENERATION_MAX_RETRIES:
-                time.sleep(GENERATION_RETRY_DELAY_SECONDS)
+            response = _client.messages.create(
+                model=CLAUDE_GENERATION_MODEL,
+                max_tokens=GENERATION_MAX_TOKENS,
+                output_config={"effort": GENERATION_EFFORT},
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": prompt}],
+            )
 
-    raise RuntimeError(f"Failed to call the Gemini generateContent API: {last_error}") from last_error
+            # A safety decline comes back as a normal 200 response, not an
+            # error, so it has to be checked for explicitly rather than
+            # assuming there's text to read.
+            if response.stop_reason == "refusal":
+                logger.warning("Claude declined to answer this query")
+                raise RuntimeError("The model declined to answer this question.")
+
+            # content is a list of blocks, and only some of them are text
+            # (adaptive thinking adds its own), so pick out the text ones.
+            answer = "".join(block.text for block in response.content if block.type == "text").strip()
+            if not answer:
+                raise RuntimeError("The model returned an empty answer.")
+            return answer
+
+        except anthropic.APIStatusError as error:
+            # 4xx that isn't a rate limit means the request itself is wrong -
+            # retrying an identical bad request just wastes the user's time.
+            last_error = error
+            if error.status_code < 500 and error.status_code != 429:
+                break
+        except (anthropic.APIConnectionError, RuntimeError) as error:
+            last_error = error
+
+        if attempt < GENERATION_MAX_RETRIES:
+            time.sleep(GENERATION_RETRY_DELAY_SECONDS)
+
+    raise RuntimeError(f"Failed to generate an answer: {last_error}") from last_error

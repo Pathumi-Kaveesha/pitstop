@@ -33,16 +33,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Where uploaded PDFs are kept so a search result can be opened and
-# verified against the real document, not just trusted from a snippet.
+# Where uploaded documents are kept so a search result can be opened and
+# verified against the real file, not just trusted from a snippet. Each is
+# saved under its own id plus its original extension, e.g.
+# "3f2b...c1.pptx", so the browser can be told what kind of file it is
+# getting and render it accordingly.
 # POC-only choice: a local folder next to this service. Fine for now, but
 # doesn't survive the service moving to a different machine or restarting
 # on ephemeral infrastructure - real cloud storage (S3/GCS/Blob Storage)
 # is the correct replacement before this goes to production.
-UPLOADED_PDFS_DIR = Path(__file__).parent / "uploaded_pdfs"
-UPLOADED_PDFS_DIR.mkdir(exist_ok=True)
+UPLOADED_DOCUMENTS_DIR = Path(__file__).parent / "uploaded_documents"
+UPLOADED_DOCUMENTS_DIR.mkdir(exist_ok=True)
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
 PINECONE_SERVICE_URL = os.environ["PINECONE_SERVICE_URL"]
 
@@ -126,23 +130,42 @@ MINIMUM_SIMILARITY_SCORE = 0.70
 MAX_SCORE_GAP_FROM_TOP_MATCH = 0.06
 
 # Tool 2: the model used to turn Tool 1's matched chunks into one written
-# answer. A separate model from GEMINI_EMBEDDING_MODEL above - this one
-# reads and reasons about text, the embedding model never does. Intended to
-# be swapped for Claude in production - everything provider-specific for
-# this step lives in generation.py, so that swap shouldn't touch anything
-# else in this service.
-GEMINI_GENERATION_MODEL = "gemini-flash-latest"
+# answer. A completely separate model from GEMINI_EMBEDDING_MODEL above -
+# this one reads and reasons about text, the embedding model never does.
+#
+# This was always intended to move to Claude, and now has. Everything
+# provider-specific for this step lives in generation.py, which is why the
+# swap touched nothing else in the service. Embeddings stay on Gemini -
+# changing those would mean re-indexing every stored document, since
+# vectors from different embedding models can't be compared.
+CLAUDE_GENERATION_MODEL = "claude-opus-5"
 
-# Low but not zero - keeps the answer grounded in the given excerpts rather
-# than creative, without making it robotic.
-GENERATION_TEMPERATURE = 0.2
+# How hard the model works before answering. This step is a simple one -
+# read a handful of excerpts that have already been judged relevant, and
+# write a few sentences grounded in them - so the lowest setting is the
+# right fit and keeps the answer fast. Raise it if answers start missing
+# things that are plainly in the excerpts.
+GENERATION_EFFORT = "low"
+
+# A ceiling, not a target - billing is on what's actually generated, so a
+# generous cap costs nothing and only avoids answers being cut off
+# mid-sentence.
+GENERATION_MAX_TOKENS = 8000
 
 # Generation calls take noticeably longer than embedding calls (real
 # reasoning happens here, not just a lookup), and can occasionally fail
-# with a transient error on Google's end (a 503, or a slow response) even
-# when nothing is wrong with the request - so this gets the same
-# retry-with-a-pause treatment as embeddings, just with more time allowed
-# per attempt.
-GENERATION_TIMEOUT_SECONDS = 60
-GENERATION_MAX_RETRIES = 3
+# with a transient error even when nothing is wrong with the request - so
+# this gets the same retry-with-a-pause treatment as embeddings. Note the
+# Anthropic SDK already retries connection errors, 429s and 5xx on its
+# own; this outer retry is the backstop for anything it gives up on.
+#
+# Kept deliberately tight, because the user is waiting on this: the search
+# results themselves are already found by the time this runs, and are
+# returned with no answer if it fails (see main.py). A generous retry
+# budget therefore doesn't buy a better result, it just makes a failing
+# Gemini take longer to give up. Measured against a real outage: 60s x 4
+# attempts meant a ~4 minute wait before the results appeared at all.
+# Worst case now is roughly 20 + 3 + 20 = 43s.
+GENERATION_TIMEOUT_SECONDS = 90
+GENERATION_MAX_RETRIES = 1
 GENERATION_RETRY_DELAY_SECONDS = 3

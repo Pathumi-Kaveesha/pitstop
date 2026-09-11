@@ -59,15 +59,22 @@ final http:Client smartSearchServiceClient =
 # + title - The document it came from
 # + page - Which page of the document it came from
 # + similarityScore - How closely it matched the search query (0-1)
-# + documentId - Id of the original uploaded PDF this chunk came from - used
+# + documentId - Id of the original uploaded file this chunk came from - used
 # to fetch and preview that file via the smart\-search/documents/[documentId]
 # resource below
+# + unitLabel - What one piece of this kind of file is called - "Page" for a
+# PDF, "Slide" for a deck, "Section" for a Word document, "Sheet" for a
+# spreadsheet - so a result can be labelled the way a reader expects
+# + fileExtension - The original file's type (pdf/pptx/docx/xlsx), which tells
+# the browser which renderer to open the preview with
 type SmartSearchResult record {|
     string content;
     string title;
     int? page = ();
     float similarityScore;
     string documentId = "";
+    string unitLabel = "Page";
+    string fileExtension = "pdf";
 |};
 
 # Full response from the Smart Search (POC) service: Tool 2's written
@@ -1781,8 +1788,12 @@ service http:InterceptableService / on new http:Listener(9090, {timeout: 300}) {
     # + ctx - Request object
     # + request - Raw HTTP request carrying the PDF as its binary body
     # + title - A human readable title for the uploaded document
+    # + fileName - The original file name, needed for its extension - that is
+    # what tells the Python service how to read the bytes (a slide deck and a
+    # spreadsheet are pulled apart very differently)
     # + return - Success or error responses
-    resource function post smart\-search/upload(http:RequestContext ctx, http:Request request, string title)
+    resource function post smart\-search/upload(http:RequestContext ctx, http:Request request, string title,
+            string fileName)
         returns http:Created|http:Forbidden|http:BadRequest|http:InternalServerError {
 
         string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
@@ -1818,13 +1829,21 @@ service http:InterceptableService / on new http:Listener(9090, {timeout: 300}) {
             };
         }
 
+        string|url:Error encodedFileName = url:encode(fileName, "UTF-8");
+        if encodedFileName is url:Error {
+            log:printError("Error while encoding file name", encodedFileName);
+            return <http:BadRequest>{
+                body: "Invalid file name."
+            };
+        }
+
         // Sent via an explicit http:Request rather than a raw byte[] -
         // that also avoids the HTTP/2-upgrade issue above kicking in for
         // this larger, binary payload.
         http:Request ingestRequest = new;
         ingestRequest.setBinaryPayload(pdfContent, contentType = "application/pdf");
         json|http:ClientError ingestResponse = smartSearchServiceClient->post(
-                string `/ingest?title=${encodedTitle}`, ingestRequest);
+                string `/ingest?title=${encodedTitle}&fileName=${encodedFileName}`, ingestRequest);
         if ingestResponse is http:ClientError {
             log:printError("Error while calling the smart search service", ingestResponse);
             return <http:InternalServerError>{
@@ -1882,6 +1901,28 @@ service http:InterceptableService / on new http:Listener(9090, {timeout: 300}) {
     # + documentId - Id of the document to fetch, taken from a search
     # result's documentId field
     # + return - The raw PDF, or an error response
+    # Fetch a spreadsheet's contents as rows and columns, for preview. (POC)
+    #
+    # Only valid for .xlsx documents. The Python service reads the file and
+    # returns plain rows, so the browser doesn't need a spreadsheet library
+    # of its own just to display one.
+    #
+    # + documentId - Id of the spreadsheet, taken from a search result
+    # + return - The sheet contents, or an error response
+    resource function get smart\-search/documents/[string documentId]/sheets()
+        returns json|http:InternalServerError {
+
+        json|http:ClientError sheets =
+            smartSearchServiceClient->get(string `/documents/${documentId}/sheets`);
+        if sheets is http:ClientError {
+            log:printError("Error while calling the smart search service", sheets);
+            return <http:InternalServerError>{
+                body: "Error while reading the spreadsheet."
+            };
+        }
+        return sheets;
+    }
+
     resource function get smart\-search/documents/[string documentId]()
         returns http:Response|http:InternalServerError {
 

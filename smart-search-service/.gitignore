@@ -4,4 +4,4 @@ __pycache__/
 .venv/
 venv/
 *.log
-uploaded_pdfs/
+uploaded_documents/
