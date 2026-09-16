@@ -45,7 +45,7 @@ import { Theme, alpha, styled, useTheme } from "@mui/material/styles";
 import { useSelector } from "react-redux";
 import { matchPath, useLocation, useNavigate } from "react-router-dom";
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import wso2Logo from "@assets/images/wso2-logo.png";
 import wso2LogoWhite from "@assets/images/wso2-logo-white.png";
@@ -168,57 +168,10 @@ const Header = (props: HeaderProps) => {
       : [myBoardItem, ...otherRoutes];
   }, [publiclyVisibleRoutes]);
 
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const iconsRef = useRef<HTMLDivElement>(null);
-  const [paddockVisibleCount, setPaddockVisibleCount] = useState(5);
-  const [resizeTick, setResizeTick] = useState(0);
-
-  const knownOverflowCountRef = useRef(Infinity);
-
-  const lastFitKeyRef = useRef("");
-
-  useEffect(() => {
-    if (!isPaddock || typeof ResizeObserver === "undefined") return;
-    const toolbarEl = toolbarRef.current;
-    const iconsEl = iconsRef.current;
-    if (!toolbarEl) return;
-    const bump = () => setResizeTick((t) => t + 1);
-    const observer = new ResizeObserver(bump);
-    observer.observe(toolbarEl);
-    if (iconsEl) observer.observe(iconsEl);
-    return () => observer.disconnect();
-  }, [isPaddock]);
-
-  useLayoutEffect(() => {
-    if (!isPaddock) return;
-    const el = toolbarRef.current;
-    if (!el) return;
-
-    const fitKey = `${resizeTick}:${baseMenuRoutes.length}`;
-    if (lastFitKeyRef.current !== fitKey) {
-      lastFitKeyRef.current = fitKey;
-      knownOverflowCountRef.current = Infinity;
-    }
-
-    const isOverflowing = el.scrollWidth > el.clientWidth + 1;
-    if (isOverflowing) {
-      knownOverflowCountRef.current = Math.min(knownOverflowCountRef.current, paddockVisibleCount);
-      if (paddockVisibleCount > 1) {
-        setPaddockVisibleCount((c) => c - 1);
-      }
-      return;
-    }
-
-    const nextCount = paddockVisibleCount + 1;
-    if (nextCount <= baseMenuRoutes.length && nextCount < knownOverflowCountRef.current) {
-      setPaddockVisibleCount(nextCount);
-    }
-  }, [isPaddock, paddockVisibleCount, baseMenuRoutes, resizeTick]);
-
   const newRoutes = useMemo(() => {
-    const visibleItemCount = isPaddock ? paddockVisibleCount : 5;
-
-    const hasMoreItems = baseMenuRoutes.length > visibleItemCount + 1;
+    const visibleItemCount = isPaddock ? 8 : 5;
+    const overflowThreshold = isPaddock ? visibleItemCount : visibleItemCount + 1;
+    const hasMoreItems = baseMenuRoutes.length > overflowThreshold;
     let finalRoutes: RouteResponse[] = [];
 
     if (hasMoreItems) {
@@ -287,7 +240,7 @@ const Header = (props: HeaderProps) => {
     }
 
     return finalRoutes;
-  }, [baseMenuRoutes, authorizedRoles, isPaddock, paddockVisibleCount]);
+  }, [baseMenuRoutes, authorizedRoles, isPaddock]);
 
   const [anchorElUser, setAnchorElUser] = useState<null | HTMLElement>(null);
   const userInfo = useSelector(selectUserInfo);
@@ -436,7 +389,7 @@ const Header = (props: HeaderProps) => {
         <Box>
           <CssBaseline />
           <StyledAppBar>
-            <Toolbar ref={toolbarRef} sx={{ alignItems: "center" }}>
+            <Toolbar sx={{ alignItems: "center" }}>
               <IconButton
                 aria-label="open drawer"
                 edge="start"
@@ -458,9 +411,6 @@ const Header = (props: HeaderProps) => {
               </IconButton>
 
               {/* Brand area */}
-              {/* This area absorbs any leftover space, so "Home" onward stays
-                  flush against the right edge instead of trailing space after
-                  the avatar. Safe now that the fit logic doesn't depend on it. */}
               <Stack direction="row" alignItems="center" spacing={isPaddock ? 0.5 : 1} sx={{ flexGrow: 1 }}>
                 <img
                   alt="wso2"
@@ -588,11 +538,7 @@ const Header = (props: HeaderProps) => {
                 ))}
               </List>
 
-              {/* Right-side utility icons — same fixed gap as every other item in
-                  Paddock, so spacing stays uniform instead of pinning icons to
-                  the far right edge (which left an unbalanced-looking gap). */}
               <Stack
-                ref={iconsRef}
                 flexDirection="row"
                 gap={0.8}
                 sx={{
