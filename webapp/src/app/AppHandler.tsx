@@ -24,6 +24,7 @@ import { useSnackbar } from "notistack";
 import PreLoader from "@components/common/PreLoader";
 import ErrorHandler from "@components/common/ErrorHandler";
 import Search from "@view/search/index";
+import SmartSearchPoc from "@view/smartSearchPoc/index";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import { useMemo, useEffect } from "react";
 import Summary from "@view/summary/index";
@@ -99,6 +100,11 @@ const AppHandler = () => {
             ) : (
               <Error />
             ),
+            errorElement: <Error />,
+          },
+          {
+            path: "/smart-search-poc",
+            element: <SmartSearchPoc />,
             errorElement: <Error />,
           },
         ],

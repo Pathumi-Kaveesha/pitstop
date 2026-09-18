@@ -78,6 +78,7 @@ export const AppConfig = {
     addLike: ServiceBaseUrl + "/contents/",
     searchContent: ServiceBaseUrl + "/search-content",
     searchContentBasic: ServiceBaseUrl + "/search-content/basic",
+    smartSearch: ServiceBaseUrl + "/smart-search",
     getPageData: ServiceBaseUrl + "/routes",
     getAllTags: ServiceBaseUrl + "/tags",
     createTag: ServiceBaseUrl + "/tags",

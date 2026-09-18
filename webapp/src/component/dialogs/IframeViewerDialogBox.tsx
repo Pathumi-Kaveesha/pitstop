@@ -57,6 +57,17 @@ const extractYouTubeVideoId = (url: string): string | null => {
   return match && match[2].length === 11 ? match[2] : null;
 };
 
+// Exact-hostname check, not a substring match - a URL like
+const isSafeGoogleEmbedUrl = (url: string | undefined, hostname: string, pathPrefix: string): boolean => {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname === hostname && parsed.pathname.startsWith(pathPrefix);
+  } catch {
+    return false;
+  }
+};
+
 const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
   link,
   originalUrl,
@@ -94,8 +105,10 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     contentType === FILETYPE.Slide ||
     contentType === FILETYPE.GSheet ||
     contentType === FILETYPE.Youtube ||
-    link?.includes("docs.google.com/presentation") ||
-    link?.includes("docs.google.com/spreadsheets");
+    isSafeGoogleEmbedUrl(link, "docs.google.com", "/presentation") ||
+    isSafeGoogleEmbedUrl(link, "docs.google.com", "/spreadsheets") ||
+    isSafeGoogleEmbedUrl(link, "docs.google.com", "/document") ||
+    isSafeGoogleEmbedUrl(link, "drive.google.com", "/file");
 
   const blockedUrls = useAppSelector((state: RootState) => state.page.blockedIframeUrls);
   const blockedUrlsState = useAppSelector((state: RootState) => state.page.blockedUrlsState);
