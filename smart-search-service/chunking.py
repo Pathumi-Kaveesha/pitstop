@@ -22,6 +22,7 @@ section (no page numbers in .docx), XLSX -> sheet tab.
 """
 
 import io
+import zipfile
 from dataclasses import dataclass
 
 from docx import Document
@@ -33,7 +34,12 @@ from openpyxl import load_workbook
 from pptx import Presentation
 from pypdf import PdfReader
 
-from config import MAX_CHUNK_OVERLAP, MAX_CHUNK_SIZE, MIN_CHUNK_LENGTH
+from config import (
+    MAX_CHUNK_OVERLAP,
+    MAX_CHUNK_SIZE,
+    MAX_OOXML_UNCOMPRESSED_BYTES,
+    MIN_CHUNK_LENGTH,
+)
 
 UNIT_LABELS = {
     "pdf": "Page",
@@ -54,8 +60,26 @@ def _extract_pdf(file_bytes: bytes) -> list[str]:
     return [page.extract_text() or "" for page in reader.pages]
 
 
+def _reject_oversized_ooxml(file_bytes: bytes) -> None:
+    """Office files are zip archives - a small one can expand to something
+    huge once parsed. The entries declare their own uncompressed sizes, so
+    this reads them without decompressing anything."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
+            total = sum(entry.file_size for entry in archive.infolist())
+    except zipfile.BadZipFile as error:
+        raise ValueError("This file isn't a readable Office document.") from error
+
+    if total > MAX_OOXML_UNCOMPRESSED_BYTES:
+        raise ValueError(
+            f"This document expands to {total / 1_048_576:.0f} MB, over the "
+            f"{MAX_OOXML_UNCOMPRESSED_BYTES / 1_048_576:.0f} MB limit Smart Search can read."
+        )
+
+
 def _extract_pptx(file_bytes: bytes) -> list[str]:
     """One string per slide, including speaker notes."""
+    _reject_oversized_ooxml(file_bytes)
     presentation = Presentation(io.BytesIO(file_bytes))
 
     slides = []
@@ -82,6 +106,7 @@ def _iter_docx_blocks(document):
 
 def _extract_docx(file_bytes: bytes) -> list[str]:
     """One string per heading-delimited section."""
+    _reject_oversized_ooxml(file_bytes)
     document = Document(io.BytesIO(file_bytes))
 
     sections: list[str] = []
@@ -111,6 +136,7 @@ def _extract_docx(file_bytes: bytes) -> list[str]:
 
 def _extract_xlsx(file_bytes: bytes) -> list[str]:
     """One string per sheet, rows written as "Header: value" pairs."""
+    _reject_oversized_ooxml(file_bytes)
     workbook = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
 
     sheets = []

@@ -37,6 +37,10 @@ PINECONE_SERVICE_URL = os.environ["PINECONE_SERVICE_URL"]
 # Reject a Drive file before downloading it if it's bigger than this - a
 MAX_DRIVE_FILE_SIZE_BYTES = 100 * 1024 * 1024
 
+# Office files are zip archives - a small one can expand to something huge.
+# Checked against the entries' declared sizes before any parsing.
+MAX_OOXML_UNCOMPRESSED_BYTES = 400 * 1024 * 1024
+
 # Changing this means re-embedding and re-indexing everything already stored.
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-2"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
