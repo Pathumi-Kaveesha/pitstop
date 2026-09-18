@@ -1,0 +1,180 @@
+openapi: 3.1.0
+info:
+  title: Pitstop Smart Search (POC)
+  version: 0.1.0
+paths:
+  /health:
+    get:
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Health Health Get
+  /ingest-drive-link:
+    post:
+      summary: Ingest Drive Link
+      description: 'Indexes a document from a Google Drive link, no local copy saved.
+
+
+        Split either side of the response so document size doesn''t affect
+
+        how long this takes to answer: metadata is resolved first (fast,
+
+        catches real errors), then download/chunk/embed/store happens in the
+
+        background - a failure there only reaches the log, not the caller.'
+      operationId: ingest_drive_link_ingest_drive_link_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestDriveLinkRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Ingest Drive Link Ingest Drive Link Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /documents/{document_id}:
+    delete:
+      summary: Delete Document Endpoint
+      description: 'Removes a document''s chunks, called when its content is deleted
+        in
+
+        Pitstop. Checks the id was actually indexed first - deleting something
+
+        already gone isn''t an error, but a request for an id that never existed
+
+        gets an honest 404 rather than a silent, indistinguishable "success".'
+      operationId: delete_document_endpoint_documents__document_id__delete
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Document Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Delete Document Endpoint Documents  Document Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /search:
+    get:
+      summary: Search Endpoint
+      description: 'Tool 1: embeds the query and finds the closest matches by score.
+
+        Tool 2 (generate_answer) then writes an answer, but only runs when
+
+        Tool 1 actually found something to ground it in.'
+      operationId: search_endpoint_search_get
+      parameters:
+      - name: userQuery
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: Userquery
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 10
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Search Endpoint Search Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    IngestDriveLinkRequest:
+      properties:
+        driveLink:
+          type: string
+          title: Drivelink
+        title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Title
+        contentId:
+          anyOf:
+          - type: string
+            pattern: ^[0-9]+$
+          - type: 'null'
+          title: Contentid
+      type: object
+      required:
+      - driveLink
+      title: IngestDriveLinkRequest
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
