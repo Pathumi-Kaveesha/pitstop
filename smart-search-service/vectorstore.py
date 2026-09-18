@@ -95,10 +95,16 @@ def upsert_chunks(
             )
             response.raise_for_status()
             return
+        except requests.exceptions.HTTPError as error:
+            last_error = error
+            status = error.response.status_code if error.response is not None else None
+            if status is not None and status != 429 and status < 500:
+                break
         except requests.exceptions.RequestException as error:
             last_error = error
-            if attempt < UPSERT_MAX_RETRIES:
-                time.sleep(UPSERT_RETRY_DELAY_SECONDS)
+
+        if attempt < UPSERT_MAX_RETRIES:
+            time.sleep(UPSERT_RETRY_DELAY_SECONDS)
     raise RuntimeError(f"Failed to store chunks in Pinecone: {last_error}") from last_error
 
 

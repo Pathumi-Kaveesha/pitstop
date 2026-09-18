@@ -56,10 +56,20 @@ def embed_text(text: str) -> list[float]:
             response = requests.post(url, headers=headers, json=payload, timeout=30)
             response.raise_for_status()
             return response.json()["embedding"]["values"]
-        except Exception as error:  # noqa: BLE001 - genuinely want to retry on anything
+        except requests.exceptions.HTTPError as error:
+            # A rejected key or malformed request fails the same way every
+            # time - only rate limits and server-side faults are worth a retry.
             last_error = error
-            if attempt < EMBED_MAX_RETRIES:
-                time.sleep(EMBED_RETRY_DELAY_SECONDS)
+            status = error.response.status_code if error.response is not None else None
+            if status is not None and status != 429 and status < 500:
+                break
+        except requests.exceptions.RequestException as error:
+            last_error = error
+        except (KeyError, TypeError) as error:
+            raise RuntimeError(f"Unexpected response from the Gemini embedContent API: {error}") from error
+
+        if attempt < EMBED_MAX_RETRIES:
+            time.sleep(EMBED_RETRY_DELAY_SECONDS)
 
     raise RuntimeError(f"Failed to call the Gemini embedContent API: {last_error}") from last_error
 

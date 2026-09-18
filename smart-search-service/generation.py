@@ -84,7 +84,10 @@ def generate_answer(query: str, results: list[SearchResult]) -> str:
             last_error = error
             if error.status_code < 500 and error.status_code != 429:
                 break
-        except (anthropic.APIConnectionError, RuntimeError) as error:
+        except anthropic.APIConnectionError as error:
+            # A refusal or an empty answer raises RuntimeError above and is
+            # deliberately not caught here - both are deterministic, so
+            # asking the same question again just burns another call.
             last_error = error
 
         if attempt < GENERATION_MAX_RETRIES:
