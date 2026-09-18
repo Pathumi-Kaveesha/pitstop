@@ -196,17 +196,27 @@ def chunk_document(file_bytes: bytes, extension: str) -> list[Chunk]:
     )
     raw_chunks = splitter.split_text(full_text)
 
+    # Chunks come back in document order, so each one starts at or after the
+    # previous one. Searching from there stops repeated text (a boilerplate
+    # slide, a repeated header) from matching its first occurrence and
+    # reporting the wrong page. The cursor advances for skipped chunks too.
     chunks: list[Chunk] = []
+    search_from = 0
     for text in raw_chunks:
+        offset = full_text.find(text, search_from)
+        if offset == -1:
+            offset = full_text.find(text)
+        if offset != -1:
+            search_from = offset + 1
+
         if len(text.strip()) < MIN_CHUNK_LENGTH:
             continue
-        chunks.append(Chunk(text=text, page=find_page_number(full_text, text, unit_start_offsets)))
+        chunks.append(Chunk(text=text, page=find_page_number(offset, unit_start_offsets)))
     return chunks
 
 
-def find_page_number(full_text: str, chunk_text: str, unit_start_offsets: list[int]) -> int:
+def find_page_number(offset: int, unit_start_offsets: list[int]) -> int:
     """Which piece a chunk came from, by its offset in the joined text."""
-    offset = full_text.find(chunk_text)
     if offset == -1:
         return 1
 
