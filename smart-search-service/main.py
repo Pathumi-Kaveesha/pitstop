@@ -50,6 +50,11 @@ logger = logging.getLogger("smart-search-service")
 
 app = FastAPI(title="Pitstop Smart Search (POC)")
 
+
+class ErrorResponse(BaseModel):
+    detail: str
+
+
 # document_id -> when it was deleted
 _deleted_content_ids: dict[str, float] = {}
 _deleted_ids_lock = threading.Lock()
@@ -207,7 +212,10 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     }
 
 
-@app.delete("/documents/{document_id}")
+@app.delete(
+    "/documents/{document_id}",
+    responses={404: {"model": ErrorResponse, "description": "No indexed chunks found for this document id."}},
+)
 def delete_document_endpoint(document_id: str) -> dict:
     """Removes a document's chunks. Marks the id deleted first, so a
     background index for the same id discards its work instead of

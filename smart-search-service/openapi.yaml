@@ -54,14 +54,11 @@ paths:
   /documents/{document_id}:
     delete:
       summary: Delete Document Endpoint
-      description: 'Removes a document''s chunks, called when its content is deleted
-        in
+      description: 'Removes a document''s chunks. Marks the id deleted first, so a
 
-        Pitstop. Checks the id was actually indexed first - deleting something
+        background index for the same id discards its work instead of
 
-        already gone isn''t an error, but a request for an id that never existed
-
-        gets an honest 404 rather than a silent, indistinguishable "success".'
+        recreating what was just deleted. A never-indexed id gets a 404.'
       operationId: delete_document_endpoint_documents__document_id__delete
       parameters:
       - name: document_id
@@ -79,6 +76,12 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Delete Document Endpoint Documents  Document Id  Delete
+        '404':
+          description: No indexed chunks found for this document id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
           content:
@@ -128,6 +131,15 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    ErrorResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: ErrorResponse
     HTTPValidationError:
       properties:
         detail:
