@@ -25,7 +25,8 @@ import PreLoader from "@components/common/PreLoader";
 import ErrorHandler from "@components/common/ErrorHandler";
 import Search from "@view/search/index";
 import SmartSearchPoc from "@view/smartSearchPoc/index";
-import { RouterProvider, createBrowserRouter } from "react-router-dom";
+import LibrarySearchButton from "@view/smartSearchPoc/LibrarySearchButton";
+import { Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
 import { useMemo, useEffect } from "react";
 import Summary from "@view/summary/index";
 import VerticalTemplate from "@layout/pages/VerticalTemplate";
@@ -69,6 +70,14 @@ const GlobalSnackbarListener = () => {
   return null;
 };
 
+// Wraps every route so the search shortcut is available on every page.
+const AppShell = () => (
+  <>
+    <Outlet />
+    <LibrarySearchButton />
+  </>
+);
+
 const AppHandler = () => {
   const auth = useAppSelector((state: RootState) => state.auth);
   const route = useAppSelector((state: RootState) => state.route);
@@ -79,59 +88,64 @@ const AppHandler = () => {
 
     return createBrowserRouter([
       {
-        path: "/",
-        element: <Layout />,
-        errorElement: <Error />,
+        element: <AppShell />,
         children: [
-          ...dynamicRoutes,
           {
-            path: "/quiz-admin",
+            path: "/",
+            element: <Layout />,
+            errorElement: <Error />,
+            children: [
+              ...dynamicRoutes,
+              {
+                path: "/quiz-admin",
+                element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+                  React.createElement(View.QuizAdminDashboard)
+                ) : (
+                  <Error />
+                ),
+                errorElement: <Error />,
+              },
+              {
+                path: "/analytics-dashboard",
+                element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+                  React.createElement(View.AnalyticsAdminDashboard)
+                ) : (
+                  <Error />
+                ),
+                errorElement: <Error />,
+              },
+              {
+                path: "/smart-search-poc",
+                element: <SmartSearchPoc />,
+                errorElement: <Error />,
+              },
+            ],
+          },
+          {
+            path: "/search",
+            element: <Search />,
+            errorElement: <Error />,
+          },
+          {
+            path: "/report",
             element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
-              React.createElement(View.QuizAdminDashboard)
+              <Summary />
             ) : (
               <Error />
             ),
             errorElement: <Error />,
           },
           {
-            path: "/analytics-dashboard",
-            element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
-              React.createElement(View.AnalyticsAdminDashboard)
-            ) : (
-              <Error />
-            ),
+            path: "/my-board",
+            element: React.createElement(View.MyBoard),
             errorElement: <Error />,
           },
           {
-            path: "/smart-search-poc",
-            element: <SmartSearchPoc />,
+            path: "/vertical/:verticalName/:tags",
+            element: <VerticalTemplate />,
             errorElement: <Error />,
           },
         ],
-      },
-      {
-        path: "/search",
-        element: <Search />,
-        errorElement: <Error />,
-      },
-      {
-        path: "/report",
-        element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
-          <Summary />
-        ) : (
-          <Error />
-        ),
-        errorElement: <Error />,
-      },
-      {
-        path: "/my-board",
-        element: React.createElement(View.MyBoard),
-        errorElement: <Error />,
-      },
-      {
-        path: "/vertical/:verticalName/:tags",
-        element: <VerticalTemplate />,
-        errorElement: <Error />,
       },
     ]);
   }, [route.routes, authorizedRoles]);

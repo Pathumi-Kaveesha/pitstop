@@ -16,7 +16,6 @@
 
 import Contents from "@components/ui/section/Contents";
 import Template from "@layout/pages/Template";
-import LibrarySearchButton from "@view/smartSearchPoc/LibrarySearchButton";
 import { RootState, useAppDispatch, useAppSelector } from "@slices/store";
 import PreLoader from "@components/common/PreLoader";
 import { useEffect } from "react";
@@ -90,7 +89,6 @@ const Component: React.FC = () => {
         <>
           <Template key={location.pathname} />
           <Contents />
-          <LibrarySearchButton />
         </>
       )}
     </>
