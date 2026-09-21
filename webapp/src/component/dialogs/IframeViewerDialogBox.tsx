@@ -57,7 +57,7 @@ const extractYouTubeVideoId = (url: string): string | null => {
   return match && match[2].length === 11 ? match[2] : null;
 };
 
-// Exact-hostname check, not a substring match - a URL like
+// Exact-hostname check, not a substring match.
 const isSafeGoogleEmbedUrl = (url: string | undefined, hostname: string, pathPrefix: string): boolean => {
   if (!url) return false;
   try {
