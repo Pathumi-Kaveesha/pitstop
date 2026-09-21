@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
@@ -59,6 +59,7 @@ const isTrustedDriveOrigin = (url: string): boolean => {
 export default function SmartSearchPoc() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const searchingRef = useRef(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [answer, setAnswer] = useState<string | null>(null);
   const [sources, setSources] = useState<SmartSearchResult[]>([]);
@@ -96,10 +97,11 @@ export default function SmartSearchPoc() {
   };
 
   const handleSearch = async () => {
-    if (!query.trim() || searching) {
+    if (!query.trim() || searchingRef.current) {
       return;
     }
 
+    searchingRef.current = true;
     setSearching(true);
     setSearchError(null);
     setAnswer(null);
@@ -122,6 +124,7 @@ export default function SmartSearchPoc() {
       // eslint-disable-next-line no-console
       console.error(error);
     } finally {
+      searchingRef.current = false;
       setSearching(false);
     }
   };
