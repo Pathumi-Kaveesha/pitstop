@@ -788,3 +788,34 @@ export interface AssignedQuizUser {
   employeeThumbnail?: string;
   department?: string;
 }
+
+export interface SmartSearchResult {
+  content: string;
+  title: string;
+  page: number | null;
+  similarityScore: number;
+  documentId: string;
+  unitLabel: string;
+  fileExtension: string;
+  source: "upload" | "drive";
+  driveLink: string;
+}
+
+export interface SmartSearchResponse {
+  answer: string | null;
+  sources: SmartSearchResult[];
+  contents: ContentResponse[];
+}
+
+export interface SourceExcerpt {
+  source: SmartSearchResult;
+  originalIndex: number;
+}
+
+export interface GroupedSource {
+  documentId: string;
+  title: string;
+  fileExtension: string;
+  source: "upload" | "drive";
+  excerpts: SourceExcerpt[];
+}

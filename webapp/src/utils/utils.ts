@@ -18,7 +18,43 @@ import { useEffect, useRef, useState } from "react";
 
 import { GOOGLE_DOCS_DOMAIN, GOOGLE_DRIVE_DOMAIN } from "@config/constant";
 import { CONTENT_SUBTYPE, FILETYPE } from "@utils/types";
-import { QuestionFormData } from "@/types/types";
+import { GroupedSource, QuestionFormData, SmartSearchResult } from "@/types/types";
+
+const SMART_SEARCH_SNIPPET_MAX_LENGTH = 220;
+
+export const formatSmartSearchSnippet = (content: string): string => {
+  const collapsed = content.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= SMART_SEARCH_SNIPPET_MAX_LENGTH) {
+    return collapsed;
+  }
+  const truncated = collapsed.slice(0, SMART_SEARCH_SNIPPET_MAX_LENGTH);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return `${truncated.slice(0, lastSpace > 0 ? lastSpace : SMART_SEARCH_SNIPPET_MAX_LENGTH)}…`;
+};
+
+export const groupSmartSearchSourcesByDocument = (sources: SmartSearchResult[]): GroupedSource[] => {
+  const groups: GroupedSource[] = [];
+  const groupsByKey = new Map<string, GroupedSource>();
+
+  sources.forEach((source, originalIndex) => {
+    const key = source.documentId || (source.driveLink ? `driveLink:${source.driveLink}` : `title:${source.title}`);
+    let group = groupsByKey.get(key);
+    if (!group) {
+      group = {
+        documentId: source.documentId,
+        title: source.title,
+        fileExtension: source.fileExtension,
+        source: source.source,
+        excerpts: [],
+      };
+      groupsByKey.set(key, group);
+      groups.push(group);
+    }
+    group.excerpts.push({ source, originalIndex });
+  });
+
+  return groups;
+};
 
 export const getGoogleDocsDownloadUrl = (url: string): string => {
   const fileId = extractFileIdFromURL(url);
