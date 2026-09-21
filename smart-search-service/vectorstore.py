@@ -198,6 +198,29 @@ def delete_stale_chunks(document_id: str, keep_count: int) -> None:
     became predictable. Runs after a successful upsert, never before."""
     expected = {f"{document_id}#{index}" for index in range(keep_count)}
 
+    # Deterministic ids all share this prefix - list() enumerates every one
+    # of them via pagination, with no cap on how many chunks a document has.
+    all_ids: set[str] = set()
+    pagination_token = None
+    while True:
+        params = {"prefix": f"{document_id}#", "limit": 100}
+        if pagination_token:
+            params["paginationToken"] = pagination_token
+        response = requests.get(
+            f"{PINECONE_SERVICE_URL}/vectors/list",
+            headers=_HEADERS,
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+        page = response.json()
+        all_ids.update(v["id"] for v in page.get("vectors", []))
+        pagination_token = page.get("pagination", {}).get("next")
+        if not pagination_token:
+            break
+
+    # Best-effort catch-all for chunks written before ids became
+    # predictable (random uuids, so list()'s prefix match can't find them).
     response = requests.post(
         f"{PINECONE_SERVICE_URL}/query",
         headers=_HEADERS,
@@ -210,18 +233,21 @@ def delete_stale_chunks(document_id: str, keep_count: int) -> None:
         timeout=30,
     )
     response.raise_for_status()
+    all_ids.update(m["id"] for m in response.json().get("matches", []))
 
-    stale = [m["id"] for m in response.json().get("matches", []) if m["id"] not in expected]
+    stale = [vid for vid in all_ids if vid not in expected]
     if not stale:
         return
 
-    response = requests.post(
-        f"{PINECONE_SERVICE_URL}/vectors/delete",
-        headers=_HEADERS,
-        json={"ids": stale},
-        timeout=30,
-    )
-    response.raise_for_status()
+    for i in range(0, len(stale), 1000):
+        batch = stale[i:i + 1000]
+        response = requests.post(
+            f"{PINECONE_SERVICE_URL}/vectors/delete",
+            headers=_HEADERS,
+            json={"ids": batch},
+            timeout=30,
+        )
+        response.raise_for_status()
 
 def delete_by_document_id(document_id: str) -> None:
     """Removes every chunk belonging to one Pitstop content item.
