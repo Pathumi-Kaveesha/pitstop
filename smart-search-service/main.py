@@ -19,6 +19,7 @@ vector search; login and admin checks stay in the Ballerina backend."""
 
 import logging
 import threading
+import time
 
 from typing import Optional
 
@@ -30,6 +31,7 @@ from chunking import UNIT_LABELS, chunk_document
 from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
+    DELETE_TOMBSTONE_TTL_SECONDS,
     RAW_MATCH_POOL_MULTIPLIER,
     EMBED_REQUEST_SPACING_SECONDS,
 )
@@ -48,8 +50,27 @@ logger = logging.getLogger("smart-search-service")
 
 app = FastAPI(title="Pitstop Smart Search (POC)")
 
-_deleted_content_ids: set[str] = set()
+# document_id -> when it was deleted
+_deleted_content_ids: dict[str, float] = {}
 _deleted_ids_lock = threading.Lock()
+
+
+def _tombstone(document_id: str) -> None:
+    """Marks an id deleted, and opportunistically forgets expired ones."""
+    now = time.time()
+    with _deleted_ids_lock:
+        _deleted_content_ids[document_id] = now
+        expired = [doc_id for doc_id, at in _deleted_content_ids.items()
+                   if now - at > DELETE_TOMBSTONE_TTL_SECONDS]
+        for doc_id in expired:
+            del _deleted_content_ids[doc_id]
+
+
+def _is_tombstoned(document_id: str) -> bool:
+    """Whether an id was deleted recently enough to still matter."""
+    with _deleted_ids_lock:
+        deleted_at = _deleted_content_ids.get(document_id)
+    return deleted_at is not None and time.time() - deleted_at <= DELETE_TOMBSTONE_TTL_SECONDS
 
 
 @app.get("/health")
@@ -113,10 +134,9 @@ def _index_drive_file_in_background(
             )
             return
 
-        with _deleted_ids_lock:
-            if document_id in _deleted_content_ids:
-                logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
-                return
+        if _is_tombstoned(document_id):
+            logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
+            return
 
         logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
         vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
@@ -137,9 +157,7 @@ def _index_drive_file_in_background(
         )
 
         # Delete may have landed mid-upsert - undo the write if so.
-        with _deleted_ids_lock:
-            deleted_meanwhile = document_id in _deleted_content_ids
-        if deleted_meanwhile:
+        if _is_tombstoned(document_id):
             logger.info("Content %s was deleted while indexing was writing - cleaning up.", document_id)
             delete_by_document_id(document_id)
             return
@@ -194,8 +212,7 @@ def delete_document_endpoint(document_id: str) -> dict:
     """Removes a document's chunks. Marks the id deleted first, so a
     background index for the same id discards its work instead of
     recreating what was just deleted. A never-indexed id gets a 404."""
-    with _deleted_ids_lock:
-        _deleted_content_ids.add(document_id)
+    _tombstone(document_id)
 
     try:
         existed = document_exists(document_id)
