@@ -71,11 +71,13 @@ def _tombstone(document_id: str) -> None:
             del _deleted_content_ids[doc_id]
 
 
-def _is_tombstoned(document_id: str) -> bool:
-    """Whether an id was deleted recently enough to still matter."""
+def _is_tombstoned(document_id: str, since: float) -> bool:
+    """Whether an id was deleted at or after `since` - a job's own start
+    time, not "now", so a delete still counts no matter how long the job
+    that started before it has been running."""
     with _deleted_ids_lock:
         deleted_at = _deleted_content_ids.get(document_id)
-    return deleted_at is not None and time.time() - deleted_at <= DELETE_TOMBSTONE_TTL_SECONDS
+    return deleted_at is not None and deleted_at >= since
 
 
 @app.get("/health")
@@ -90,6 +92,7 @@ def _index_drive_file_in_background(
     the response has already gone back. Never raises - failures go to the
     log, since there's no caller left to report them to."""
     logger.info("Started indexing '%s' (id %s, %s) - downloading", title, document_id, info.extension)
+    job_started_at = time.time()
 
     try:
         file_bytes = download_drive_file(info)
@@ -102,7 +105,7 @@ def _index_drive_file_in_background(
             )
             return
 
-        if _is_tombstoned(document_id):
+        if _is_tombstoned(document_id, since=job_started_at):
             logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
             return
 
@@ -125,7 +128,7 @@ def _index_drive_file_in_background(
         )
 
         # Delete may have landed mid-upsert - undo the write if so.
-        if _is_tombstoned(document_id):
+        if _is_tombstoned(document_id, since=job_started_at):
             logger.info("Content %s was deleted while indexing was writing - cleaning up.", document_id)
             delete_by_document_id(document_id)
             return
