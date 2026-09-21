@@ -17,7 +17,6 @@
 """Talks to Pinecone's REST API: stores chunk vectors, searches them, and
 applies the score-based filtering that decides what counts as a real match."""
 
-import uuid
 from dataclasses import dataclass
 
 import requests
@@ -69,7 +68,7 @@ def upsert_chunks(
     """Stores each (vector, text, metadata) triple in Pinecone."""
     records = [
         {
-            "id": str(uuid.uuid4()),
+            "id": f"{document_id}#{index}",
             "values": vector,
             "metadata": {
                 "fileName": title,
@@ -82,7 +81,7 @@ def upsert_chunks(
                 "driveLink": drive_link,
             },
         }
-        for vector, text, page in zip(vectors, texts, pages)
+        for index, (vector, text, page) in enumerate(zip(vectors, texts, pages))
     ]
     last_error: Exception | None = None
     for attempt in range(UPSERT_MAX_RETRIES + 1):
@@ -188,6 +187,37 @@ def document_exists(document_id: str) -> bool:
     response.raise_for_status()
     return len(response.json().get("matches", [])) > 0
 
+
+def delete_stale_chunks(document_id: str, keep_count: int) -> None:
+    """Removes chunks left over from an earlier version of this document -
+    both extras from a longer version and any written before chunk ids
+    became predictable. Runs after a successful upsert, never before."""
+    expected = {f"{document_id}#{index}" for index in range(keep_count)}
+
+    response = requests.post(
+        f"{PINECONE_SERVICE_URL}/query",
+        headers=_HEADERS,
+        json={
+            "vector": [0.0] * EMBEDDING_DIMENSION,
+            "topK": 1000,
+            "includeMetadata": False,
+            "filter": {"documentId": {"$eq": document_id}},
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    stale = [m["id"] for m in response.json().get("matches", []) if m["id"] not in expected]
+    if not stale:
+        return
+
+    response = requests.post(
+        f"{PINECONE_SERVICE_URL}/vectors/delete",
+        headers=_HEADERS,
+        json={"ids": stale},
+        timeout=30,
+    )
+    response.raise_for_status()
 
 def delete_by_document_id(document_id: str) -> None:
     """Removes every chunk belonging to one Pitstop content item.

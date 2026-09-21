@@ -35,7 +35,13 @@ from config import (
 )
 from embeddings import embed_chunks, embed_text, format_query_text
 from generation import generate_answer
-from vectorstore import delete_by_document_id, document_exists, search, upsert_chunks
+from vectorstore import (
+    delete_by_document_id,
+    delete_stale_chunks,
+    document_exists,
+    search,
+    upsert_chunks,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smart-search-service")
@@ -115,8 +121,9 @@ def _index_drive_file_in_background(
         logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
         vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
 
-        # Clears any chunks from a prior indexing pass
-        delete_by_document_id(document_id)
+        # Chunk ids are derived from the document id, so this overwrites a
+        # previous version in place - the old copy stays searchable if the
+        # write fails, instead of being deleted up front.
         upsert_chunks(
             vectors,
             [c.text for c in chunks],
@@ -137,6 +144,8 @@ def _index_drive_file_in_background(
             delete_by_document_id(document_id)
             return
 
+        # Only once the new version is safely stored.
+        delete_stale_chunks(document_id, len(chunks))
         logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
     except Exception:  # noqa: BLE001 - nobody is left to return an error to
         logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
