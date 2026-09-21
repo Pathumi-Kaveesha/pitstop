@@ -23,6 +23,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
+from typing import Optional, Union
 from urllib.parse import urlparse
 
 import requests
@@ -80,7 +81,7 @@ class DriveFileInfo:
     mime_type: str
     drive_title: str
     extension: str
-    size_bytes: int | None = None
+    size_bytes: Optional[int] = None
 
 
 _ALLOWED_DRIVE_HOSTS = {"drive.google.com", "docs.google.com"}
@@ -101,7 +102,7 @@ def extract_file_id(drive_link: str) -> str:
 
 
 # Access token cache.
-_cached_access_token: str | None = None
+_cached_access_token: Optional[str] = None
 _cached_token_expires_at: float = 0.0
 _token_refresh_lock = threading.Lock()
 
@@ -135,8 +136,8 @@ def _get_access_token() -> str:
         return _cached_access_token
 
 
-def _request_with_retry(method: str, url: str, max_bytes: int | None = None,
-        **kwargs) -> requests.Response | bytes:
+def _request_with_retry(method: str, url: str, max_bytes: Optional[int] = None,
+        **kwargs) -> Union[requests.Response, bytes]:
     """Retries a request. With max_bytes, streams and aborts early if
     oversized, returning bytes directly."""
     last_error: Exception | None = None
