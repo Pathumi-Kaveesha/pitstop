@@ -41,7 +41,24 @@ public isolated function searchDocuments(string userQuery) returns SmartSearchRe
 # + return - Whether this content should also be indexed
 public isolated function isIndexableLink(string contentLink) returns boolean {
     string link = contentLink.trim().toLowerAscii();
-    return link.includes("drive.google.com") || link.includes("docs.google.com");
+    if !link.startsWith("https://") {
+        return false;
+    }
+    string afterScheme = link.substring(8);
+
+    int hostEnd = afterScheme.length();
+    foreach string terminator in ["/", "?", "#"] {
+        int? idx = afterScheme.indexOf(terminator);
+        if idx is int && idx < hostEnd {
+            hostEnd = idx;
+        }
+    }
+    string hostAndPort = afterScheme.substring(0, hostEnd);
+
+    int? portSep = hostAndPort.indexOf(":");
+    string host = portSep is int ? hostAndPort.substring(0, portSep) : hostAndPort;
+
+    return host == "drive.google.com" || host == "docs.google.com";
 }
 
 # Narrows a raw search response down to sources whose document the caller
