@@ -66,6 +66,10 @@ def upsert_chunks(
     drive_link: str,
 ) -> None:
     """Stores each (vector, text, metadata) triple in Pinecone."""
+    if len(vectors) != len(texts) or len(texts) != len(pages):
+        raise ValueError(
+            f"Vector/text/page length mismatch: vectors={len(vectors)}, texts={len(texts)}, pages={len(pages)}"
+        )
     records = [
         {
             "id": f"{document_id}#{index}",
