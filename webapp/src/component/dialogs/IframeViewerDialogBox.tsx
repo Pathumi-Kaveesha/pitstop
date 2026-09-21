@@ -105,10 +105,10 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     contentType === FILETYPE.Slide ||
     contentType === FILETYPE.GSheet ||
     contentType === FILETYPE.Youtube ||
-    isSafeGoogleEmbedUrl(link, "docs.google.com", "/presentation") ||
-    isSafeGoogleEmbedUrl(link, "docs.google.com", "/spreadsheets") ||
-    isSafeGoogleEmbedUrl(link, "docs.google.com", "/document") ||
-    isSafeGoogleEmbedUrl(link, "drive.google.com", "/file");
+    isSafeGoogleEmbedUrl(link, "docs.google.com", "/presentation/") ||
+    isSafeGoogleEmbedUrl(link, "docs.google.com", "/spreadsheets/") ||
+    isSafeGoogleEmbedUrl(link, "docs.google.com", "/document/") ||
+    isSafeGoogleEmbedUrl(link, "drive.google.com", "/file/d/");
 
   const blockedUrls = useAppSelector((state: RootState) => state.page.blockedIframeUrls);
   const blockedUrlsState = useAppSelector((state: RootState) => state.page.blockedUrlsState);
