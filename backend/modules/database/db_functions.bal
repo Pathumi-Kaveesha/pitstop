@@ -55,6 +55,17 @@ public isolated function addContent(types:ContentPayload content, string created
     _ = check dbClient->execute(addContentQuery(content, createdBy));
 }
 
+# Add new content and return its id. Used by Smart Search to tag its
+# matching Pinecone entry with the same id.
+#
+# + createdBy - Created by user email
+# + content - Content details
+# + return - The new content's id, or an error
+public isolated function addContentAndReturnId(types:ContentPayload content, string createdBy) returns int|error {
+    sql:ExecutionResult result = check dbClient->execute(addContentQuery(content, createdBy));
+    return result.lastInsertId.ensureType(int);
+}
+
 # Verify the presence of content.
 #
 # + contentLink - Link to navigate to the content
@@ -587,6 +598,32 @@ public isolated function getSectionByRoutePath(int 'limit, int 'offset, string? 
 # + return - Error or nil
 public isolated function addSection(types:SectionPayload section) returns error? {
     _ = check dbClient->execute(addSectionQuery(section));
+}
+
+# Get contents by their IDs, from any section or page.
+#
+# + contentIds - Content IDs to fetch
+# + isUser - Whether the requester is from a normal user
+# + userEmail - User email
+# + return - Contents or error
+public isolated function getContentsByIds(int[] contentIds, boolean isUser, string userEmail)
+    returns types:ContentResponse[]|error {
+
+    if contentIds.length() == 0 {
+        return [];
+    }
+
+    types:ContentResponse[] contents = [];
+    stream<ContentResponse, sql:Error?> resultStream = dbClient->query(
+        getContentsByIdsQuery(contentIds, isUser, userEmail));
+
+    check from ContentResponse {customContentTheme, tags, ...contentRest} in resultStream
+        do {
+            types:ContentResponse convertedContent = check transformContentResponse(customContentTheme, tags,
+                    {...contentRest});
+            contents.push(convertedContent);
+        };
+    return contents;
 }
 
 # Get user ID using user email.

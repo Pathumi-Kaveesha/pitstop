@@ -20,6 +20,7 @@ import pitstop.constants;
 import pitstop.database;
 import pitstop.email;
 import pitstop.entity;
+import pitstop.smartsearch;
 import pitstop.types;
 
 import ballerina/http;
@@ -44,7 +45,7 @@ configurable types:AppInfo appInfo = {
 }
 
 service http:InterceptableService / on new http:Listener(9090) {
-
+    
     public function createInterceptors() returns [authorization:JwtInterceptor, ResponseInterceptor] =>
         [new authorization:JwtInterceptor(), new ResponseInterceptor()];
 
@@ -373,10 +374,27 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:CONFLICT;
         }
 
-        error? content = database:addContent(contentPayload, createdBy);
-        if content is error {
+        // Content with a Google Drive link is additionally indexed for
+        // Smart Search, wherever in Pitstop it was added 
+        if smartsearch:isIndexableLink(contentPayload.contentLink) {
+            int|error newContentId = database:addContentAndReturnId(contentPayload, createdBy);
+            if newContentId is error {
+                string customError = "Error while adding a content";
+                log:printError(customError, newContentId);
+                return <http:InternalServerError>{
+                    body: customError
+                };
+            }
+
+            // Fire-and-forget - content creation never waits on indexing.
+            _ = start smartsearch:indexContentForSmartSearch(newContentId, contentPayload);
+            return http:CREATED;
+        }
+
+        error? result = database:addContent(contentPayload, createdBy);
+        if result is error {
             string customError = "Error while adding a content";
-            log:printError(customError, content);
+            log:printError(customError, result);
             return <http:InternalServerError>{
                 body: customError
             };
@@ -1227,6 +1245,9 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:NOT_FOUND;
         }
 
+        // Clears the content's Smart Search entries if it had any
+        _ = start smartsearch:deleteContentFromSmartSearch(contentId);
+
         return http:OK;
     }
 
@@ -1719,6 +1740,24 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
         return contentResponse;
+    }
+
+    # Search indexed documents using a natural language query.
+    #
+    # + ctx - Request object
+    # + userQuery - What the user typed into the search box
+    # + return - A generated answer plus its sources, or an error
+    resource function get smart\-search(http:RequestContext ctx, string userQuery)
+        returns smartsearch:SmartSearchResponse|http:InternalServerError {
+
+        smartsearch:SmartSearchResponse|error result = smartsearch:searchDocuments(userQuery);
+        if result is error {
+            log:printError(constants:SMART_SEARCH_ERROR, result);
+            return <http:InternalServerError>{
+                body: {message: constants:SMART_SEARCH_ERROR}
+            };
+        }
+        return smartsearch:filterToAuthorizedSources(ctx, result);
     }
 
     # Search contents basic info.

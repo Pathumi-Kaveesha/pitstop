@@ -24,7 +24,7 @@ import ballerina/sql;
 # + route - Route details
 # + return - SQL parameterized query
 isolated function addRoutePathQuery(RoutePayload route) returns sql:ParameterizedQuery => `
-    INSERT INTO 
+    INSERT INTO
         route (parent_id, label, thumbnail, description, title, menu_item, styling_info)
     VALUES (
         ${route.parentId},
@@ -1507,6 +1507,95 @@ isolated function addSectionQuery(types:SectionPayload section) returns sql:Para
         ${section.tags}
     )
 `;
+
+# Query to get contents by their IDs. Same shape as getContentsQuery, but
+# filtered on a set of content IDs rather than a section or route - Smart
+# Search matches can come from any page.
+#
+# + contentIds - Content IDs to fetch
+# + isUser - Whether the requester is a normal user
+# + userEmail - User email
+# + return - SQL parameterized query
+isolated function getContentsByIdsQuery(int[] contentIds, boolean isUser, string userEmail)
+    returns sql:ParameterizedQuery {
+
+    sql:ParameterizedQuery idList = `${contentIds[0]}`;
+    foreach int i in 1 ..< contentIds.length() {
+        idList = sql:queryConcat(idList, `, ${contentIds[i]}`);
+    }
+
+    sql:ParameterizedQuery query = `
+    SELECT
+        c.content_id,
+        c.section_id,
+        c.content_link,
+        c.content_type,
+        c.content_sub_type,
+        c.description,
+        c.thumbnail,
+        c.note,
+        c.styling_info,
+        c.content_order,
+        c.created_on,
+        c.tags,
+        c.is_visible,
+        c.is_reused,
+        c.route_id,
+        cl.status,
+        COUNT(cmt.comment_id) AS comment_count,
+        (
+            SELECT 
+                COUNT(*) 
+            FROM 
+                content_like cl_total 
+            WHERE 
+                cl_total.content_id = c.content_id AND cl_total.status = true 
+        ) AS likes_count
+    FROM
+        content c
+    LEFT JOIN
+        (SELECT 
+            content_id, status
+        FROM 
+            content_like 
+        WHERE 
+            user_id = (
+                SELECT 
+                    user_id 
+                FROM 
+                    user 
+                WHERE 
+                    email=${userEmail}
+            ) AND status = true
+        ) AS cl ON c.content_id = cl.content_id
+    LEFT JOIN 
+        comment cmt ON c.content_id = cmt.content_id
+        AND cmt.is_deleted = false
+    WHERE
+        c.content_id IN (`;
+
+    return sql:queryConcat(query, idList, `) AND
+        c.is_deleted = false AND
+        (CASE WHEN ${isUser} THEN c.is_visible = 1 ELSE true END)
+    GROUP BY 
+        c.content_id,
+        c.section_id,
+        c.content_link,
+        c.content_type,
+        c.content_sub_type,
+        c.description,
+        c.thumbnail,
+        c.note,
+        c.styling_info,
+        c.content_order,
+        c.created_on,
+        c.tags,
+        c.is_visible,
+        c.is_reused,
+        c.route_id,
+        cl.status  
+    ORDER BY c.content_order DESC      `);
+}
 
 # Query to get user ID for a given email.
 #
