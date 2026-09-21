@@ -16,6 +16,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
+import ButtonBase from "@mui/material/ButtonBase";
 import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
@@ -234,42 +235,49 @@ export default function SmartSearchPoc() {
                       const location = source.page !== null ? `${source.unitLabel || "Page"} ${source.page}` : null;
                       // Only a PDF can jump to an exact location.
                       const canJumpToLocation = location !== null && source.fileExtension === "pdf";
+                      const excerptContent = (
+                        <>
+                          {location && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                              {location}
+                            </Typography>
+                          )}
+                          <Typography variant="body2" color="text.secondary">
+                            {formatSmartSearchSnippet(source.content)}
+                          </Typography>
+                          {canPreview && (
+                            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
+                              <OpenInNewIcon sx={{ fontSize: 14 }} color="primary" />
+                              <Typography variant="caption" color="primary">
+                                {canJumpToLocation ? `Open at ${location}` : "Open this document"}
+                              </Typography>
+                            </Stack>
+                          )}
+                        </>
+                      );
                       return (
                         <Box key={originalIndex}>
                           {excerptPosition > 0 && <Divider sx={{ my: 1 }} />}
-                          <Box
-                            onClick={canPreview ? () => handleOpenDocument(source) : undefined}
-                            sx={
-                              canPreview
-                                ? {
-                                    cursor: "pointer",
-                                    borderRadius: 1,
-                                    mx: -0.5,
-                                    px: 0.5,
-                                    py: 0.5,
-                                    transition: "background-color 0.15s",
-                                    "&:hover": { bgcolor: "action.hover" },
-                                  }
-                                : undefined
-                            }
-                          >
-                            {location && (
-                              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                                {location}
-                              </Typography>
-                            )}
-                            <Typography variant="body2" color="text.secondary">
-                              {formatSmartSearchSnippet(source.content)}
-                            </Typography>
-                            {canPreview && (
-                              <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
-                                <OpenInNewIcon sx={{ fontSize: 14 }} color="primary" />
-                                <Typography variant="caption" color="primary">
-                                  {canJumpToLocation ? `Open at ${location}` : "Open this document"}
-                                </Typography>
-                              </Stack>
-                            )}
-                          </Box>
+                          {canPreview ? (
+                            <ButtonBase
+                              onClick={() => handleOpenDocument(source)}
+                              sx={{
+                                display: "block",
+                                width: "100%",
+                                textAlign: "left",
+                                borderRadius: 1,
+                                mx: -0.5,
+                                px: 0.5,
+                                py: 0.5,
+                                transition: "background-color 0.15s",
+                                "&:hover": { bgcolor: "action.hover" },
+                              }}
+                            >
+                              {excerptContent}
+                            </ButtonBase>
+                          ) : (
+                            <Box>{excerptContent}</Box>
+                          )}
                         </Box>
                       );
                     })}
