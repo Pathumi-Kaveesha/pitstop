@@ -83,43 +83,6 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-async def _chunk_embed_and_store(
-    file_bytes: bytes, extension: str, title: str, document_id: str, source: str, drive_link: str = ""
-) -> dict:
-    """Chunks a document, embeds each chunk, and stores the results in
-    Pinecone."""
-    try:
-        chunks = await run_in_threadpool(chunk_document, file_bytes, extension)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-
-    if not chunks:
-        raise HTTPException(
-            status_code=400,
-            detail="This document produced no chunks worth indexing (too short or unreadable).",
-        )
-
-    try:
-        vectors = await run_in_threadpool(embed_chunks, [c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
-        await run_in_threadpool(
-            upsert_chunks,
-            vectors,
-            [c.text for c in chunks],
-            title,
-            [c.page for c in chunks],
-            document_id,
-            UNIT_LABELS[extension],
-            extension,
-            source,
-            drive_link,
-        )
-    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
-        logger.exception("Failed to index document")
-        raise HTTPException(status_code=500, detail=f"Error while indexing document: {error}") from error
-
-    return {"status": "success", "title": title, "chunksIndexed": len(chunks)}
-
-
 def _index_drive_file_in_background(
     info: DriveFileInfo, title: str, document_id: str, drive_link: str
 ) -> None:
