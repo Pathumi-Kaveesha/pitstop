@@ -97,14 +97,14 @@ public isolated function filterToAuthorizedSources(http:RequestContext ctx, Smar
         return {answer: (), sources: [], contents: []};
     }
 
-    string[] authorizedIds = [];
+    map<boolean> authorizedIds = {};
     foreach types:ContentResponse content in matched {
-        authorizedIds.push(content.contentId.toString());
+        authorizedIds[content.contentId.toString()] = true;
     }
 
     SmartSearchResult[] authorizedSources = [];
     foreach SmartSearchResult searchResult in response.sources {
-        if authorizedIds.indexOf(searchResult.documentId) !is () {
+        if authorizedIds.hasKey(searchResult.documentId) {
             authorizedSources.push(searchResult);
         }
     }
