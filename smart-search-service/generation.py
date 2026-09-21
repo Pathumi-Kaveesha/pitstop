@@ -23,6 +23,7 @@ import anthropic
 
 from config import (
     ANTHROPIC_API_KEY,
+    ANTHROPIC_BASE_URL,
     CLAUDE_GENERATION_MODEL,
     GENERATION_EFFORT,
     GENERATION_MAX_RETRIES,
@@ -34,7 +35,9 @@ from vectorstore import SearchResult
 
 logger = logging.getLogger("smart-search-service")
 
-_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=GENERATION_TIMEOUT_SECONDS)
+_client = anthropic.Anthropic(
+    api_key=ANTHROPIC_API_KEY, base_url=ANTHROPIC_BASE_URL, timeout=GENERATION_TIMEOUT_SECONDS
+)
 
 SYSTEM_PROMPT = """You answer questions using only the excerpts you are given, which come from internal company documents.
 
