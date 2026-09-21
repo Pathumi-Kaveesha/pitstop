@@ -37,7 +37,7 @@ export const groupSmartSearchSourcesByDocument = (sources: SmartSearchResult[]):
   const groupsByKey = new Map<string, GroupedSource>();
 
   sources.forEach((source, originalIndex) => {
-    const key = source.documentId || `title:${source.title}`;
+    const key = source.documentId || (source.driveLink ? `driveLink:${source.driveLink}` : `title:${source.title}`);
     let group = groupsByKey.get(key);
     if (!group) {
       group = {
