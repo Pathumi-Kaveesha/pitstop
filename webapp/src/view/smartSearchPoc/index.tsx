@@ -36,7 +36,7 @@ import { AppConfig } from "@config/config";
 import { ApiService } from "@utils/apiService";
 import { formatSmartSearchSnippet, groupSmartSearchSourcesByDocument } from "@utils/utils";
 import ComponentCard from "@components/ui/content/Card";
-import { ContentResponse, SmartSearchResponse, SmartSearchResult } from "../../types/types";
+import { ContentResponse, SmartSearchResponse, SmartSearchResult } from "@/types/types";
 
 // Proof-of-concept page for the smart search feature - reachable directly
 // at /smart-search-poc, not yet linked from the main navigation.
