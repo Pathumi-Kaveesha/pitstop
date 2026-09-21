@@ -24,6 +24,8 @@ load_dotenv()
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL") or None
+if ANTHROPIC_BASE_URL and not ANTHROPIC_BASE_URL.startswith("https://"):
+    raise ValueError("ANTHROPIC_BASE_URL must use https:// - the API key is sent to this host.")
 
 # OAuth refresh token, obtained once via Google's OAuth Playground.
 GOOGLE_DRIVE_CLIENT_ID = os.environ["GOOGLE_DRIVE_CLIENT_ID"]
