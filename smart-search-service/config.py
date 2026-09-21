@@ -35,7 +35,7 @@ GOOGLE_DRIVE_RETRY_DELAY_SECONDS = 2
 PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
 PINECONE_SERVICE_URL = os.environ["PINECONE_SERVICE_URL"]
 
-# Reject a Drive file before downloading it if it's bigger than this - a
+# Reject a Drive file before downloading it if it's bigger than this.
 MAX_DRIVE_FILE_SIZE_BYTES = 100 * 1024 * 1024
 
 # Office files are zip archives - a small one can expand to something huge.
