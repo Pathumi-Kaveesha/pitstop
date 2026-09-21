@@ -349,6 +349,7 @@ export default function SmartSearchPoc() {
               <iframe
                 title={previewDoc.title}
                 src={previewDoc.link}
+                sandbox="allow-same-origin allow-scripts allow-presentation allow-forms"
                 style={{ border: "none", width: "100%", height: "100%" }}
                 allow="autoplay"
               />
