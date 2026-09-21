@@ -26,6 +26,7 @@ export default function LibrarySearchButton() {
     <Tooltip title="Search these documents" placement="right">
       <Fab
         color="primary"
+        aria-label="Search these documents"
         onClick={() => navigate("/smart-search-poc")}
         sx={{
           position: "fixed",
