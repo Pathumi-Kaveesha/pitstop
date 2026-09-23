@@ -50,24 +50,24 @@ isolated function initSmartSearchClient(boolean withRetry) returns http:Client|e
     Oauth2Config? oauthConfig = smartSearchServiceConfig.oauthConfig;
     if oauthConfig is () {
         return withRetry
-            ? new (smartSearchServiceConfig.serviceUrl, {
+            ? new (smartSearchServiceConfig.apiEndpoint, {
                 httpVersion: http:HTTP_1_1,
                 timeout: 300,
                 retryConfig: smartSearchRetryConfig
             })
-            : new (smartSearchServiceConfig.serviceUrl, {
+            : new (smartSearchServiceConfig.apiEndpoint, {
                 httpVersion: http:HTTP_1_1,
                 timeout: 300
             });
     }
     return withRetry
-        ? new (smartSearchServiceConfig.serviceUrl, {
+        ? new (smartSearchServiceConfig.apiEndpoint, {
             auth: {...oauthConfig},
             httpVersion: http:HTTP_1_1,
             timeout: 300,
             retryConfig: smartSearchRetryConfig
         })
-        : new (smartSearchServiceConfig.serviceUrl, {
+        : new (smartSearchServiceConfig.apiEndpoint, {
             auth: {...oauthConfig},
             httpVersion: http:HTTP_1_1,
             timeout: 300
