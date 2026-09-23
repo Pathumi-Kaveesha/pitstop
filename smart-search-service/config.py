@@ -84,7 +84,7 @@ MINIMUM_SIMILARITY_SCORE = 0.65
 MAX_SCORE_GAP_FROM_TOP_MATCH = 0.03
 
 # Answer generation - a separate model from embedding, used in generation.py.
-CLAUDE_GENERATION_MODEL = "claude-opus-5"
+CLAUDE_GENERATION_MODEL = "claude-sonnet-5"
 GENERATION_EFFORT = "low"
 GENERATION_MAX_TOKENS = 8000
 GENERATION_TIMEOUT_SECONDS = 90

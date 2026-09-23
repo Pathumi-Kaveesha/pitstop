@@ -74,10 +74,10 @@ public type Oauth2Config record {|
 
 # Smart Search Service Configuration.
 #
-# + serviceUrl - Smart Search service endpoint
+# + apiEndpoint - Smart Search service endpoint
 # + oauthConfig - Auth Configurations, set once the service sits behind
 #                 Choreo's gateway and absent when called directly
 public type SmartSearchServiceConfig record {|
-    string serviceUrl;
+    string apiEndpoint;
     Oauth2Config oauthConfig?;
 |};

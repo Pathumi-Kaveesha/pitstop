@@ -18,14 +18,21 @@ maxConnectionLifeTime =
 maxOpenConnections = 
 minIdleConnections = 
 
-[sample_app.entity] 
-hrEntityBaseUrl = 
+[sample_app.entity]
+hrEntityBaseUrl =
 [sample_app.entity.oauthConfig]
-clientId = 
-clientSecret = 
-tokenUrl = 
+clientId =
+clientSecret =
+tokenUrl =
 [sample_app.entity.retryConfig]
-backOffFactor = 
-count = 
-interval = 
-maxWaitInterval = 
+backOffFactor =
+count =
+interval =
+maxWaitInterval =
+
+[sample_app.smartsearch.smartSearchServiceConfig]
+apiEndpoint =
+[sample_app.smartsearch.smartSearchServiceConfig.oauthConfig]
+clientId =
+clientSecret =
+tokenUrl =
