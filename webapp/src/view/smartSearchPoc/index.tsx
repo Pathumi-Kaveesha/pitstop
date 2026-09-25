@@ -120,12 +120,17 @@ export default function SmartSearchPoc() {
     `${AppConfig.serviceUrls.smartSearch}?userQuery=${encodeURIComponent(searchedQuery)}&includeAnswer=${includeAnswer}`;
 
   // The matching documents show first; the AI answer is fetched after and fills in when ready.
-  const fetchAnswer = async (searchId: number, searchedQuery: string) => {
+  const fetchAnswer = async (searchId: number, searchedQuery: string, displayedDocumentIds: Set<string>) => {
     setAnswerLoading(true);
     try {
       const response = await ApiService.getInstance().get<SmartSearchResponse>(searchUrl(searchedQuery, true));
+      // Only show an answer written from the same documents as the ones on screen.
+      const answerDocumentIds = new Set((response.data?.sources ?? []).map((source) => source.documentId));
+      const sameDocuments =
+        answerDocumentIds.size === displayedDocumentIds.size &&
+        [...answerDocumentIds].every((id) => displayedDocumentIds.has(id));
       if (latestSearchRef.current === searchId) {
-        setAnswer(response.data?.answer ?? null);
+        setAnswer(sameDocuments ? (response.data?.answer ?? null) : null);
       }
     } catch {
       // No answer is fine - the sources are already shown, with a note.
@@ -158,7 +163,7 @@ export default function SmartSearchPoc() {
       setContents(response.data?.contents ?? []);
       setHasSearched(true);
       if (foundSources.length > 0) {
-        void fetchAnswer(searchId, searchedQuery);
+        void fetchAnswer(searchId, searchedQuery, new Set(foundSources.map((source) => source.documentId)));
       }
     } catch (error) {
       setSearchError("Search failed. Check the console/backend logs for details.");
