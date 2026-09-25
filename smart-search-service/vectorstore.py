@@ -34,6 +34,9 @@ from config import (
     UPSERT_MAX_RETRIES,
     UPSERT_RETRY_DELAY_SECONDS,
 )
+from http_session import make_session
+
+_session = make_session()
 
 _HEADERS = {
     "Api-Key": PINECONE_API_KEY,
@@ -103,7 +106,7 @@ def upsert_chunks(
     last_error: Exception | None = None
     for attempt in range(UPSERT_MAX_RETRIES + 1):
         try:
-            response = requests.post(
+            response = _session.post(
                 f"{PINECONE_SERVICE_URL}/vectors/upsert",
                 headers=_HEADERS,
                 json={"vectors": records},
@@ -129,7 +132,7 @@ def search(query_vector: list[float], top_results_count: int, pool_multiplier: i
     down to the strongest ones, allowing up to MAX_CHUNKS_PER_DOCUMENT
     from the same document."""
     raw_pool_size = top_results_count * pool_multiplier
-    response = requests.post(
+    response = _session.post(
         f"{PINECONE_SERVICE_URL}/query",
         headers=_HEADERS,
         json={"vector": query_vector, "topK": raw_pool_size, "includeMetadata": True},
@@ -180,7 +183,7 @@ def search(query_vector: list[float], top_results_count: int, pool_multiplier: i
 
 def delete_document(title: str) -> None:
     """Removes every chunk belonging to one document, by title."""
-    response = requests.post(
+    response = _session.post(
         f"{PINECONE_SERVICE_URL}/vectors/delete",
         headers=_HEADERS,
         json={"filter": {"fileName": {"$eq": title}}},
@@ -192,7 +195,7 @@ def delete_document(title: str) -> None:
 def document_exists(document_id: str) -> bool:
     """Whether any chunk is indexed under this documentId - checked before
     a delete so a never-indexed id gets an honest 404."""
-    response = requests.post(
+    response = _session.post(
         f"{PINECONE_SERVICE_URL}/query",
         headers=_HEADERS,
         json={
@@ -209,7 +212,7 @@ def document_exists(document_id: str) -> bool:
 def find_document_source(document_id: str) -> Optional[tuple[str, str]]:
     """The Drive link and file type recorded for an indexed document, or
     None when nothing is indexed under that id."""
-    response = requests.post(
+    response = _session.post(
         f"{PINECONE_SERVICE_URL}/query",
         headers=_HEADERS,
         json={
@@ -242,7 +245,7 @@ def delete_stale_chunks(document_id: str, keep_count: int) -> None:
         params = {"prefix": f"{document_id}#", "limit": 100}
         if pagination_token:
             params["paginationToken"] = pagination_token
-        response = requests.get(
+        response = _session.get(
             f"{PINECONE_SERVICE_URL}/vectors/list",
             headers=_HEADERS,
             params=params,
@@ -257,7 +260,7 @@ def delete_stale_chunks(document_id: str, keep_count: int) -> None:
 
     # Best-effort catch-all for chunks written before ids became
     # predictable (random uuids, so list()'s prefix match can't find them).
-    response = requests.post(
+    response = _session.post(
         f"{PINECONE_SERVICE_URL}/query",
         headers=_HEADERS,
         json={
@@ -277,7 +280,7 @@ def delete_stale_chunks(document_id: str, keep_count: int) -> None:
 
     for i in range(0, len(stale), 1000):
         batch = stale[i:i + 1000]
-        response = requests.post(
+        response = _session.post(
             f"{PINECONE_SERVICE_URL}/vectors/delete",
             headers=_HEADERS,
             json={"ids": batch},
@@ -290,7 +293,7 @@ def delete_by_document_id(document_id: str) -> None:
 
     Keyed on documentId rather than the title - the id is the content's own
     id and never changes, while two documents can share a title."""
-    response = requests.post(
+    response = _session.post(
         f"{PINECONE_SERVICE_URL}/vectors/delete",
         headers=_HEADERS,
         json={"filter": {"documentId": {"$eq": document_id}}},

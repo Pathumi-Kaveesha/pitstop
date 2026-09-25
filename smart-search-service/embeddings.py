@@ -30,6 +30,10 @@ from config import (
     GEMINI_BASE_URL,
     GEMINI_EMBEDDING_MODEL,
 )
+from http_session import make_session
+
+_session = make_session()
+
 
 def format_query_text(query: str) -> str:
     return f"task: search result | query: {query}"
@@ -53,7 +57,7 @@ def embed_text(text: str) -> list[float]:
     last_error: Exception | None = None
     for attempt in range(EMBED_MAX_RETRIES + 1):
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response = _session.post(url, headers=headers, json=payload, timeout=30)
             response.raise_for_status()
             return response.json()["embedding"]["values"]
         except requests.exceptions.HTTPError as error:
