@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import threading
 import time
 from dataclasses import dataclass
@@ -36,41 +35,19 @@ from config import (
     GOOGLE_DRIVE_RETRY_DELAY_SECONDS,
     MAX_DRIVE_FILE_SIZE_BYTES,
 )
+from drive_constants import (
+    ALLOWED_DRIVE_HOSTS,
+    DRIVE_API_BASE,
+    EXPORT_FORMATS,
+    EXPORT_TOO_LARGE,
+    FILE_ID_PATTERNS,
+    MIME_TYPE_EXTENSIONS,
+    TOKEN_URL,
+    WEB_EXPORT_BASE,
+    WEB_EXPORT_PATHS,
+)
 
 logger = logging.getLogger("smart-search-service")
-
-TOKEN_URL = "https://oauth2.googleapis.com/token"
-DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
-
-# Native Google files export as one of these.
-EXPORT_FORMATS = {
-    "application/vnd.google-apps.document": (
-        "docx",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ),
-    "application/vnd.google-apps.spreadsheet": (
-        "xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ),
-    "application/vnd.google-apps.presentation": (
-        "pptx",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ),
-}
-
-# Mime type to extension, for real uploaded files.
-MIME_TYPE_EXTENSIONS = {
-    "application/pdf": "pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-}
-
-# Where a file id shows up in a Drive link.
-_FILE_ID_PATTERNS = [
-    re.compile(r"/d/([a-zA-Z0-9_-]{10,})"),
-    re.compile(r"[?&]id=([a-zA-Z0-9_-]{10,})"),
-]
 
 
 @dataclass
@@ -84,17 +61,16 @@ class DriveFileInfo:
     size_bytes: Optional[int] = None
 
 
-_ALLOWED_DRIVE_HOSTS = {"drive.google.com", "docs.google.com"}
 _NOT_A_DRIVE_LINK_ERROR = "That doesn't look like a Google Drive link - couldn't find a file id in it."
 
 
 def extract_file_id(drive_link: str) -> str:
     """Pulls the file id out of any of Drive's usual link shapes."""
     parsed = urlparse(drive_link)
-    if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_DRIVE_HOSTS:
+    if parsed.scheme != "https" or parsed.hostname not in ALLOWED_DRIVE_HOSTS:
         raise ValueError(_NOT_A_DRIVE_LINK_ERROR)
 
-    for pattern in _FILE_ID_PATTERNS:
+    for pattern in FILE_ID_PATTERNS:
         match = pattern.search(drive_link)
         if match:
             return match.group(1)
@@ -142,10 +118,10 @@ def _request_with_retry(method: str, url: str, max_bytes: Optional[int] = None,
     oversized, returning bytes directly."""
     last_error: Exception | None = None
     last_detail: str = ""
+    extra_headers = kwargs.pop("headers", {})
     for attempt in range(GOOGLE_DRIVE_MAX_RETRIES + 1):
         try:
-            headers = kwargs.pop("headers", {})
-            headers["Authorization"] = f"Bearer {_get_access_token()}"
+            headers = {**extra_headers, "Authorization": f"Bearer {_get_access_token()}"}
             kwargs.setdefault("timeout", (30, 300))  # (connect, read)
             if max_bytes is not None:
                 response = requests.request(method, url, headers=headers, stream=True, **kwargs)
@@ -190,18 +166,6 @@ def _request_with_retry(method: str, url: str, max_bytes: Optional[int] = None,
     ) from last_error
 
 
-# Drive's own web export endpoint.
-_WEB_EXPORT_BASE = "https://docs.google.com"
-_WEB_EXPORT_PATHS = {
-    "application/vnd.google-apps.document": "document",
-    "application/vnd.google-apps.spreadsheet": "spreadsheets",
-    "application/vnd.google-apps.presentation": "presentation",
-}
-
-# Google's size-limit error string.
-_EXPORT_TOO_LARGE = "exportSizeLimitExceeded"
-
-
 def _export_native_file(file_id: str, mime_type: str, export_mime_type: str, extension: str,
         max_bytes: int) -> bytes:
     """Exports a native Google file, falling back to the web-UI endpoint
@@ -211,15 +175,15 @@ def _export_native_file(file_id: str, mime_type: str, export_mime_type: str, ext
             "GET",
             f"{DRIVE_API_BASE}/files/{file_id}/export",
             max_bytes=max_bytes,
-            params={"mimeType": export_mime_type},
+            params={"mimeType": export_mime_type, "supportsAllDrives": "true"},
         )
     except RuntimeError as api_error:
-        web_path = _WEB_EXPORT_PATHS.get(mime_type)
-        if web_path is None or _EXPORT_TOO_LARGE not in str(api_error):
+        web_path = WEB_EXPORT_PATHS.get(mime_type)
+        if web_path is None or EXPORT_TOO_LARGE not in str(api_error):
             raise
         return _request_with_retry(
             "GET",
-            f"{_WEB_EXPORT_BASE}/{web_path}/d/{file_id}/export",
+            f"{WEB_EXPORT_BASE}/{web_path}/d/{file_id}/export",
             max_bytes=max_bytes,
             params={"format": extension},
         )
@@ -232,7 +196,7 @@ def resolve_drive_file(drive_link: str) -> DriveFileInfo:
     metadata_response = _request_with_retry(
         "GET",
         f"{DRIVE_API_BASE}/files/{file_id}",
-        params={"fields": "name,mimeType,size"},
+        params={"fields": "name,mimeType,size", "supportsAllDrives": "true"},
     )
     metadata = metadata_response.json()
     mime_type = metadata.get("mimeType", "")
@@ -264,18 +228,18 @@ def resolve_drive_file(drive_link: str) -> DriveFileInfo:
     )
 
 
-def download_drive_file(info: DriveFileInfo) -> bytes:
+def download_drive_file(info: DriveFileInfo, max_bytes: int = MAX_DRIVE_FILE_SIZE_BYTES) -> bytes:
     """Fetches the actual bytes of an already-resolved file, bounded to
-    MAX_DRIVE_FILE_SIZE_BYTES."""
+    max_bytes (MAX_DRIVE_FILE_SIZE_BYTES by default)."""
     if info.mime_type in EXPORT_FORMATS:
         _, export_mime_type = EXPORT_FORMATS[info.mime_type]
         return _export_native_file(
-            info.file_id, info.mime_type, export_mime_type, info.extension, MAX_DRIVE_FILE_SIZE_BYTES
+            info.file_id, info.mime_type, export_mime_type, info.extension, max_bytes
         )
 
     return _request_with_retry(
         "GET",
         f"{DRIVE_API_BASE}/files/{info.file_id}",
-        max_bytes=MAX_DRIVE_FILE_SIZE_BYTES,
-        params={"alt": "media"},
+        max_bytes=max_bytes,
+        params={"alt": "media", "supportsAllDrives": "true"},
     )

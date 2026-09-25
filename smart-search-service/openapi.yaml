@@ -88,6 +88,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /documents/{document_id}/file:
+    get:
+      summary: Get Document File
+      description: 'Returns an indexed PDF''s original file. Drive''s own viewer ignores a
+
+        page number in the link, but a browser opening the file from us honours
+
+        "#page=N". PDF only.'
+      operationId: get_document_file_documents__document_id__file_get
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9]+$
+          title: Document Id
+      responses:
+        '200':
+          description: The document's original PDF.
+          content:
+            application/pdf: {}
+        '404':
+          description: No indexed PDF found for this document id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: The PDF is too large to open at a page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /search:
     get:
       summary: Search Endpoint

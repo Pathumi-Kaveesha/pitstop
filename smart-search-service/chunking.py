@@ -104,13 +104,15 @@ def _iter_docx_blocks(document):
             yield Table(child, document)
 
 
-def _extract_docx(file_bytes: bytes) -> list[str]:
-    """One string per heading-delimited section."""
+def _extract_docx(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
+    """One string per heading-delimited section, plus each section's heading."""
     _reject_oversized_ooxml(file_bytes)
     document = Document(io.BytesIO(file_bytes))
 
     sections: list[str] = []
+    headings: list[str | None] = []
     current: list[str] = []
+    current_heading: str | None = None
     for block in _iter_docx_blocks(document):
         if isinstance(block, Table):
             rows = [
@@ -124,14 +126,18 @@ def _extract_docx(file_bytes: bytes) -> list[str]:
         if not text:
             continue
 
-        if block.style.name.startswith("Heading") and current:
-            sections.append("\n".join(current))
-            current = []
+        if block.style.name.startswith("Heading"):
+            if current:
+                sections.append("\n".join(current))
+                headings.append(current_heading)
+                current = []
+            current_heading = text
         current.append(text)
 
     if current:
         sections.append("\n".join(current))
-    return sections
+        headings.append(current_heading)
+    return sections, headings
 
 
 def _extract_xlsx(file_bytes: bytes) -> list[str]:
@@ -172,14 +178,18 @@ _EXTRACTORS = {
 }
 
 
-def extract_units(file_bytes: bytes, extension: str) -> list[str]:
-    """One string per piece of the document, in order."""
-    return _EXTRACTORS[extension](file_bytes)
+def extract_units(file_bytes: bytes, extension: str) -> tuple[list[str], list[str | None]]:
+    """One string per piece of the document, plus each piece's heading (docx only)."""
+    result = _EXTRACTORS[extension](file_bytes)
+    if extension == "docx":
+        return result
+    return result, [None] * len(result)
 
 
-def chunk_document(file_bytes: bytes, extension: str) -> list[Chunk]:
-    """Extract -> join -> split -> tag with page -> drop short chunks."""
-    unit_texts = extract_units(file_bytes, extension)
+def chunk_document(file_bytes: bytes, extension: str) -> tuple[list[Chunk], list[str | None]]:
+    """Extract -> join -> split -> tag with page -> drop short chunks.
+    Also returns each unit's heading, for building deep links."""
+    unit_texts, unit_headings = extract_units(file_bytes, extension)
 
     full_text = ""
     unit_start_offsets: list[int] = []
@@ -212,7 +222,7 @@ def chunk_document(file_bytes: bytes, extension: str) -> list[Chunk]:
         if len(text.strip()) < MIN_CHUNK_LENGTH:
             continue
         chunks.append(Chunk(text=text, page=find_page_number(offset, unit_start_offsets)))
-    return chunks
+    return chunks, unit_headings
 
 
 def find_page_number(offset: int, unit_start_offsets: list[int]) -> int:

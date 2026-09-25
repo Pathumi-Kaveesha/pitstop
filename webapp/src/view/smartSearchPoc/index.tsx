@@ -26,13 +26,10 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Stack from "@mui/material/Stack";
 import Divider from "@mui/material/Divider";
-import Dialog from "@mui/material/Dialog";
-import IconButton from "@mui/material/IconButton";
 import SearchOffIcon from "@mui/icons-material/SearchOff";
 import DescriptionIcon from "@mui/icons-material/Description";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import CloseIcon from "@mui/icons-material/Close";
 import { AppConfig } from "@config/config";
 import { ApiService } from "@utils/apiService";
 import { formatSmartSearchSnippet, groupSmartSearchSourcesByDocument } from "@utils/utils";
@@ -41,11 +38,6 @@ import { ContentResponse, SmartSearchResponse, SmartSearchResult } from "@/types
 
 // Proof-of-concept page for the smart search feature - reachable directly
 // at /smart-search-poc, not yet linked from the main navigation.
-
-interface PreviewDoc {
-  title: string;
-  link: string;
-}
 
 // Exact origin check, not a substring match
 const isTrustedDriveOrigin = (url: string): boolean => {
@@ -74,27 +66,50 @@ export default function SmartSearchPoc() {
     [contents]
   );
 
-  const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
+  // Drive's PDF viewer ignores "#page=N", so the PDF is fetched from our backend instead.
+  const openPdfAtPage = async (source: SmartSearchResult) => {
+    const fragment = source.page ? `#page=${source.page}` : "";
+    // Opened before the fetch so the popup blocker allows it.
+    const tab = window.open("about:blank", "_blank");
+    if (tab) {
+      tab.opener = null;
+    }
+    try {
+      const response = await ApiService.getInstance().get<Blob>(
+        `${AppConfig.serviceUrls.smartSearch}/documents/${source.documentId}/file`,
+        { responseType: "blob" }
+      );
+      const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      if (tab) {
+        tab.location.href = `${url}${fragment}`;
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      if (tab && isTrustedDriveOrigin(source.driveLink)) {
+        tab.location.href = `${source.driveLink}${fragment}`;
+      } else {
+        tab?.close();
+      }
+    }
+  };
 
-  // A PDF appends "#page=N" to jump to the matched page - Google's viewer
-  // honours that fragment. No equivalent exists for Word/Slides/Sheets.
+  // Always a new tab - Google pages don't load inside an iframe.
   const handleOpenDocument = (source: SmartSearchResult) => {
-    if (!source.documentId || !isTrustedDriveOrigin(source.driveLink)) {
+    if (!source.documentId) {
       return;
     }
-    const pageFragment = source.fileExtension === "pdf" && source.page ? `#page=${source.page}` : "";
-    setPreviewDoc({ title: source.title, link: `${source.driveLink}${pageFragment}` });
-  };
-
-  const handleClosePreview = () => {
-    setPreviewDoc(null);
-  };
-
-  const handleOpenPreviewInNewTab = () => {
-    if (!previewDoc) {
+    if (source.nativeLink && isTrustedDriveOrigin(source.nativeLink)) {
+      window.open(source.nativeLink, "_blank", "noopener,noreferrer");
       return;
     }
-    window.open(previewDoc.link, "_blank", "noopener,noreferrer");
+    if (source.fileExtension === "pdf") {
+      void openPdfAtPage(source);
+      return;
+    }
+    if (!isTrustedDriveOrigin(source.driveLink)) {
+      return;
+    }
+    window.open(source.driveLink, "_blank", "noopener,noreferrer");
   };
 
   const handleSearch = async () => {
@@ -233,8 +248,8 @@ export default function SmartSearchPoc() {
 
                     {group.excerpts.map(({ source, originalIndex }, excerptPosition) => {
                       const location = source.page !== null ? `${source.unitLabel || "Page"} ${source.page}` : null;
-                      // Only a PDF can jump to an exact location.
-                      const canJumpToLocation = location !== null && source.fileExtension === "pdf";
+                      const canJumpToLocation =
+                        location !== null && (Boolean(source.nativeLink) || source.fileExtension === "pdf");
                       const excerptContent = (
                         <>
                           {location && (
@@ -301,70 +316,6 @@ export default function SmartSearchPoc() {
           </Typography>
         </Box>
       )}
-
-      <Dialog
-        open={Boolean(previewDoc)}
-        onClose={handleClosePreview}
-        maxWidth={false}
-        PaperProps={{ sx: { backgroundColor: "transparent", boxShadow: "none", overflow: "visible" } }}
-      >
-        <Box
-          sx={{
-            position: "relative",
-            backgroundColor: "background.paper",
-            borderRadius: "12px",
-            width: "90vw",
-            maxWidth: "1000px",
-            height: "85vh",
-            maxHeight: "900px",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              px: 2,
-              py: 1.5,
-              borderBottom: 1,
-              borderColor: "divider",
-              bgcolor: "grey.900",
-            }}
-          >
-            <Typography variant="subtitle1" fontWeight={600} noWrap sx={{ color: "grey.100", flexGrow: 1, mr: 2 }}>
-              {previewDoc?.title}
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={handleOpenPreviewInNewTab}
-              sx={{ color: "grey.100" }}
-              title="Open in new tab"
-              aria-label="open in new tab"
-            >
-              <OpenInNewIcon fontSize="small" />
-            </IconButton>
-            <IconButton size="small" onClick={handleClosePreview} sx={{ color: "grey.100" }} aria-label="close">
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Box>
-          {/* minHeight: 0 - a flex child otherwise grows past the dialog edge. */}
-          <Box sx={{ flexGrow: 1, position: "relative", minHeight: 0, overflow: "hidden" }}>
-            {previewDoc && (
-              <iframe
-                title={previewDoc.title}
-                src={previewDoc.link}
-                sandbox="allow-same-origin allow-scripts allow-presentation allow-forms"
-                style={{ border: "none", width: "100%", height: "100%" }}
-                allow="autoplay"
-              />
-            )}
-          </Box>
-        </Box>
-      </Dialog>
     </Box>
   );
 }

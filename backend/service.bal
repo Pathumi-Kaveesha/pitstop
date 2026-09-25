@@ -1760,6 +1760,39 @@ service http:InterceptableService / on new http:Listener(9090) {
         return smartsearch:filterToAuthorizedSources(ctx, result);
     }
 
+    # Download the original PDF of an indexed content, so it can be opened at a given page.
+    #
+    # + ctx - Request object
+    # + contentId - The content whose PDF to download
+    # + return - The PDF, or an error
+    resource function get smart\-search/documents/[int contentId]/file(http:RequestContext ctx)
+        returns http:Response|http:Forbidden|http:NotFound|http:TooManyRequests|http:InternalServerError {
+
+        if !smartsearch:canViewContent(ctx, contentId) {
+            return http:FORBIDDEN;
+        }
+        if !smartsearch:isWithinDownloadLimit(ctx) {
+            return http:TOO_MANY_REQUESTS;
+        }
+
+        byte[]|http:NotFound|error file = smartsearch:fetchDocumentFile(contentId);
+        if file is http:NotFound {
+            return file;
+        }
+        if file is error {
+            log:printError(constants:SMART_SEARCH_ERROR, file);
+            return <http:InternalServerError>{
+                body: {message: constants:SMART_SEARCH_ERROR}
+            };
+        }
+
+        http:Response response = new;
+        response.setBinaryPayload(file, "application/pdf");
+        response.setHeader("Content-Disposition", "inline");
+        response.setHeader("Cache-Control", "private, no-store");
+        return response;
+    }
+
     # Search contents basic info.
     #
     # + return - Success or error responses
