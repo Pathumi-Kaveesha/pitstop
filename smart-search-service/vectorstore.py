@@ -18,6 +18,7 @@
 applies the score-based filtering that decides what counts as a real match."""
 
 from dataclasses import dataclass
+from typing import Optional
 
 import requests
 
@@ -52,6 +53,12 @@ class SearchResult:
     file_extension: str
     source: str
     drive_link: str
+    # Link to this chunk's slide/tab/heading - None where there isn't one.
+    native_link: Optional[str] = None
+
+
+# For queries that only filter by documentId - an all-zero vector matches nothing on a cosine index.
+_FILTER_ONLY_VECTOR = [1.0] + [0.0] * (EMBEDDING_DIMENSION - 1)
 
 
 def upsert_chunks(
@@ -64,11 +71,13 @@ def upsert_chunks(
     file_extension: str,
     source: str,
     drive_link: str,
+    native_links: list[Optional[str]],
 ) -> None:
     """Stores each (vector, text, metadata) triple in Pinecone."""
-    if len(vectors) != len(texts) or len(texts) != len(pages):
+    if len({len(vectors), len(texts), len(pages), len(native_links)}) > 1:
         raise ValueError(
-            f"Vector/text/page length mismatch: vectors={len(vectors)}, texts={len(texts)}, pages={len(pages)}"
+            f"Vector/text/page/native_link length mismatch: vectors={len(vectors)}, "
+            f"texts={len(texts)}, pages={len(pages)}, native_links={len(native_links)}"
         )
     records = [
         {
@@ -83,9 +92,13 @@ def upsert_chunks(
                 "fileExtension": file_extension,
                 "source": source,
                 "driveLink": drive_link,
+                # Pinecone can't store null, so "" means no link.
+                "nativeLink": native_link or "",
             },
         }
-        for index, (vector, text, page) in enumerate(zip(vectors, texts, pages))
+        for index, (vector, text, page, native_link) in enumerate(
+            zip(vectors, texts, pages, native_links)
+        )
     ]
     last_error: Exception | None = None
     for attempt in range(UPSERT_MAX_RETRIES + 1):
@@ -156,6 +169,7 @@ def search(query_vector: list[float], top_results_count: int, pool_multiplier: i
                 file_extension=metadata.get("fileExtension", "pdf"),
                 source=metadata.get("source", "upload"),
                 drive_link=metadata.get("driveLink", ""),
+                native_link=metadata.get("nativeLink") or None,
             )
         )
         if len(results) >= top_results_count:
@@ -182,7 +196,7 @@ def document_exists(document_id: str) -> bool:
         f"{PINECONE_SERVICE_URL}/query",
         headers=_HEADERS,
         json={
-            "vector": [0.0] * EMBEDDING_DIMENSION,
+            "vector": _FILTER_ONLY_VECTOR,
             "topK": 1,
             "filter": {"documentId": {"$eq": document_id}},
         },
@@ -190,6 +204,28 @@ def document_exists(document_id: str) -> bool:
     )
     response.raise_for_status()
     return len(response.json().get("matches", [])) > 0
+
+
+def find_document_source(document_id: str) -> Optional[tuple[str, str]]:
+    """The Drive link and file type recorded for an indexed document, or
+    None when nothing is indexed under that id."""
+    response = requests.post(
+        f"{PINECONE_SERVICE_URL}/query",
+        headers=_HEADERS,
+        json={
+            "vector": _FILTER_ONLY_VECTOR,
+            "topK": 1,
+            "includeMetadata": True,
+            "filter": {"documentId": {"$eq": document_id}},
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    matches = response.json().get("matches", [])
+    if not matches:
+        return None
+    metadata = matches[0].get("metadata", {})
+    return metadata.get("driveLink", ""), metadata.get("fileExtension", "")
 
 
 def delete_stale_chunks(document_id: str, keep_count: int) -> None:
@@ -225,7 +261,7 @@ def delete_stale_chunks(document_id: str, keep_count: int) -> None:
         f"{PINECONE_SERVICE_URL}/query",
         headers=_HEADERS,
         json={
-            "vector": [0.0] * EMBEDDING_DIMENSION,
+            "vector": _FILTER_ONLY_VECTOR,
             "topK": 1000,
             "includeMetadata": False,
             "filter": {"documentId": {"$eq": document_id}},

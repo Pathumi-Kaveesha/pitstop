@@ -23,15 +23,17 @@ import time
 
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 
 from chunking import UNIT_LABELS, chunk_document
+from deep_links import build_native_links
 from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     DELETE_TOMBSTONE_TTL_SECONDS,
+    MAX_PDF_VIEW_BYTES,
     RAW_MATCH_POOL_MULTIPLIER,
     EMBED_REQUEST_SPACING_SECONDS,
 )
@@ -41,6 +43,7 @@ from vectorstore import (
     delete_by_document_id,
     delete_stale_chunks,
     document_exists,
+    find_document_source,
     search,
     upsert_chunks,
 )
@@ -98,7 +101,7 @@ def _index_drive_file_in_background(
         file_bytes = download_drive_file(info)
         logger.info("Downloaded '%s' (%.1f MB), chunking", title, len(file_bytes) / 1_048_576)
 
-        chunks = chunk_document(file_bytes, info.extension)
+        chunks, unit_headings = chunk_document(file_bytes, info.extension)
         if not chunks:
             logger.warning(
                 "Nothing worth indexing in '%s' (id %s) - too short or unreadable", title, document_id
@@ -108,6 +111,12 @@ def _index_drive_file_in_background(
         if _is_tombstoned(document_id, since=job_started_at):
             logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
             return
+
+        unit_native_links = build_native_links(info, unit_headings)
+        chunk_native_links = [
+            unit_native_links[c.page - 1] if c.page - 1 < len(unit_native_links) else None
+            for c in chunks
+        ]
 
         logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
         vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
@@ -125,6 +134,7 @@ def _index_drive_file_in_background(
             info.extension,
             "drive",
             drive_link,
+            chunk_native_links,
         )
 
         # Delete may have landed mid-upsert - undo the write if so.
@@ -161,7 +171,8 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+        logger.exception("Could not read Drive link for indexing")
+        raise HTTPException(status_code=502, detail="Could not read that file from Google Drive.") from error
 
     title = body.title.strip() if body.title and body.title.strip() else info.drive_title
     document_id = body.contentId if body.contentId else info.file_id
@@ -207,6 +218,48 @@ def delete_document_endpoint(document_id: str) -> dict:
     return {"status": "deleted", "documentId": document_id}
 
 
+@app.get(
+    "/documents/{document_id}/file",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/pdf": {}}, "description": "The document's original PDF."},
+        404: {"model": ErrorResponse, "description": "No indexed PDF found for this document id."},
+        413: {"model": ErrorResponse, "description": "The PDF is too large to open at a page."},
+    },
+)
+def get_document_file(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> Response:
+    """Returns an indexed PDF's original file. Drive's own viewer ignores a
+    page number in the link, but a browser opening the file from us honours
+    "#page=N". PDF only."""
+    try:
+        source = find_document_source(document_id)
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+        logger.exception("Failed to look up document %s", document_id)
+        raise HTTPException(status_code=500, detail="Could not look up the document.") from error
+
+    if source is None or source[1] != "pdf":
+        raise HTTPException(status_code=404, detail=f"No indexed PDF found for document {document_id}.")
+
+    try:
+        info = resolve_drive_file(source[0])
+        if info.size_bytes is not None and info.size_bytes > MAX_PDF_VIEW_BYTES:
+            raise HTTPException(status_code=413, detail="This PDF is too large to open at a page.")
+        file_bytes = download_drive_file(info, max_bytes=MAX_PDF_VIEW_BYTES)
+    except (ValueError, RuntimeError) as error:
+        logger.exception("Failed to fetch the PDF for document %s", document_id)
+        raise HTTPException(status_code=502, detail="Could not retrieve the document.") from error
+
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="document.pdf"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @app.get("/search")
 def search_endpoint(
     userQuery: str = Query(..., min_length=1),
@@ -233,6 +286,7 @@ def search_endpoint(
             "fileExtension": r.file_extension,
             "source": r.source,
             "driveLink": r.drive_link,
+            "nativeLink": r.native_link or "",
         }
         for r in results
     ]
