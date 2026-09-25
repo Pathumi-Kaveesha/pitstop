@@ -85,9 +85,10 @@ export default function SmartSearchPoc() {
       }
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
-      tab?.close();
-      if (isTrustedDriveOrigin(source.driveLink)) {
-        window.open(`${source.driveLink}${fragment}`, "_blank", "noopener,noreferrer");
+      if (tab && isTrustedDriveOrigin(source.driveLink)) {
+        tab.location.href = `${source.driveLink}${fragment}`;
+      } else {
+        tab?.close();
       }
     }
   };
