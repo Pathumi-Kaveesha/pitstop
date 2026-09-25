@@ -113,6 +113,12 @@ def _find_results(user_query: str, limit: int) -> list[SearchResult]:
     return results
 
 
+def _clear_search_cache() -> None:
+    """Forgets every remembered lookup - called when the index changes."""
+    with _search_cache_lock:
+        _search_cache.clear()
+
+
 def _forget_results(user_query: str, limit: int) -> None:
     """Drops a remembered lookup once its answer has been written."""
     with _search_cache_lock:
@@ -177,10 +183,12 @@ def _index_drive_file_in_background(
         if _is_tombstoned(document_id, since=job_started_at):
             logger.info("Content %s was deleted while indexing was writing - cleaning up.", document_id)
             delete_by_document_id(document_id)
+            _clear_search_cache()
             return
 
         # Only once the new version is safely stored.
         delete_stale_chunks(document_id, len(chunks))
+        _clear_search_cache()
         logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
     except Exception:  # noqa: BLE001 - nobody is left to return an error to
         logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
@@ -250,6 +258,7 @@ def delete_document_endpoint(document_id: str) -> dict:
         logger.exception("Failed to delete document %s", document_id)
         raise HTTPException(status_code=500, detail=f"Error while deleting document: {error}") from error
 
+    _clear_search_cache()
     logger.info("Removed indexed chunks for document %s", document_id)
     return {"status": "deleted", "documentId": document_id}
 
