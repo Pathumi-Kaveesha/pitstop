@@ -27,6 +27,7 @@ import pitstop.types;
 # + fileExtension - The original file's type (pdf/pptx/docx/xlsx)
 # + source - "upload" or "drive"
 # + driveLink - The link used to index this document, when source is "drive"
+# + nativeLink - Link to this chunk's slide/tab/heading, empty when there isn't one
 public type SmartSearchResult record {|
     string content;
     string title;
@@ -37,6 +38,7 @@ public type SmartSearchResult record {|
     string fileExtension = "pdf";
     string 'source = "upload";
     string driveLink = "";
+    string nativeLink = "";
 |};
 
 # Full response from the Smart Search service.
