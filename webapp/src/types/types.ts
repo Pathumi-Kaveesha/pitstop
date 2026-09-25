@@ -799,6 +799,7 @@ export interface SmartSearchResult {
   fileExtension: string;
   source: "upload" | "drive";
   driveLink: string;
+  nativeLink: string;
 }
 
 export interface SmartSearchResponse {
