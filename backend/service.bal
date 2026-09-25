@@ -1789,7 +1789,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         http:Response response = new;
         response.setBinaryPayload(file, "application/pdf");
         response.setHeader("Content-Disposition", "inline");
-        response.setHeader("X-Content-Type-Options", "nosniff");
+        response.setHeader("Cache-Control", "private, no-store");
         return response;
     }
 
