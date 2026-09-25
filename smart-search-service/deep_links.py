@@ -45,12 +45,12 @@ def _get_sheet_gids(spreadsheet_id: str) -> list[int]:
     return [s["properties"]["sheetId"] for s in sheets]
 
 
-def _get_heading_ids(document_id: str) -> dict[str, str]:
-    """Heading text -> the id Google gave it. A repeated heading keeps the last id."""
+def _get_heading_ids(document_id: str) -> list[tuple[str, str]]:
+    """(heading text, heading id) pairs in document order."""
     response = _request_with_retry("GET", f"{DOCS_API_BASE}/{document_id}")
     content = response.json().get("body", {}).get("content", [])
 
-    heading_ids: dict[str, str] = {}
+    heading_ids: list[tuple[str, str]] = []
     for element in content:
         paragraph = element.get("paragraph")
         if not paragraph:
@@ -62,8 +62,26 @@ def _get_heading_ids(document_id: str) -> dict[str, str]:
             run.get("textRun", {}).get("content", "") for run in paragraph.get("elements", [])
         ).strip()
         if text:
-            heading_ids[text] = heading_id
+            heading_ids.append((text, heading_id))
     return heading_ids
+
+
+def _match_heading_links(
+    file_id: str, unit_headings: list[Optional[str]], doc_headings: list[tuple[str, str]]
+) -> list[Optional[str]]:
+    """Pairs each unit's heading with the next same-text heading in the doc, so repeated headings stay apart."""
+    links: list[Optional[str]] = []
+    remaining = doc_headings
+    for heading in unit_headings:
+        link = None
+        if heading:
+            for i, (text, heading_id) in enumerate(remaining):
+                if text == heading:
+                    link = f"https://docs.google.com/document/d/{file_id}/edit#heading={heading_id}"
+                    remaining = remaining[i + 1:]
+                    break
+        links.append(link)
+    return links
 
 
 def build_native_links(info: DriveFileInfo, unit_headings: list[Optional[str]]) -> list[Optional[str]]:
@@ -89,12 +107,7 @@ def build_native_links(info: DriveFileInfo, unit_headings: list[Optional[str]]) 
                 for gid in _get_sheet_gids(file_id)
             ]
 
-        heading_ids = _get_heading_ids(file_id)
-        return [
-            f"https://docs.google.com/document/d/{file_id}/edit#heading={heading_ids[heading]}"
-            if heading and heading in heading_ids else None
-            for heading in unit_headings
-        ]
+        return _match_heading_links(file_id, unit_headings, _get_heading_ids(file_id))
     except Exception:  # noqa: BLE001 - deep links must never block indexing
         logger.exception("Could not build deep links for '%s' - using the plain Drive link", info.drive_title)
         return none_links
