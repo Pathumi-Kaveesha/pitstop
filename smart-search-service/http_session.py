@@ -21,10 +21,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
-def make_session() -> requests.Session:
-    """Retries once when a saved connection turns out to be dead. Safe for the
-    calls made through it: they only read, or repeat with the same result."""
-    retry = Retry(total=1, connect=1, read=1, allowed_methods=None)
+def make_session(*, retry_read: bool = True) -> requests.Session:
+    """Retries once when a saved connection turns out to be dead. With retry_read
+    off, only a failed connect is retried - never a request that may have been
+    processed, which matters for deletes that match by filter."""
+    retry = Retry(total=1, connect=1, read=1 if retry_read else 0, allowed_methods=None)
     session = requests.Session()
     session.mount("https://", HTTPAdapter(max_retries=retry))
     return session

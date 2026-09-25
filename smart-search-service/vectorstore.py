@@ -37,6 +37,7 @@ from config import (
 from http_session import make_session
 
 _session = make_session()
+_delete_session = make_session(retry_read=False)
 
 _HEADERS = {
     "Api-Key": PINECONE_API_KEY,
@@ -183,7 +184,7 @@ def search(query_vector: list[float], top_results_count: int, pool_multiplier: i
 
 def delete_document(title: str) -> None:
     """Removes every chunk belonging to one document, by title."""
-    response = _session.post(
+    response = _delete_session.post(
         f"{PINECONE_SERVICE_URL}/vectors/delete",
         headers=_HEADERS,
         json={"filter": {"fileName": {"$eq": title}}},
@@ -280,7 +281,7 @@ def delete_stale_chunks(document_id: str, keep_count: int) -> None:
 
     for i in range(0, len(stale), 1000):
         batch = stale[i:i + 1000]
-        response = _session.post(
+        response = _delete_session.post(
             f"{PINECONE_SERVICE_URL}/vectors/delete",
             headers=_HEADERS,
             json={"ids": batch},
@@ -293,7 +294,7 @@ def delete_by_document_id(document_id: str) -> None:
 
     Keyed on documentId rather than the title - the id is the content's own
     id and never changes, while two documents can share a title."""
-    response = _session.post(
+    response = _delete_session.post(
         f"{PINECONE_SERVICE_URL}/vectors/delete",
         headers=_HEADERS,
         json={"filter": {"documentId": {"$eq": document_id}}},
