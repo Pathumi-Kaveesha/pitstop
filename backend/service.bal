@@ -1746,11 +1746,12 @@ service http:InterceptableService / on new http:Listener(9090) {
     #
     # + ctx - Request object
     # + userQuery - What the user typed into the search box
+    # + includeAnswer - False returns just the sources, without waiting for the generated answer
     # + return - A generated answer plus its sources, or an error
-    resource function get smart\-search(http:RequestContext ctx, string userQuery)
+    resource function get smart\-search(http:RequestContext ctx, string userQuery, boolean includeAnswer = true)
         returns smartsearch:SmartSearchResponse|http:InternalServerError {
 
-        smartsearch:SmartSearchResponse|error result = smartsearch:searchDocuments(userQuery);
+        smartsearch:SmartSearchResponse|error result = smartsearch:searchDocuments(userQuery, includeAnswer);
         if result is error {
             log:printError(constants:SMART_SEARCH_ERROR, result);
             return <http:InternalServerError>{

@@ -154,6 +154,13 @@ paths:
           minimum: 1
           default: 10
           title: Limit
+      - name: includeAnswer
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Includeanswer
       responses:
         '200':
           description: Successful Response

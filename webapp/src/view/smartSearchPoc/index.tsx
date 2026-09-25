@@ -53,6 +53,8 @@ export default function SmartSearchPoc() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const searchingRef = useRef(false);
+  const latestSearchRef = useRef(0);
+  const [answerLoading, setAnswerLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [answer, setAnswer] = useState<string | null>(null);
   const [sources, setSources] = useState<SmartSearchResult[]>([]);
@@ -112,28 +114,52 @@ export default function SmartSearchPoc() {
     window.open(source.driveLink, "_blank", "noopener,noreferrer");
   };
 
+  // Encoded manually - axios leaves commas unescaped, which Ballerina's
+  // query-parameter parser reads as a list separator.
+  const searchUrl = (searchedQuery: string, includeAnswer: boolean) =>
+    `${AppConfig.serviceUrls.smartSearch}?userQuery=${encodeURIComponent(searchedQuery)}&includeAnswer=${includeAnswer}`;
+
+  // The matching documents show first; the AI answer is fetched after and fills in when ready.
+  const fetchAnswer = async (searchId: number, searchedQuery: string) => {
+    setAnswerLoading(true);
+    try {
+      const response = await ApiService.getInstance().get<SmartSearchResponse>(searchUrl(searchedQuery, true));
+      if (latestSearchRef.current === searchId) {
+        setAnswer(response.data?.answer ?? null);
+      }
+    } catch {
+      // No answer is fine - the sources are already shown, with a note.
+    } finally {
+      if (latestSearchRef.current === searchId) {
+        setAnswerLoading(false);
+      }
+    }
+  };
+
   const handleSearch = async () => {
     if (!query.trim() || searchingRef.current) {
       return;
     }
 
     searchingRef.current = true;
+    const searchedQuery = query.trim();
+    const searchId = ++latestSearchRef.current;
     setSearching(true);
+    setAnswerLoading(false);
     setSearchError(null);
     setAnswer(null);
     setSources([]);
     setContents([]);
 
     try {
-      // Encoded manually - axios leaves commas unescaped, which Ballerina's
-      // query-parameter parser reads as a list separator.
-      const response = await ApiService.getInstance().get<SmartSearchResponse>(
-        `${AppConfig.serviceUrls.smartSearch}?userQuery=${encodeURIComponent(query.trim())}`
-      );
-      setAnswer(response.data?.answer ?? null);
-      setSources(response.data?.sources ?? []);
+      const response = await ApiService.getInstance().get<SmartSearchResponse>(searchUrl(searchedQuery, false));
+      const foundSources = response.data?.sources ?? [];
+      setSources(foundSources);
       setContents(response.data?.contents ?? []);
       setHasSearched(true);
+      if (foundSources.length > 0) {
+        void fetchAnswer(searchId, searchedQuery);
+      }
     } catch (error) {
       setSearchError("Search failed. Check the console/backend logs for details.");
       setHasSearched(false);
@@ -177,10 +203,19 @@ export default function SmartSearchPoc() {
           {searchError && <Alert severity="error" sx={{ mb: 2 }}>{searchError}</Alert>}
 
           {/* Search can succeed even when answer generation fails. */}
-          {hasSearched && !searching && !answer && sources.length > 0 && (
+          {hasSearched && !searching && !answerLoading && !answer && sources.length > 0 && (
             <Alert severity="info" sx={{ mb: 2 }}>
               Couldn't generate an AI summary right now - showing the matching documents below instead.
             </Alert>
+          )}
+
+          {answerLoading && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+              <CircularProgress size={16} />
+              <Typography variant="body2" color="text.secondary">
+                Writing an AI answer...
+              </Typography>
+            </Stack>
           )}
 
           {answer && (

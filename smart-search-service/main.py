@@ -36,10 +36,13 @@ from config import (
     MAX_PDF_VIEW_BYTES,
     RAW_MATCH_POOL_MULTIPLIER,
     EMBED_REQUEST_SPACING_SECONDS,
+    SEARCH_CACHE_MAX_ENTRIES,
+    SEARCH_CACHE_TTL_SECONDS,
 )
 from embeddings import embed_chunks, embed_text, format_query_text
 from generation import generate_answer
 from vectorstore import (
+    SearchResult,
     delete_by_document_id,
     delete_stale_chunks,
     document_exists,
@@ -81,6 +84,39 @@ def _is_tombstoned(document_id: str, since: float) -> bool:
     with _deleted_ids_lock:
         deleted_at = _deleted_content_ids.get(document_id)
     return deleted_at is not None and deleted_at >= since
+
+
+# (query, limit) -> (when stored, results). Results are the same for every caller -
+# who may see them is decided later, in the backend.
+_search_cache: dict[tuple[str, int], tuple[float, list[SearchResult]]] = {}
+_search_cache_lock = threading.Lock()
+
+
+def _find_results(user_query: str, limit: int) -> list[SearchResult]:
+    """Looks a query up, reusing a very recent identical lookup."""
+    key = (user_query, limit)
+    now = time.time()
+    with _search_cache_lock:
+        cached = _search_cache.get(key)
+        if cached and now - cached[0] < SEARCH_CACHE_TTL_SECONDS:
+            return cached[1]
+
+    results = search(embed_text(format_query_text(user_query)), limit, RAW_MATCH_POOL_MULTIPLIER)
+
+    with _search_cache_lock:
+        _search_cache[key] = (now, results)
+        if len(_search_cache) > SEARCH_CACHE_MAX_ENTRIES:
+            for stale_key in [k for k, (at, _) in _search_cache.items() if now - at >= SEARCH_CACHE_TTL_SECONDS]:
+                del _search_cache[stale_key]
+            while len(_search_cache) > SEARCH_CACHE_MAX_ENTRIES:
+                del _search_cache[min(_search_cache, key=lambda k: _search_cache[k][0])]
+    return results
+
+
+def _forget_results(user_query: str, limit: int) -> None:
+    """Drops a remembered lookup once its answer has been written."""
+    with _search_cache_lock:
+        _search_cache.pop((user_query, limit), None)
 
 
 @app.get("/health")
@@ -264,13 +300,14 @@ def get_document_file(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> Resp
 def search_endpoint(
     userQuery: str = Query(..., min_length=1),
     limit: int = Query(DEFAULT_SEARCH_RESULT_LIMIT, ge=1, le=50),
+    includeAnswer: bool = Query(True),
 ) -> dict:
     """Tool 1: embeds the query and finds the closest matches by score.
     Tool 2 (generate_answer) then writes an answer, but only runs when
-    Tool 1 actually found something to ground it in."""
+    Tool 1 actually found something to ground it in. includeAnswer=false
+    skips Tool 2, so the sources come back without waiting for the model."""
     try:
-        query_vector = embed_text(format_query_text(userQuery))
-        results = search(query_vector, limit, RAW_MATCH_POOL_MULTIPLIER)
+        results = _find_results(userQuery, limit)
     except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
         logger.exception("Search failed")
         raise HTTPException(status_code=500, detail=f"Error while searching: {error}") from error
@@ -291,11 +328,12 @@ def search_endpoint(
         for r in results
     ]
 
-    if not results:
-        return {"answer": None, "sources": []}
+    if not results or not includeAnswer:
+        return {"answer": None, "sources": sources}
 
     try:
         answer = generate_answer(userQuery, results)
+        _forget_results(userQuery, limit)
     except Exception:  # noqa: BLE001 - degrade gracefully rather than fail the search
         logger.exception("Answer generation failed - returning sources without a generated answer")
         answer = None

@@ -26,12 +26,15 @@ import ballerina/url;
 # Runs a search against the Smart Search service.
 #
 # + userQuery - What the user typed into the search box
+# + includeAnswer - False returns just the sources, without waiting for the generated answer
 # + return - A generated answer plus its sources, or an error
-public isolated function searchDocuments(string userQuery) returns SmartSearchResponse|error {
+public isolated function searchDocuments(string userQuery, boolean includeAnswer)
+    returns SmartSearchResponse|error {
+
     // Explicit encoding - a query can contain a comma, which Ballerina's
     // query-parameter parser otherwise treats as a list separator.
     string encodedQuery = check url:encode(userQuery, "UTF-8");
-    return smartSearchServiceClient->get(string `/search?userQuery=${encodedQuery}`);
+    return smartSearchServiceClient->get(string `/search?userQuery=${encodedQuery}&includeAnswer=${includeAnswer}`);
 }
 
 # Whether the caller may see this content - the same rule search uses. Denies on any doubt.
