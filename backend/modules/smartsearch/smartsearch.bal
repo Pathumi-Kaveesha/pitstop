@@ -329,6 +329,13 @@ public isolated function deleteContentFromSmartSearch(int contentId) {
 # + newLink - Its link after the edit
 # + previousLink - Its link before the edit, when known
 public isolated function reindexAfterLinkChange(int contentId, string newLink, string? previousLink) {
+    // An old failure belongs to the old link
+    error? clearError = database:clearSmartSearchIndexFailure(contentId);
+    if clearError is error {
+        log:printWarn("Smart Search: could not clear index failure after a link change", clearError,
+                contentId = contentId);
+    }
+
     // Clear old entries first so a failed re-index never leaves stale results
     if previousLink is string && isIndexableLink(previousLink) {
         deleteContentFromSmartSearch(contentId);
