@@ -158,7 +158,8 @@ public isolated function deleteContentById(int contentId) returns int|error? {
 # + errorMessage - Why indexing failed
 # + return - Error, if any
 public isolated function setSmartSearchIndexFailure(int contentId, string errorMessage) returns error? {
-    _ = check dbClient->execute(setSmartSearchIndexFailureQuery(contentId, errorMessage));
+    string message = errorMessage.length() > MAX_INDEX_ERROR_LENGTH ? INDEX_ERROR_TOO_LONG : errorMessage;
+    _ = check dbClient->execute(setSmartSearchIndexFailureQuery(contentId, message));
 }
 
 # Get recently added or edited content not yet recorded as failed.
