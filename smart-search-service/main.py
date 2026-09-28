@@ -33,6 +33,7 @@ from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     DELETE_TOMBSTONE_TTL_SECONDS,
+    INDEX_ERROR_TTL_SECONDS,
     MAX_PDF_VIEW_BYTES,
     RAW_MATCH_POOL_MULTIPLIER,
     EMBED_REQUEST_SPACING_SECONDS,
@@ -84,6 +85,26 @@ def _is_tombstoned(document_id: str, since: float) -> bool:
     with _deleted_ids_lock:
         deleted_at = _deleted_content_ids.get(document_id)
     return deleted_at is not None and deleted_at >= since
+
+
+# document_id -> (when it failed, reason)
+_index_errors: dict[str, tuple[float, str]] = {}
+_index_errors_lock = threading.Lock()
+
+
+def _set_index_error(document_id: str, message: str) -> None:
+    now = time.time()
+    with _index_errors_lock:
+        _index_errors[document_id] = (now, message[:300])
+        expired = [doc_id for doc_id, (at, _) in _index_errors.items()
+                   if now - at > INDEX_ERROR_TTL_SECONDS]
+        for doc_id in expired:
+            del _index_errors[doc_id]
+
+
+def _clear_index_error(document_id: str) -> None:
+    with _index_errors_lock:
+        _index_errors.pop(document_id, None)
 
 
 # (query, limit) -> (when stored, results). Results are the same for every caller -
@@ -138,6 +159,7 @@ def _index_drive_file_in_background(
     log, since there's no caller left to report them to."""
     logger.info("Started indexing '%s' (id %s, %s) - downloading", title, document_id, info.extension)
     job_started_at = time.time()
+    _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
 
     try:
         file_bytes = download_drive_file(info)
@@ -148,6 +170,7 @@ def _index_drive_file_in_background(
             logger.warning(
                 "Nothing worth indexing in '%s' (id %s) - too short or unreadable", title, document_id
             )
+            _set_index_error(document_id, "Nothing worth indexing was found in this file.")
             return
 
         if _is_tombstoned(document_id, since=job_started_at):
@@ -190,8 +213,9 @@ def _index_drive_file_in_background(
         delete_stale_chunks(document_id, len(chunks))
         _clear_search_cache()
         logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
-    except Exception:  # noqa: BLE001 - nobody is left to return an error to
+    except Exception as error:  # noqa: BLE001 - nobody is left to return an error to
         logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
+        _set_index_error(document_id, str(error) or type(error).__name__)
 
 
 class IngestDriveLinkRequest(BaseModel):
@@ -213,9 +237,14 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     try:
         info = await run_in_threadpool(resolve_drive_file, body.driveLink)
     except ValueError as error:
+        # Rejected before indexing started, so record it now
+        if body.contentId:
+            _set_index_error(body.contentId, str(error))
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
         logger.exception("Could not read Drive link for indexing")
+        if body.contentId:
+            _set_index_error(body.contentId, "Could not read that file from Google Drive.")
         raise HTTPException(status_code=502, detail="Could not read that file from Google Drive.") from error
 
     title = body.title.strip() if body.title and body.title.strip() else info.drive_title
@@ -303,6 +332,24 @@ def get_document_file(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> Resp
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@app.get("/documents/{document_id}/status")
+def get_document_status(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> dict:
+    """Whether a document is indexed, and why the last attempt failed if not."""
+    try:
+        indexed = document_exists(document_id)
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+        logger.exception("Failed to check indexing status for document %s", document_id)
+        raise HTTPException(status_code=500, detail="Could not check indexing status.") from error
+
+    error_message = None
+    if not indexed:
+        with _index_errors_lock:
+            entry = _index_errors.get(document_id)
+        error_message = entry[1] if entry else None
+
+    return {"indexed": indexed, "errorMessage": error_message}
 
 
 @app.get("/search")

@@ -69,6 +69,10 @@ EMBED_REQUEST_SPACING_SECONDS = 1
 # correctness deadline - a job always checks against its own start time,
 # never against elapsed time, so this can be generous.
 DELETE_TOMBSTONE_TTL_SECONDS = 6 * 60 * 60
+
+# How long an indexing failure reason is remembered
+INDEX_ERROR_TTL_SECONDS = 24 * 60 * 60
+
 EMBED_MAX_RETRIES = 3
 EMBED_RETRY_DELAY_SECONDS = 5
 
