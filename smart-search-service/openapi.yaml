@@ -91,7 +91,8 @@ paths:
   /documents/{document_id}/file:
     get:
       summary: Get Document File
-      description: 'Returns an indexed PDF''s original file. Drive''s own viewer ignores a
+      description: 'Returns an indexed PDF''s original file. Drive''s own viewer ignores
+        a
 
         page number in the link, but a browser opening the file from us honours
 
@@ -131,8 +132,8 @@ paths:
   /documents/{document_id}/status:
     get:
       summary: Get Document Status
-      description: Whether a document is indexed, and why the last attempt failed
-        if not.
+      description: Whether a document has indexed pieces, and why its latest attempt
+        failed, if it did.
       operationId: get_document_status_documents__document_id__status_get
       parameters:
       - name: document_id

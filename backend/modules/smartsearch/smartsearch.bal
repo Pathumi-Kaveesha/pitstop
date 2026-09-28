@@ -246,6 +246,17 @@ public isolated function filterToAuthorizedSources(http:RequestContext ctx, Smar
     };
 }
 
+# Saves an indexing failure, logging a warning if it can't be saved.
+#
+# + contentId - The content that failed to index
+# + reason - Why indexing failed
+isolated function recordIndexFailure(int contentId, string reason) {
+    error? failureError = database:setSmartSearchIndexFailure(contentId, reason);
+    if failureError is error {
+        log:printWarn("Smart Search: could not record an index failure", failureError, contentId = contentId);
+    }
+}
+
 # Indexes a content item. Launched with `start` so the caller never waits on it.
 #
 # + contentId - The content's own id, reused as Smart Search's documentId
@@ -281,11 +292,7 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
     }
     log:printWarn(string `Smart Search: skipped indexing content ${contentId}`,
             link = driveLink, status = response.statusCode, reason = reason);
-
-    error? failureError = database:setSmartSearchIndexFailure(contentId, reason);
-    if failureError is error {
-        log:printWarn("Smart Search: could not record an index failure", failureError, contentId = contentId);
-    }
+    recordIndexFailure(contentId, reason);
 }
 
 # Clears a deleted content's entries from the search index. Content that
@@ -300,27 +307,36 @@ public isolated function deleteContentFromSmartSearch(int contentId) {
                 contentId = contentId);
     }
 
+    _ = clearIndexedEntries(contentId);
+}
+
+# Removes a content's entries from the search index.
+#
+# + contentId - The content whose entries to remove
+# + return - False if the entries could not be removed
+isolated function clearIndexedEntries(int contentId) returns boolean {
     http:Response|http:ClientError response =
         smartSearchServiceClient->delete(string `/documents/${contentId}`);
     if response is http:ClientError {
         log:printWarn(string `Smart Search: could not reach the indexing service to un-index content ${contentId}`,
                 reason = response.message());
-        return;
+        return false;
     }
 
     if response.statusCode >= 200 && response.statusCode < 300 {
         log:printInfo(string `Smart Search: cleared any indexed entries for content ${contentId}`);
-        return;
+        return true;
     }
 
     if response.statusCode == http:STATUS_NOT_FOUND {
-        return;
+        return true;
     }
 
     string|http:ClientError responseBody = response.getTextPayload();
     log:printWarn(string `Smart Search: could not clear indexed entries for content ${contentId}`,
             status = response.statusCode,
             reason = responseBody is string ? responseBody : "(no details returned)");
+    return false;
 }
 
 # Re-syncs Smart Search after a content's link is edited. Launched with `start` so the edit never waits on it.
@@ -336,9 +352,12 @@ public isolated function reindexAfterLinkChange(int contentId, string newLink, s
                 contentId = contentId);
     }
 
-    // Clear old entries first so a failed re-index never leaves stale results
-    if previousLink is string && isIndexableLink(previousLink) {
-        deleteContentFromSmartSearch(contentId);
+    // Clear the old version first, so a failed re-index never leaves stale results
+    if previousLink is () || isIndexableLink(previousLink) {
+        if !clearIndexedEntries(contentId) {
+            recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
+            return;
+        }
     }
 
     if isIndexableLink(newLink) {
@@ -348,6 +367,8 @@ public isolated function reindexAfterLinkChange(int contentId, string newLink, s
             return;
         }
         indexContentForSmartSearch(contentId, newLink, current[0].description);
+    } else if previousLink is string && isIndexableLink(previousLink) {
+        recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
     }
 }
 
@@ -364,6 +385,9 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
     if !isIndexableLink(matched[0].contentLink) {
         return database:clearSmartSearchIndexFailure(contentId);
     }
+    if !clearIndexedEntries(contentId) {
+        return error("Could not clear the previous version of this content");
+    }
     indexContentForSmartSearch(contentId, matched[0].contentLink, matched[0].description);
     return;
 }
@@ -371,7 +395,7 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
 # Indexing status of a document.
 #
 # + indexed - Whether it's currently indexed
-# + errorMessage - Why the last attempt failed, when known and not indexed
+# + errorMessage - Why the latest attempt failed, when known
 type IndexStatusResponse record {|
     boolean indexed;
     string? errorMessage;
@@ -390,16 +414,17 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
         return false;
     }
 
-    if status.indexed {
+    string? errorMessage = status.errorMessage;
+    if errorMessage is string {
+        error? updateError = database:setSmartSearchIndexFailure(contentId, errorMessage);
+        if updateError is error {
+            log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+        }
+    } else if status.indexed {
         error? clearError = database:clearSmartSearchIndexFailure(contentId);
         if clearError is error {
             log:printWarn("Smart Search: could not clear a resolved index failure", clearError,
                     contentId = contentId);
-        }
-    } else if status.errorMessage is string {
-        error? updateError = database:setSmartSearchIndexFailure(contentId, <string>status.errorMessage);
-        if updateError is error {
-            log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
         }
     }
     return true;

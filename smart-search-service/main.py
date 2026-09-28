@@ -336,18 +336,16 @@ def get_document_file(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> Resp
 
 @app.get("/documents/{document_id}/status")
 def get_document_status(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> dict:
-    """Whether a document is indexed, and why the last attempt failed if not."""
+    """Whether a document has indexed pieces, and why its latest attempt failed, if it did."""
     try:
         indexed = document_exists(document_id)
     except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
         logger.exception("Failed to check indexing status for document %s", document_id)
         raise HTTPException(status_code=500, detail="Could not check indexing status.") from error
 
-    error_message = None
-    if not indexed:
-        with _index_errors_lock:
-            entry = _index_errors.get(document_id)
-        error_message = entry[1] if entry else None
+    with _index_errors_lock:
+        entry = _index_errors.get(document_id)
+    error_message = entry[1] if entry else None
 
     return {"indexed": indexed, "errorMessage": error_message}
 
