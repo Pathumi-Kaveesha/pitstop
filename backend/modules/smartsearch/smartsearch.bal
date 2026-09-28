@@ -360,6 +360,10 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
     if matched.length() == 0 {
         return http:NOT_FOUND;
     }
+    // No longer a Drive link, so there is nothing to index
+    if !isIndexableLink(matched[0].contentLink) {
+        return database:clearSmartSearchIndexFailure(contentId);
+    }
     indexContentForSmartSearch(contentId, matched[0].contentLink, matched[0].description);
     return;
 }
