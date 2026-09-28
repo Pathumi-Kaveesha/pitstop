@@ -20,6 +20,7 @@ import pitstop.types;
 
 import ballerina/http;
 import ballerina/log;
+import ballerina/task;
 import ballerina/time;
 import ballerina/url;
 
@@ -94,6 +95,55 @@ public isolated function isWithinDownloadLimit(http:RequestContext ctx) returns 
             return false;
         }
         fileDownloadWindows[userEmail] = [window[0], window[1] + 1];
+        return true;
+    }
+}
+
+const int RETRY_COOLDOWN_SECONDS = 60;
+const int MAX_RETRIES_PER_WINDOW = 10;
+const int RETRY_RATE_WINDOW_SECONDS = 5 * 60;
+const int MAX_TRACKED_RETRIES = 1000;
+
+// "content:<id>" -> [last retry time, 0]; "user:<email>" -> [window start in seconds, retries in that window]
+isolated map<[int, int]> retryState = {};
+
+# Check whether the caller may retry this content now, and count the retry if so.
+#
+# + ctx - Request object
+# + contentId - The content being retried
+# + return - False if the content was retried recently or the caller is over the retry limit
+public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) returns boolean {
+    string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+    if userEmail is error {
+        return false;
+    }
+    string contentKey = string `content:${contentId}`;
+    string userKey = string `user:${userEmail}`;
+    int now = time:utcNow()[0];
+
+    lock {
+        if retryState.length() > MAX_TRACKED_RETRIES {
+            foreach string key in retryState.keys() {
+                if now - retryState.get(key)[0] >= RETRY_RATE_WINDOW_SECONDS {
+                    _ = retryState.remove(key);
+                }
+            }
+        }
+
+        [int, int]? lastRetry = retryState[contentKey];
+        if lastRetry is [int, int] && now - lastRetry[0] < RETRY_COOLDOWN_SECONDS {
+            return false;
+        }
+
+        [int, int]? window = retryState[userKey];
+        if window is () || now - window[0] >= RETRY_RATE_WINDOW_SECONDS {
+            retryState[userKey] = [now, 1];
+        } else if window[1] >= MAX_RETRIES_PER_WINDOW {
+            return false;
+        } else {
+            retryState[userKey] = [window[0], window[1] + 1];
+        }
+        retryState[contentKey] = [now, 0];
         return true;
     }
 }
@@ -196,15 +246,15 @@ public isolated function filterToAuthorizedSources(http:RequestContext ctx, Smar
     };
 }
 
-# Indexes a just-created content item, if its link is a Google Drive link.
-# Launched with `start` so content creation never waits on it.
+# Indexes a content item. Launched with `start` so the caller never waits on it.
 #
 # + contentId - The content's own id, reused as Smart Search's documentId
-# + content - The content just created
-public isolated function indexContentForSmartSearch(int contentId, types:ContentPayload content) {
+# + driveLink - The content's link
+# + title - The content's title
+public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title) {
     DriveLinkIngestRequest payload = {
-        driveLink: content.contentLink,
-        title: content.description,
+        driveLink,
+        title,
         contentId: contentId.toString()
     };
 
@@ -220,11 +270,22 @@ public isolated function indexContentForSmartSearch(int contentId, types:Content
         return;
     }
 
-    string|http:ClientError responseBody = response.getTextPayload();
+    // Rejected before indexing started, so record it right away
+    json|http:ClientError responseBody = response.getJsonPayload();
+    string reason = "Smart Search rejected this file.";
+    if responseBody is json {
+        json|error detail = responseBody.detail;
+        if detail is string {
+            reason = detail;
+        }
+    }
     log:printWarn(string `Smart Search: skipped indexing content ${contentId}`,
-            link = content.contentLink,
-            status = response.statusCode,
-            reason = responseBody is string ? responseBody : "(no details returned)");
+            link = driveLink, status = response.statusCode, reason = reason);
+
+    error? failureError = database:setSmartSearchIndexFailure(contentId, reason);
+    if failureError is error {
+        log:printWarn("Smart Search: could not record an index failure", failureError, contentId = contentId);
+    }
 }
 
 # Clears a deleted content's entries from the search index. Content that
@@ -233,6 +294,12 @@ public isolated function indexContentForSmartSearch(int contentId, types:Content
 #
 # + contentId - The content that was deleted
 public isolated function deleteContentFromSmartSearch(int contentId) {
+    error? clearError = database:clearSmartSearchIndexFailure(contentId);
+    if clearError is error {
+        log:printWarn("Smart Search: could not clear a deleted content's index failure", clearError,
+                contentId = contentId);
+    }
+
     http:Response|http:ClientError response =
         smartSearchServiceClient->delete(string `/documents/${contentId}`);
     if response is http:ClientError {
@@ -246,8 +313,131 @@ public isolated function deleteContentFromSmartSearch(int contentId) {
         return;
     }
 
+    if response.statusCode == http:STATUS_NOT_FOUND {
+        return;
+    }
+
     string|http:ClientError responseBody = response.getTextPayload();
     log:printWarn(string `Smart Search: could not clear indexed entries for content ${contentId}`,
             status = response.statusCode,
             reason = responseBody is string ? responseBody : "(no details returned)");
+}
+
+# Re-syncs Smart Search after a content's link is edited. Launched with `start` so the edit never waits on it.
+#
+# + contentId - The content that was edited
+# + newLink - Its link after the edit
+# + previousLink - Its link before the edit, when known
+public isolated function reindexAfterLinkChange(int contentId, string newLink, string? previousLink) {
+    // Clear old entries first so a failed re-index never leaves stale results
+    if previousLink is string && isIndexableLink(previousLink) {
+        deleteContentFromSmartSearch(contentId);
+    }
+
+    if isIndexableLink(newLink) {
+        types:ContentResponse[]|error current = database:getContentsByIds([contentId], false, "");
+        if current is error || current.length() == 0 {
+            log:printWarn("Smart Search: could not look up content after a link change", contentId = contentId);
+            return;
+        }
+        indexContentForSmartSearch(contentId, newLink, current[0].description);
+    }
+}
+
+# Re-triggers indexing for a content item.
+#
+# + contentId - The content to retry
+# + return - Not-found when there's no such content, an error, or nil on success
+public isolated function retryIndexContent(int contentId) returns http:NotFound|error? {
+    types:ContentResponse[] matched = check database:getContentsByIds([contentId], false, "");
+    if matched.length() == 0 {
+        return http:NOT_FOUND;
+    }
+    indexContentForSmartSearch(contentId, matched[0].contentLink, matched[0].description);
+    return;
+}
+
+# Indexing status of a document.
+#
+# + indexed - Whether it's currently indexed
+# + errorMessage - Why the last attempt failed, when known and not indexed
+type IndexStatusResponse record {|
+    boolean indexed;
+    string? errorMessage;
+|};
+
+const int RECHECK_WINDOW_HOURS = 24;
+
+# Records or clears a content item's indexing failure based on its status.
+#
+# + contentId - The content to check
+# + return - False if the Smart Search service could not be reached
+isolated function reconcileIndexStatus(int contentId) returns boolean {
+    IndexStatusResponse|http:ClientError status =
+        smartSearchServiceClient->get(string `/documents/${contentId}/status`);
+    if status is http:ClientError {
+        return false;
+    }
+
+    if status.indexed {
+        error? clearError = database:clearSmartSearchIndexFailure(contentId);
+        if clearError is error {
+            log:printWarn("Smart Search: could not clear a resolved index failure", clearError,
+                    contentId = contentId);
+        }
+    } else if status.errorMessage is string {
+        error? updateError = database:setSmartSearchIndexFailure(contentId, <string>status.errorMessage);
+        if updateError is error {
+            log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+        }
+    }
+    return true;
+}
+
+# Re-checks known and recent failures and returns the content that failed to index.
+#
+# + return - The list, or an error
+public isolated function listUnindexedContent() returns database:SmartSearchIndexFailure[]|error {
+    database:SmartSearchIndexFailure[] knownFailures = check database:getSmartSearchIndexFailures();
+    boolean reachable = true;
+    foreach database:SmartSearchIndexFailure failure in knownFailures {
+        reachable = reconcileIndexStatus(failure.contentId);
+        if !reachable {
+            break;
+        }
+    }
+
+    if reachable {
+        database:UncheckedIndexCandidate[] candidates =
+            check database:getUncheckedIndexCandidates(RECHECK_WINDOW_HOURS);
+        foreach database:UncheckedIndexCandidate candidate in candidates {
+            if isIndexableLink(candidate.contentLink) && !reconcileIndexStatus(candidate.contentId) {
+                break;
+            }
+        }
+    }
+
+    return database:getSmartSearchIndexFailures();
+}
+
+const decimal RECONCILE_INTERVAL_SECONDS = 6 * 60 * 60;
+
+class IndexReconciliationJob {
+    *task:Job;
+
+    public function execute() {
+        database:SmartSearchIndexFailure[]|error result = listUnindexedContent();
+        if result is error {
+            log:printWarn("Smart Search: periodic index reconciliation failed", result);
+        }
+    }
+}
+
+function init() {
+    // A scheduling failure must not stop the backend from starting
+    task:JobId|task:Error scheduled =
+        task:scheduleJobRecurByFrequency(new IndexReconciliationJob(), RECONCILE_INTERVAL_SECONDS);
+    if scheduled is task:Error {
+        log:printError("Smart Search: could not schedule the periodic index reconciliation job", scheduled);
+    }
 }

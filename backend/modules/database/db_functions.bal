@@ -152,6 +152,44 @@ public isolated function deleteContentById(int contentId) returns int|error? {
     return result.affectedRowCount;
 }
 
+# Record a Smart Search indexing failure.
+#
+# + contentId - The content's id
+# + errorMessage - Why indexing failed
+# + return - Error, if any
+public isolated function setSmartSearchIndexFailure(int contentId, string errorMessage) returns error? {
+    _ = check dbClient->execute(setSmartSearchIndexFailureQuery(contentId, errorMessage));
+}
+
+# Get recently added or edited content not yet recorded as failed.
+#
+# + recheckWindowHours - How far back "recently added" reaches
+# + return - The candidates, or an error
+public isolated function getUncheckedIndexCandidates(int recheckWindowHours)
+        returns UncheckedIndexCandidate[]|error {
+    stream<UncheckedIndexCandidate, sql:Error?> resultStream =
+        dbClient->query(getUncheckedIndexCandidatesQuery(recheckWindowHours));
+    return from UncheckedIndexCandidate result in resultStream
+        select result;
+}
+
+# Get content that failed to index.
+#
+# + return - The list, or an error
+public isolated function getSmartSearchIndexFailures() returns SmartSearchIndexFailure[]|error {
+    stream<SmartSearchIndexFailure, sql:Error?> resultStream = dbClient->query(getSmartSearchIndexFailuresQuery());
+    return from SmartSearchIndexFailure result in resultStream
+        select result;
+}
+
+# Clear an indexing failure.
+#
+# + contentId - The content's id
+# + return - Error, if any
+public isolated function clearSmartSearchIndexFailure(int contentId) returns error? {
+    _ = check dbClient->execute(deleteSmartSearchIndexFailureQuery(contentId));
+}
+
 # Log a user activity event.
 #
 # + event - Analytics event payload details

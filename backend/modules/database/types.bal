@@ -206,6 +206,36 @@ public type ContentResponse record {|
     boolean isReused;
 |};
 
+# Recently added or edited content to check for an indexing failure.
+#
+# + contentId - Id of the content
+# + contentLink - The content's link
+public type UncheckedIndexCandidate record {|
+    @sql:Column {name: "content_id"}
+    int contentId;
+    @sql:Column {name: "content_link"}
+    string contentLink;
+|};
+
+# Content that failed to index.
+#
+# + contentId - Id of the content
+# + description - The content's title, for display
+# + contentLink - The content's link
+# + errorMessage - Why indexing failed
+# + updatedOn - When this failure was last confirmed
+public type SmartSearchIndexFailure record {|
+    @sql:Column {name: "content_id"}
+    int contentId;
+    string description;
+    @sql:Column {name: "content_link"}
+    string contentLink;
+    @sql:Column {name: "error_message"}
+    string errorMessage;
+    @sql:Column {name: "updated_on"}
+    string updatedOn;
+|};
+
 # Section helper record.
 public type Section record {|
     # Section Id

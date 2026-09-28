@@ -1034,6 +1034,67 @@ isolated function deleteContentByIdQuery(int contentId) returns sql:Parameterize
         content_id = ${contentId}
 `;
 
+# Query to record a Smart Search indexing failure.
+#
+# + contentId - The content's id
+# + errorMessage - Why indexing failed
+# + return - SQL parameterized query
+isolated function setSmartSearchIndexFailureQuery(int contentId, string errorMessage)
+    returns sql:ParameterizedQuery => `
+    INSERT INTO smart_search_index_failure (content_id, error_message)
+    VALUES (${contentId}, ${errorMessage})
+    ON DUPLICATE KEY UPDATE error_message = ${errorMessage}, updated_on = CURRENT_TIMESTAMP
+`;
+
+# Query to get recently added or edited content not yet recorded as failed.
+#
+# + recheckWindowHours - How far back "recently added or edited" reaches
+# + return - SQL parameterized query
+isolated function getUncheckedIndexCandidatesQuery(int recheckWindowHours) returns sql:ParameterizedQuery => `
+    SELECT
+        c.content_id,
+        c.content_link
+    FROM
+        content c
+    LEFT JOIN
+        smart_search_index_failure s ON s.content_id = c.content_id
+    WHERE
+        c.is_deleted = false
+        AND s.content_id IS NULL
+        AND (
+            c.created_on >= DATE_SUB(NOW(), INTERVAL ${recheckWindowHours} HOUR)
+            OR c.updated_on >= DATE_SUB(NOW(), INTERVAL ${recheckWindowHours} HOUR)
+        )
+`;
+
+# Query to get content that failed to index.
+#
+# + return - SQL parameterized query
+isolated function getSmartSearchIndexFailuresQuery() returns sql:ParameterizedQuery => `
+    SELECT
+        s.content_id,
+        c.description,
+        c.content_link,
+        s.error_message,
+        s.updated_on
+    FROM
+        smart_search_index_failure s
+    JOIN
+        content c ON c.content_id = s.content_id
+    WHERE
+        c.is_deleted = false
+    ORDER BY
+        s.updated_on DESC
+`;
+
+# Query to clear an indexing failure.
+#
+# + contentId - The content's id
+# + return - SQL parameterized query
+isolated function deleteSmartSearchIndexFailureQuery(int contentId) returns sql:ParameterizedQuery => `
+    DELETE FROM smart_search_index_failure WHERE content_id = ${contentId}
+`;
+
 # Query to get contents by section ID or route ID using a unified query.
 #
 # + isUser - Boolean indicating if the requester is a user or admin
