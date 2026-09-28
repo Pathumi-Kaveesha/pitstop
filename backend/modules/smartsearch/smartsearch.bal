@@ -339,36 +339,53 @@ isolated function clearIndexedEntries(int contentId) returns boolean {
     return false;
 }
 
+// Counts clear-and-index runs; only exists so they share one lock and never overlap
+isolated int reindexRuns = 0;
+
 # Re-syncs Smart Search after a content's link is edited. Launched with `start` so the edit never waits on it.
 #
 # + contentId - The content that was edited
 # + newLink - Its link after the edit
 # + previousLink - Its link before the edit, when known
 public isolated function reindexAfterLinkChange(int contentId, string newLink, string? previousLink) {
-    // An old failure belongs to the old link
-    error? clearError = database:clearSmartSearchIndexFailure(contentId);
-    if clearError is error {
-        log:printWarn("Smart Search: could not clear index failure after a link change", clearError,
-                contentId = contentId);
-    }
+    lock {
+        reindexRuns += 1;
 
-    // Clear the old version first, so a failed re-index never leaves stale results
-    if previousLink is () || isIndexableLink(previousLink) {
-        if !clearIndexedEntries(contentId) {
-            recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
-            return;
-        }
-    }
-
-    if isIndexableLink(newLink) {
         types:ContentResponse[]|error current = database:getContentsByIds([contentId], false, "");
-        if current is error || current.length() == 0 {
-            log:printWarn("Smart Search: could not look up content after a link change", contentId = contentId);
+        if current is error {
+            log:printWarn("Smart Search: could not look up content after a link change", current, contentId = contentId);
+            _ = clearIndexedEntries(contentId);
+            recordIndexFailure(contentId, "Could not check this content after its link changed. Please retry.");
             return;
         }
-        indexContentForSmartSearch(contentId, newLink, current[0].description);
-    } else if previousLink is string && isIndexableLink(previousLink) {
-        recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
+        if current.length() == 0 {
+            return;
+        }
+        // A newer edit has its own job
+        if current[0].contentLink.trim() != newLink.trim() {
+            return;
+        }
+
+        // An old failure belongs to the old link
+        error? clearError = database:clearSmartSearchIndexFailure(contentId);
+        if clearError is error {
+            log:printWarn("Smart Search: could not clear index failure after a link change", clearError,
+                    contentId = contentId);
+        }
+
+        // Clear the old version first, so a failed re-index never leaves stale results
+        if previousLink is () || isIndexableLink(previousLink) {
+            if !clearIndexedEntries(contentId) {
+                recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
+                return;
+            }
+        }
+
+        if isIndexableLink(newLink) {
+            indexContentForSmartSearch(contentId, newLink, current[0].description);
+        } else if previousLink is string && isIndexableLink(previousLink) {
+            recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
+        }
     }
 }
 
@@ -377,19 +394,23 @@ public isolated function reindexAfterLinkChange(int contentId, string newLink, s
 # + contentId - The content to retry
 # + return - Not-found when there's no such content, an error, or nil on success
 public isolated function retryIndexContent(int contentId) returns http:NotFound|error? {
-    types:ContentResponse[] matched = check database:getContentsByIds([contentId], false, "");
-    if matched.length() == 0 {
-        return http:NOT_FOUND;
+    lock {
+        reindexRuns += 1;
+
+        types:ContentResponse[] matched = check database:getContentsByIds([contentId], false, "");
+        if matched.length() == 0 {
+            return http:NOT_FOUND;
+        }
+        // No longer a Drive link, so there is nothing to index
+        if !isIndexableLink(matched[0].contentLink) {
+            return database:clearSmartSearchIndexFailure(contentId);
+        }
+        if !clearIndexedEntries(contentId) {
+            return error("Could not clear the previous version of this content");
+        }
+        indexContentForSmartSearch(contentId, matched[0].contentLink, matched[0].description);
+        return;
     }
-    // No longer a Drive link, so there is nothing to index
-    if !isIndexableLink(matched[0].contentLink) {
-        return database:clearSmartSearchIndexFailure(contentId);
-    }
-    if !clearIndexedEntries(contentId) {
-        return error("Could not clear the previous version of this content");
-    }
-    indexContentForSmartSearch(contentId, matched[0].contentLink, matched[0].description);
-    return;
 }
 
 # Indexing status of a document.
