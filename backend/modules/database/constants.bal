@@ -21,6 +21,9 @@ const DEFAULT_CONTENTS_OFFSET = 0;
 const DEFAULT_TRENDING_CONTENTS_LIMIT = 6;
 const DEFAULT_TRENDING_CONTENTS_OFFSET = 0;
 
+const int MAX_INDEX_ERROR_LENGTH = 500;
+const string INDEX_ERROR_TOO_LONG = "Indexing failed. Please check the file and try again.";
+
 // Timezone offset constants (in minutes)
 public const int DEFAULT_TZ_OFFSET_MINUTES = 330;
 public const int MIN_TZ_OFFSET_MINUTES = -840;

@@ -105,6 +105,15 @@ CREATE TABLE `content` (
   CONSTRAINT `content_ibfk_1` FOREIGN KEY (`section_id`) REFERENCES `section` (`section_id`)
 );
 
+-- Content that failed Smart Search indexing; a row exists only while it is failed
+CREATE TABLE `smart_search_index_failure` (
+  `content_id` int NOT NULL COMMENT 'Content ID',
+  `error_message` varchar(500) NOT NULL COMMENT 'Why indexing failed',
+  `updated_on` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'When this failure was last confirmed',
+  PRIMARY KEY (`content_id`),
+  CONSTRAINT `smart_search_index_failure_ibfk_1` FOREIGN KEY (`content_id`) REFERENCES `content` (`content_id`)
+);
+
 CREATE TABLE `user` (
     `user_id` int NOT NULL AUTO_INCREMENT COMMENT 'User ID',
     `email` varchar(50) UNIQUE NOT NULL COMMENT 'User email',

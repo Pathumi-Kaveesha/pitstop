@@ -91,7 +91,8 @@ paths:
   /documents/{document_id}/file:
     get:
       summary: Get Document File
-      description: 'Returns an indexed PDF''s original file. Drive''s own viewer ignores a
+      description: 'Returns an indexed PDF''s original file. Drive''s own viewer ignores
+        a
 
         page number in the link, but a browser opening the file from us honours
 
@@ -128,6 +129,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /documents/{document_id}/status:
+    get:
+      summary: Get Document Status
+      description: Whether a document has indexed pieces, and why its latest attempt
+        failed, if it did.
+      operationId: get_document_status_documents__document_id__status_get
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9]+$
+          title: Document Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Document Status Documents  Document Id  Status
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /search:
     get:
       summary: Search Endpoint
@@ -135,7 +166,9 @@ paths:
 
         Tool 2 (generate_answer) then writes an answer, but only runs when
 
-        Tool 1 actually found something to ground it in.'
+        Tool 1 actually found something to ground it in. includeAnswer=false
+
+        skips Tool 2, so the sources come back without waiting for the model.'
       operationId: search_endpoint_search_get
       parameters:
       - name: userQuery

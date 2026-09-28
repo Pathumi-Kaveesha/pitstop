@@ -387,7 +387,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             }
 
             // Fire-and-forget - content creation never waits on indexing.
-            _ = start smartsearch:indexContentForSmartSearch(newContentId, contentPayload);
+            _ = start smartsearch:indexContentForSmartSearch(newContentId, contentPayload.contentLink,
+                    contentPayload.description);
             return http:CREATED;
         }
 
@@ -1561,6 +1562,15 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:BAD_REQUEST;
         }
 
+        // Previous link, to tell whether it actually changed
+        string? previousContentLink = ();
+        if contentLink is string {
+            types:ContentResponse[]|error existing = database:getContentsByIds([contentId], false, "");
+            if existing is types:ContentResponse[] && existing.length() > 0 {
+                previousContentLink = existing[0].contentLink;
+            }
+        }
+
         int|error? content = database:updateContent(contentId, updateContentPayload, userEmail);
         if content is error || content is () {
             string customError = "Error while updating content";
@@ -1571,6 +1581,10 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
         if content == 0 {
             return http:NOT_FOUND;
+        }
+
+        if contentLink is string && contentLink != previousContentLink {
+            _ = start smartsearch:reindexAfterLinkChange(contentId, contentLink, previousContentLink);
         }
         return http:OK;
     }
@@ -1792,6 +1806,57 @@ service http:InterceptableService / on new http:Listener(9090) {
         response.setHeader("Content-Disposition", "inline");
         response.setHeader("Cache-Control", "private, no-store");
         return response;
+    }
+
+    # Get content that failed to index.
+    #
+    # + ctx - Request context
+    # + return - The list, 403 Forbidden, or 500 Internal Server Error
+    resource function get smart\-search/unindexed(http:RequestContext ctx)
+        returns database:SmartSearchIndexFailure[]|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        database:SmartSearchIndexFailure[]|error result = smartsearch:listUnindexedContent();
+        if result is error {
+            log:printError(constants:SMART_SEARCH_ERROR, result);
+            return <http:InternalServerError>{
+                body: {message: constants:SMART_SEARCH_ERROR}
+            };
+        }
+        return result;
+    }
+
+    # Retry indexing for a content item.
+    #
+    # + ctx - Request context
+    # + contentId - The content to retry
+    # + return - 202 Accepted, 403 Forbidden, 404 Not Found, or 500 Internal Server Error
+    resource function post smart\-search/documents/[int contentId]/retry\-index(http:RequestContext ctx)
+        returns http:Accepted|http:Forbidden|http:NotFound|http:TooManyRequests|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+        if !smartsearch:isRetryAllowed(ctx, contentId) {
+            return http:TOO_MANY_REQUESTS;
+        }
+
+        http:NotFound|error? result = smartsearch:retryIndexContent(contentId);
+        if result is http:NotFound {
+            return result;
+        }
+        if result is error {
+            log:printError(constants:SMART_SEARCH_ERROR, result);
+            return <http:InternalServerError>{
+                body: {message: constants:SMART_SEARCH_ERROR}
+            };
+        }
+        return http:ACCEPTED;
     }
 
     # Search contents basic info.
