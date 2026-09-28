@@ -77,3 +77,4 @@ export const ROUTE_ID_ADMIN_REPORT = -4;
 export const ROUTE_ID_QUIZ_ADMIN = -6;
 export const INVALID_ROUTE_ID = -1;
 export const ROUTE_ID_ANALYTICS_DASHBOARD = -7;
+export const ROUTE_ID_SMART_SEARCH_UNINDEXED = -8;

@@ -26,6 +26,7 @@ import ErrorHandler from "@components/common/ErrorHandler";
 import Search from "@view/search/index";
 import SmartSearchPoc from "@view/smartSearchPoc/index";
 import LibrarySearchButton from "@view/smartSearchPoc/LibrarySearchButton";
+import UnindexedContent from "@view/smartSearchPoc/UnindexedContent";
 import { Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
 import { useMemo, useEffect } from "react";
 import Summary from "@view/summary/index";
@@ -117,6 +118,15 @@ const AppHandler = () => {
               {
                 path: "/smart-search-poc",
                 element: <SmartSearchPoc />,
+                errorElement: <Error />,
+              },
+              {
+                path: "/smart-search-unindexed",
+                element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+                  <UnindexedContent />
+                ) : (
+                  <Error />
+                ),
                 errorElement: <Error />,
               },
             ],

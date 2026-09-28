@@ -60,7 +60,8 @@ import {
   ROUTE_ID_MORE,
   ROUTE_ID_MY_BOARD,
   ROUTE_ID_QUIZ_ADMIN,
-  ROUTE_ID_ANALYTICS_DASHBOARD, 
+  ROUTE_ID_ANALYTICS_DASHBOARD,
+  ROUTE_ID_SMART_SEARCH_UNINDEXED,
 } from "@config/constant";
 import { useAppAuthContext } from "@context/AuthContext";
 import { selectUserInfo } from "@slices/authSlice";
@@ -224,6 +225,14 @@ const Header = (props: HeaderProps) => {
             path: "/analytics-dashboard",
             routeId: ROUTE_ID_ANALYTICS_DASHBOARD,
             routeOrder: 4,
+            children: [],
+            isRouteVisible: true,
+          },
+          {
+            menuItem: "Smart Search Unindexed Content",
+            path: "/smart-search-unindexed",
+            routeId: ROUTE_ID_SMART_SEARCH_UNINDEXED,
+            routeOrder: 5,
             children: [],
             isRouteVisible: true,
           },

@@ -808,6 +808,14 @@ export interface SmartSearchResponse {
   contents: ContentResponse[];
 }
 
+export interface SmartSearchIndexFailure {
+  contentId: number;
+  description: string;
+  contentLink: string;
+  errorMessage: string;
+  updatedOn: string;
+}
+
 export interface SourceExcerpt {
   source: SmartSearchResult;
   originalIndex: number;
