@@ -174,6 +174,24 @@ public isolated function getUncheckedIndexCandidates(int recheckWindowHours)
         select result;
 }
 
+# Get one content item's transcript link, for editing - admin only.
+#
+# + contentId - The content's id
+# + return - The link, () if there is none or the content doesn't exist, or an error
+public isolated function getTranscriptLink(int contentId) returns string?|error {
+    string?|error result = dbClient->queryRow(getTranscriptLinkQuery(contentId));
+    return result is sql:NoRowsError ? () : result;
+}
+
+# Get what should currently be indexed for one content item.
+#
+# + contentId - The content's id
+# + return - The indexing info, () if the content doesn't exist, or an error
+public isolated function getIndexingInfo(int contentId) returns IndexingInfo?|error {
+    IndexingInfo|error result = dbClient->queryRow(getIndexingInfoQuery(contentId));
+    return result is sql:NoRowsError ? () : result;
+}
+
 # Get content that failed to index.
 #
 # + return - The list, or an error

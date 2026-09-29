@@ -155,6 +155,15 @@ export const validationContentSchema = Yup.object({
     //   "Enter correct image url!"
     // )
     .required("Content link is required"),
+  // Required for content Smart Search can only index via a stand-in document
+  transcriptLink: Yup.string().when(["contentType", "contentSubtype"], {
+    is: (contentType: string, contentSubtype: string) =>
+      (contentType === "external" && contentSubtype === "video") ||
+      contentType === "lms" ||
+      contentType === "salesforce",
+    then: (schema) => schema.required("A Google Doc link is required for this content type"),
+    otherwise: (schema) => schema.notRequired(),
+  }),
   description: Yup.string()
     .min(4, "Too Short!")
     .max(300, "Too Long!")
@@ -235,6 +244,8 @@ export interface ContentPayload {
   routeId?: number;
   sectionId?: number;
   contentLink: string;
+  // Google Doc transcript or info link, read only for Smart Search indexing
+  transcriptLink?: string;
   contentType: string;
   contentSubtype?: CONTENT_SUBTYPE;
   thumbnail?: string;
@@ -271,6 +282,7 @@ export interface UpdateSectionPayload {
 
 export interface UpdateContentPayload {
   contentLink?: string;
+  transcriptLink?: string;
   contentType?: string;
   contentSubtype?: CONTENT_SUBTYPE;
   thumbnail?: string;

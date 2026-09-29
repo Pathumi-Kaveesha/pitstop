@@ -245,6 +245,11 @@ components:
             pattern: ^[0-9]+$
           - type: 'null'
           title: Contentid
+        displayLink:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Displaylink
       type: object
       required:
       - driveLink

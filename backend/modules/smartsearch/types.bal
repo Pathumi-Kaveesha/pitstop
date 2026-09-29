@@ -54,13 +54,15 @@ public type SmartSearchResponse record {|
 
 # Body for the Python service's /ingest-drive-link.
 #
-# + driveLink - The content's own link
+# + driveLink - The link to read text from
 # + title - Shown as this document's title in search results
 # + contentId - Reused as Smart Search's own documentId
+# + displayLink - Set when driveLink is only a transcript - the content's own link is shown instead
 public type DriveLinkIngestRequest record {|
     string driveLink;
     string? title = ();
     string? contentId = ();
+    string? displayLink = ();
 |};
 
 # Auth configurations, same shape the email module uses.

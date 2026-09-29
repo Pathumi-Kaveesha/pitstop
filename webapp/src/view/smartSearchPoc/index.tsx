@@ -49,6 +49,15 @@ const isTrustedDriveOrigin = (url: string): boolean => {
   }
 };
 
+// A "reference" result's driveLink isn't necessarily a Drive origin, so it needs its own, looser check
+const isHttpsUrl = (url: string): boolean => {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
 export default function SmartSearchPoc() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -106,6 +115,13 @@ export default function SmartSearchPoc() {
     }
     if (source.fileExtension === "pdf") {
       void openPdfAtPage(source);
+      return;
+    }
+    // Indexed via a stand-in document - opens its own link, never the stand-in
+    if (source.fileExtension === "reference") {
+      if (isHttpsUrl(source.driveLink)) {
+        window.open(source.driveLink, "_blank", "noopener,noreferrer");
+      }
       return;
     }
     if (!isTrustedDriveOrigin(source.driveLink)) {
@@ -250,6 +266,8 @@ export default function SmartSearchPoc() {
             {groupedSources.map((group) => {
               const canPreview = Boolean(group.documentId);
               const content = contentsById.get(group.documentId);
+              // A reference result's matched text is never shown - the card alone is enough
+              const isReferenceOnly = group.excerpts[0]?.source.fileExtension === "reference";
               return (
                 <Box
                   key={group.documentId || group.title}
@@ -266,6 +284,7 @@ export default function SmartSearchPoc() {
                     </Box>
                   )}
 
+                  {!(isReferenceOnly && content) && (
                   <Box sx={{ flexGrow: 1, minWidth: 0, width: "100%" }}>
                     {!content && (
                       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
@@ -276,7 +295,7 @@ export default function SmartSearchPoc() {
                       </Stack>
                     )}
 
-                    {content && (
+                    {content && !isReferenceOnly && (
                       <Typography
                         variant="caption"
                         color="text.secondary"
@@ -286,7 +305,7 @@ export default function SmartSearchPoc() {
                       </Typography>
                     )}
 
-                    {group.excerpts.map(({ source, originalIndex }, excerptPosition) => {
+                    {!isReferenceOnly && group.excerpts.map(({ source, originalIndex }, excerptPosition) => {
                       const location = source.page !== null ? `${source.unitLabel || "Page"} ${source.page}` : null;
                       const canJumpToLocation =
                         location !== null && (Boolean(source.nativeLink) || source.fileExtension === "pdf");
@@ -337,6 +356,7 @@ export default function SmartSearchPoc() {
                       );
                     })}
                   </Box>
+                  )}
                 </Box>
               );
             })}
