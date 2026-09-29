@@ -1053,7 +1053,10 @@ isolated function setSmartSearchIndexFailureQuery(int contentId, string errorMes
 isolated function getUncheckedIndexCandidatesQuery(int recheckWindowHours) returns sql:ParameterizedQuery => `
     SELECT
         c.content_id,
-        c.content_link
+        c.content_type,
+        c.content_sub_type,
+        c.content_link,
+        c.transcript_link
     FROM
         content c
     LEFT JOIN
@@ -1065,6 +1068,33 @@ isolated function getUncheckedIndexCandidatesQuery(int recheckWindowHours) retur
             c.created_on >= DATE_SUB(NOW(), INTERVAL ${recheckWindowHours} HOUR)
             OR c.updated_on >= DATE_SUB(NOW(), INTERVAL ${recheckWindowHours} HOUR)
         )
+`;
+
+# Query to get one content item's transcript link, for editing - admin only.
+#
+# + contentId - The content's id
+# + return - SQL parameterized query
+isolated function getTranscriptLinkQuery(int contentId) returns sql:ParameterizedQuery => `
+    SELECT transcript_link FROM content WHERE content_id = ${contentId} AND is_deleted = false
+`;
+
+# Query to get what should currently be indexed for one content item.
+#
+# + contentId - The content's id
+# + return - SQL parameterized query
+isolated function getIndexingInfoQuery(int contentId) returns sql:ParameterizedQuery => `
+    SELECT
+        content_id,
+        description,
+        content_type,
+        content_sub_type,
+        content_link,
+        transcript_link
+    FROM
+        content
+    WHERE
+        content_id = ${contentId}
+        AND is_deleted = false
 `;
 
 # Query to get content that failed to index.
@@ -1321,6 +1351,10 @@ isolated function updateContentQuery(int? contentId, types:UpdateContentPayload 
 
     if payload.contentLink is string {
         sqlQueries.push(` content_link = ${payload.contentLink} `);
+    }
+
+    if payload.transcriptLink is string {
+        sqlQueries.push(` transcript_link = ${payload.transcriptLink} `);
     }
 
     if payload.contentType is string {

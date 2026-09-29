@@ -78,6 +78,9 @@ public type ContentPayload record {|
     # Link to redirect to the content
     @constraint:String {pattern: constants:URL}
     string contentLink;
+    # Google Doc transcript or info link, read only for indexing, never returned to a normal user
+    @constraint:String {pattern: constants:URL}
+    string? transcriptLink = ();
     # Type of the content
     string contentType;
     # Content subtype of the content
@@ -361,6 +364,8 @@ public type UpdateSectionPayload record {|
 public type UpdateContentPayload record {|
     # Link to redirect to the content
     string? contentLink = ();
+    # Google Doc transcript or info link, read only for indexing, never returned to a normal user
+    string? transcriptLink = ();
     # Thumbnail image url
     string thumbnail?;
     # Content notes
