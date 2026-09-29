@@ -21,6 +21,7 @@ import DescriptionIcon from "@mui/icons-material/Description";
 import ImageIcon from "@mui/icons-material/Image";
 import LabelIcon from "@mui/icons-material/Label";
 import LinkIcon from "@mui/icons-material/Link";
+import SubtitlesIcon from "@mui/icons-material/Subtitles";
 import TitleIcon from "@mui/icons-material/Title";
 import {
   Autocomplete,
@@ -56,6 +57,8 @@ import {
   updateContent,
 } from "@slices/pageSlice/page";
 import { RootState, useAppDispatch, useAppSelector } from "@slices/store";
+import { AppConfig } from "@config/config";
+import { ApiService } from "@utils/apiService";
 import { CONTENT_SUBTYPE, FILETYPE } from "@utils/types";
 
 import {
@@ -64,6 +67,25 @@ import {
   TagResponse,
   validationContentSchema,
 } from "../../types/types";
+
+// Content that Smart Search indexes via a separate stand-in document instead of its own link
+const needsTranscript = (contentType: string, contentSubtype?: string): boolean =>
+  (contentType === FILETYPE.External_Link && contentSubtype === CONTENT_SUBTYPE.Video) ||
+  contentType === FILETYPE.Lms ||
+  contentType === FILETYPE.Salesforce;
+
+// The same stored link means something different to fill in, depending on content type.
+const transcriptFieldInfo = (contentType: string) =>
+  contentType === FILETYPE.External_Link
+    ? {
+        label: "Video Transcript (Google Doc)",
+        helperText: "Used only so Smart Search can find this video - never shown to users.",
+      }
+    : {
+        label: "Material Info Link (Google Doc)",
+        helperText:
+          "A short description of this material, since Smart Search can't read it directly - used only for search, never shown to users.",
+      };
 
 const ContentDialogBox = ({
   isOpen,
@@ -112,6 +134,9 @@ const ContentDialogBox = ({
   const handleAddContent = (values: typeof formik.values, tagsString: string) => {
     const newLink = {
       contentLink: values.contentLink,
+      transcriptLink: needsTranscript(values.contentType, values.contentSubtype)
+        ? values.transcriptLink
+        : undefined,
       contentType: values.contentType,
       contentSubtype:
         values.contentType === FILETYPE.External_Link ? values.contentSubtype : undefined,
@@ -136,6 +161,9 @@ const ContentDialogBox = ({
   const handleUpdateContent = (values: typeof formik.values, tagsString: string) => {
     const updatedContent = {
       contentLink: values.contentLink,
+      transcriptLink: needsTranscript(values.contentType, values.contentSubtype)
+        ? values.transcriptLink
+        : undefined,
       contentType: values.contentType,
       contentSubtype:
         values.contentType === FILETYPE.External_Link ? values.contentSubtype : undefined,
@@ -163,6 +191,7 @@ const ContentDialogBox = ({
       contentId: initialValues?.contentId ?? 0,
       sectionId: initialValues?.sectionId ?? 0,
       contentLink: initialValues?.contentLink ?? "",
+      transcriptLink: "",
       contentType: initialValues?.contentType ?? "",
       contentSubtype: initialValues?.contentSubtype || CONTENT_SUBTYPE.Generic,
       description: initialValues?.description ?? "",
@@ -187,6 +216,24 @@ const ContentDialogBox = ({
       formik.resetForm();
     },
   });
+
+  // The transcript link is admin-only, so it's fetched separately, only when it's actually needed
+  const contentId = initialValues?.contentId;
+  const showsTranscript = needsTranscript(formik.values.contentType, formik.values.contentSubtype);
+  useEffect(() => {
+    if (!isOpen || type !== "update" || !showsTranscript || !contentId) {
+      return;
+    }
+    ApiService.getInstance()
+      .get<{ transcriptLink: string }>(AppConfig.serviceUrls.getTranscriptLink(contentId))
+      .then((response) => {
+        formik.setFieldValue("transcriptLink", response.data?.transcriptLink ?? "");
+      })
+      .catch(() => {
+        // Left blank - the admin can still type it in
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, type, showsTranscript, contentId]);
 
   const handleDeleteTag = async (tagName: string) => {
     try {
@@ -359,6 +406,35 @@ const ContentDialogBox = ({
               helperText={formik.touched.contentLink && formik.errors.contentLink}
             />
           </Box>
+
+          {/* Transcript link, or a material info link - used only for Smart Search indexing, never shown to users */}
+          {showsTranscript && (
+            <Box>
+              <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
+                <SubtitlesIcon sx={{ color: theme.palette.primary.main, mr: 1, fontSize: 22 }} />
+                <Typography
+                  variant="body1"
+                  fontWeight="700"
+                  sx={{ color: theme.palette.text.primary }}
+                >
+                  {transcriptFieldInfo(formik.values.contentType).label}
+                </Typography>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                {transcriptFieldInfo(formik.values.contentType).helperText}
+              </Typography>
+              <TextField
+                fullWidth
+                name="transcriptLink"
+                placeholder="https://docs.google.com/document/d/..."
+                value={formik.values.transcriptLink}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
+                error={formik.touched.transcriptLink && Boolean(formik.errors.transcriptLink)}
+                helperText={formik.touched.transcriptLink && formik.errors.transcriptLink}
+              />
+            </Box>
+          )}
 
           {/* Document Thumbnail Link */}
           <Box>

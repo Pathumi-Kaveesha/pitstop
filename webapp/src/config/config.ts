@@ -68,6 +68,7 @@ export const AppConfig = {
     createNewContent: ServiceBaseUrl + "/contents",
     deleteRouterPath: ServiceBaseUrl + "/routes/",
     updateContent: (contentId: number) => ServiceBaseUrl + "/contents/" + contentId,
+    getTranscriptLink: (contentId: number) => ServiceBaseUrl + "/contents/" + contentId + "/transcript-link",
     deleteContent: ServiceBaseUrl + "/contents/",
     updateRouterPath: (routeId: string) => ServiceBaseUrl + "/routes/" + routeId,
     createNewComment: ServiceBaseUrl + "/comments",
