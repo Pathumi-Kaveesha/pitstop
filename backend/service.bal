@@ -1609,6 +1609,8 @@ service http:InterceptableService / on new http:Listener(9090) {
                         body: customError
                     };
                 }
+            } else if previousInfo.transcriptLink is string && previousInfo.transcriptLink != "" {
+                updateContentPayload.transcriptLink = "";
             }
         }
 
