@@ -288,6 +288,10 @@ MODIFY COLUMN content_type ENUM(
         'route_content'
     );
 
+ALTER TABLE content
+ADD COLUMN `transcript_link` varchar(300) DEFAULT NULL COMMENT 'Google Doc transcript or info link, video/LMS/Salesforce content only - read for Smart Search indexing, never returned to a normal user'
+AFTER content_link;
+
 CREATE TABLE `custom_buttons` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `content_id` INT NOT NULL,
