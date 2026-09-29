@@ -15,6 +15,7 @@
 // under the License.
 
 import { useMemo, useRef, useState } from "react";
+import axios from "axios";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
 import Typography from "@mui/material/Typography";
@@ -35,6 +36,8 @@ import { ApiService } from "@utils/apiService";
 import { formatSmartSearchSnippet, groupSmartSearchSourcesByDocument } from "@utils/utils";
 import ComponentCard from "@components/ui/content/Card";
 import { ContentResponse, SmartSearchResponse, SmartSearchResult } from "@/types/types";
+import { useAppDispatch } from "@slices/store";
+import { enqueueSnackbarMessage } from "@slices/commonSlice/common";
 
 // Proof-of-concept page for the smart search feature - reachable directly
 // at /smart-search-poc, not yet linked from the main navigation.
@@ -59,6 +62,7 @@ const isHttpsUrl = (url: string): boolean => {
 };
 
 export default function SmartSearchPoc() {
+  const dispatch = useAppDispatch();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const searchingRef = useRef(false);
@@ -95,7 +99,16 @@ export default function SmartSearchPoc() {
         tab.location.href = `${url}${fragment}`;
       }
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 413) {
+        dispatch(
+          enqueueSnackbarMessage({
+            message: "This PDF is too large to open at a page - opening the original file instead.",
+            type: "warning",
+            anchorOrigin: { vertical: "bottom", horizontal: "right" },
+          })
+        );
+      }
       if (tab && isTrustedDriveOrigin(source.driveLink)) {
         tab.location.href = `${source.driveLink}${fragment}`;
       } else {

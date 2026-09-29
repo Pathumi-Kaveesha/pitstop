@@ -1879,7 +1879,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + contentId - The content whose PDF to download
     # + return - The PDF, or an error
     resource function get smart\-search/documents/[int contentId]/file(http:RequestContext ctx)
-        returns http:Response|http:Forbidden|http:NotFound|http:TooManyRequests|http:InternalServerError {
+        returns http:Response|http:Forbidden|http:NotFound|http:TooManyRequests|http:PayloadTooLarge|http:InternalServerError {
 
         if !smartsearch:canViewContent(ctx, contentId) {
             return http:FORBIDDEN;
@@ -1888,22 +1888,28 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:TOO_MANY_REQUESTS;
         }
 
-        byte[]|http:NotFound|error file = smartsearch:fetchDocumentFile(contentId);
-        if file is http:NotFound {
-            return file;
+        byte[]|http:NotFound|http:PayloadTooLarge|error result = smartsearch:fetchDocumentFile(contentId);
+        if result is byte[] {
+            http:Response response = new;
+            response.setBinaryPayload(result, "application/pdf");
+            response.setHeader("Content-Disposition", "inline");
+            response.setHeader("Cache-Control", "private, no-store");
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            response.setHeader("Content-Security-Policy", "sandbox");
+            return response;
         }
-        if file is error {
-            log:printError(constants:SMART_SEARCH_ERROR, file);
-            return <http:InternalServerError>{
-                body: {message: constants:SMART_SEARCH_ERROR}
+        if result is http:NotFound {
+            return result;
+        }
+        if result is http:PayloadTooLarge {
+            return <http:PayloadTooLarge>{
+                body: {message: "This PDF is too large to open at a page."}
             };
         }
-
-        http:Response response = new;
-        response.setBinaryPayload(file, "application/pdf");
-        response.setHeader("Content-Disposition", "inline");
-        response.setHeader("Cache-Control", "private, no-store");
-        return response;
+        log:printError(constants:SMART_SEARCH_ERROR, <error>result);
+        return <http:InternalServerError>{
+            body: {message: constants:SMART_SEARCH_ERROR}
+        };
     }
 
     # Get content that failed to index.

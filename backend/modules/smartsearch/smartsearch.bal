@@ -151,11 +151,14 @@ public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) 
 # Fetches an indexed PDF from the Smart Search service, so the browser can open it at a page.
 #
 # + contentId - The content whose PDF to fetch
-# + return - The file's bytes, a not-found response, or an error
-public isolated function fetchDocumentFile(int contentId) returns byte[]|http:NotFound|error {
+# + return - The file's bytes, a not-found or too-large response, or an error
+public isolated function fetchDocumentFile(int contentId) returns byte[]|http:NotFound|http:PayloadTooLarge|error {
     http:Response upstream = check smartSearchServiceClient->get(string `/documents/${contentId}/file`);
     if upstream.statusCode == http:STATUS_NOT_FOUND {
         return http:NOT_FOUND;
+    }
+    if upstream.statusCode == http:STATUS_PAYLOAD_TOO_LARGE {
+        return http:PAYLOAD_TOO_LARGE;
     }
     if upstream.statusCode != http:STATUS_OK {
         return error(string `Smart Search service returned status ${upstream.statusCode} for a document file`);
