@@ -1590,6 +1590,18 @@ service http:InterceptableService / on new http:Listener(9090) {
             }
         }
 
+        if transcriptLink == "" && previousInfo is database:IndexingInfo {
+            string effectiveContentType = updateContentPayload.contentType ?: previousInfo.contentType;
+            string? effectiveContentSubtype = updateContentPayload.contentSubtype ?: previousInfo.contentSubtype;
+            if smartsearch:requiresTranscript(effectiveContentType, effectiveContentSubtype) {
+                string customError = "This link can't be removed. Delete the content instead if it shouldn't be searchable.";
+                log:printWarn(customError);
+                return <http:BadRequest>{
+                    body: customError
+                };
+            }
+        }
+
         int|error? content = database:updateContent(contentId, updateContentPayload, userEmail);
         if content is error || content is () {
             string customError = "Error while updating content";

@@ -422,7 +422,7 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
         if newLink is string && isIndexableLink(newLink) {
             indexContentForSmartSearch(contentId, newLink, current.description,
                     displayLinkFor(current.contentType, current.contentSubtype, current.contentLink));
-        } else if previousLink is string && isIndexableLink(previousLink) {
+        } else if newLink is string && newLink != "" && previousLink is string && isIndexableLink(previousLink) {
             recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
         }
     }
