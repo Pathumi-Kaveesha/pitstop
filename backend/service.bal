@@ -1603,8 +1603,11 @@ service http:InterceptableService / on new http:Listener(9090) {
             string effectiveContentType = updateContentPayload.contentType ?: previousInfo.contentType;
             string? effectiveContentSubtype = updateContentPayload.contentSubtype ?: previousInfo.contentSubtype;
             if smartsearch:requiresTranscript(effectiveContentType, effectiveContentSubtype) {
-                if transcriptLink == "" {
-                    string customError = "This link can't be removed. Delete the content instead if it shouldn't be searchable.";
+                string? effectiveTranscriptLink = transcriptLink ?: previousInfo.transcriptLink;
+                if effectiveTranscriptLink is () || effectiveTranscriptLink == "" {
+                    string customError = previousInfo.transcriptLink is string && previousInfo.transcriptLink != ""
+                        ? "This link can't be removed. Delete the content instead if it shouldn't be searchable."
+                        : "A Google Doc link is required for this content type";
                     log:printWarn(customError);
                     return <http:BadRequest>{
                         body: customError
