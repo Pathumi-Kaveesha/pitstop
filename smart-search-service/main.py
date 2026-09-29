@@ -152,11 +152,13 @@ def health() -> dict:
 
 
 def _index_drive_file_in_background(
-    info: DriveFileInfo, title: str, document_id: str, drive_link: str
+    info: DriveFileInfo, title: str, document_id: str, drive_link: str, display_link: Optional[str] = None
 ) -> None:
     """Downloads, chunks, embeds and stores one Drive document, run after
     the response has already gone back. Never raises - failures go to the
-    log, since there's no caller left to report them to."""
+    log, since there's no caller left to report them to.
+
+    display_link is set when drive_link is only a stand-in document, read for its text but never itself shown."""
     logger.info("Started indexing '%s' (id %s, %s) - downloading", title, document_id, info.extension)
     job_started_at = time.time()
     _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
@@ -177,11 +179,15 @@ def _index_drive_file_in_background(
             logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
             return
 
-        unit_native_links = build_native_links(info, unit_headings)
-        chunk_native_links = [
-            unit_native_links[c.page - 1] if c.page - 1 < len(unit_native_links) else None
-            for c in chunks
-        ]
+        # No deep links into a stand-in document - it's never the thing to open
+        if display_link:
+            chunk_native_links = [None] * len(chunks)
+        else:
+            unit_native_links = build_native_links(info, unit_headings)
+            chunk_native_links = [
+                unit_native_links[c.page - 1] if c.page - 1 < len(unit_native_links) else None
+                for c in chunks
+            ]
 
         logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
         vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
@@ -196,9 +202,9 @@ def _index_drive_file_in_background(
             [c.page for c in chunks],
             document_id,
             UNIT_LABELS[info.extension],
-            info.extension,
+            "reference" if display_link else info.extension,
             "drive",
-            drive_link,
+            display_link or drive_link,
             chunk_native_links,
         )
 
@@ -224,6 +230,8 @@ class IngestDriveLinkRequest(BaseModel):
     # Reused as this document's documentId when given, falls back to the
     # Drive file's own id when not. Digits only - rejects garbage outright.
     contentId: Optional[str] = Field(default=None, pattern=r"^[0-9]+$")
+    # Set when driveLink is only a stand-in document, read for its text but never itself shown
+    displayLink: Optional[str] = None
 
 
 @app.post("/ingest-drive-link")
@@ -251,14 +259,14 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     document_id = body.contentId if body.contentId else info.file_id
 
     background_tasks.add_task(
-        _index_drive_file_in_background, info, title, document_id, body.driveLink
+        _index_drive_file_in_background, info, title, document_id, body.driveLink, body.displayLink
     )
 
     return {
         "status": "indexing",
         "title": title,
         "documentId": document_id,
-        "fileType": info.extension,
+        "fileType": "reference" if body.displayLink else info.extension,
     }
 
 
@@ -368,7 +376,8 @@ def search_endpoint(
 
     sources = [
         {
-            "content": r.content,
+            # A "reference" result's text is a stand-in document's own text - never sent to the browser
+            "content": "" if r.file_extension == "reference" else r.content,
             "title": r.title,
             "page": r.page,
             "similarityScore": r.similarity_score,
