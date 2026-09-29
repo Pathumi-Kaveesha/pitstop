@@ -374,13 +374,22 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:CONFLICT;
         }
 
-        if smartsearch:requiresTranscript(contentPayload.contentType, contentPayload.contentSubtype)
-                && (contentPayload.transcriptLink is () || contentPayload.transcriptLink == "") {
-            string customError = "A Google Doc link is required for this content type";
-            log:printWarn(customError);
-            return <http:BadRequest>{
-                body: customError
-            };
+        if smartsearch:requiresTranscript(contentPayload.contentType, contentPayload.contentSubtype) {
+            string? newTranscriptLink = contentPayload.transcriptLink;
+            if newTranscriptLink is () || newTranscriptLink == "" {
+                string customError = "A Google Doc link is required for this content type";
+                log:printWarn(customError);
+                return <http:BadRequest>{
+                    body: customError
+                };
+            }
+            if !smartsearch:isIndexableLink(newTranscriptLink) {
+                string customError = "This link can't be indexed. Smart Search only reads Google Drive links.";
+                log:printWarn(customError);
+                return <http:BadRequest>{
+                    body: customError
+                };
+            }
         }
 
         // Content is additionally indexed for Smart Search, from its own link or its transcript link
@@ -1604,6 +1613,13 @@ service http:InterceptableService / on new http:Listener(9090) {
                 if contentLink is string && contentLink != previousInfo.contentLink
                         && (transcriptLink ?: previousInfo.transcriptLink) == previousInfo.transcriptLink {
                     string customError = "Update the transcript link too - it should describe the new content link.";
+                    log:printWarn(customError);
+                    return <http:BadRequest>{
+                        body: customError
+                    };
+                }
+                if transcriptLink is string && !smartsearch:isIndexableLink(transcriptLink) {
+                    string customError = "This link can't be indexed. Smart Search only reads Google Drive links.";
                     log:printWarn(customError);
                     return <http:BadRequest>{
                         body: customError
