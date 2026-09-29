@@ -1590,15 +1590,25 @@ service http:InterceptableService / on new http:Listener(9090) {
             }
         }
 
-        if transcriptLink == "" && previousInfo is database:IndexingInfo {
+        if previousInfo is database:IndexingInfo {
             string effectiveContentType = updateContentPayload.contentType ?: previousInfo.contentType;
             string? effectiveContentSubtype = updateContentPayload.contentSubtype ?: previousInfo.contentSubtype;
             if smartsearch:requiresTranscript(effectiveContentType, effectiveContentSubtype) {
-                string customError = "This link can't be removed. Delete the content instead if it shouldn't be searchable.";
-                log:printWarn(customError);
-                return <http:BadRequest>{
-                    body: customError
-                };
+                if transcriptLink == "" {
+                    string customError = "This link can't be removed. Delete the content instead if it shouldn't be searchable.";
+                    log:printWarn(customError);
+                    return <http:BadRequest>{
+                        body: customError
+                    };
+                }
+                if contentLink is string && contentLink != previousInfo.contentLink
+                        && (transcriptLink ?: previousInfo.transcriptLink) == previousInfo.transcriptLink {
+                    string customError = "Update the transcript link too - it should describe the new content link.";
+                    log:printWarn(customError);
+                    return <http:BadRequest>{
+                        body: customError
+                    };
+                }
             }
         }
 
@@ -1621,7 +1631,11 @@ service http:InterceptableService / on new http:Listener(9090) {
             if freshInfo is database:IndexingInfo {
                 string? newLink = smartsearch:indexingLinkFor(freshInfo.contentType, freshInfo.contentSubtype,
                         freshInfo.contentLink, freshInfo.transcriptLink);
-                if newLink != previousLink {
+                string? previousDisplayLink = smartsearch:displayLinkFor(previousInfo.contentType,
+                        previousInfo.contentSubtype, previousInfo.contentLink);
+                string? newDisplayLink = smartsearch:displayLinkFor(freshInfo.contentType,
+                        freshInfo.contentSubtype, freshInfo.contentLink);
+                if newLink != previousLink || newDisplayLink != previousDisplayLink {
                     _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, previousLink);
                 }
             }
