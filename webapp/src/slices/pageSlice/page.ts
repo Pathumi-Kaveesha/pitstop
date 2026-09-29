@@ -940,9 +940,11 @@ export const createNewContent = createAsyncThunk(
           resolve({ requestResponse: resp.data });
         })
         .catch((resp) => {
+          const backendMessage =
+            typeof resp?.response?.data === "string" ? resp.response.data : resp?.response?.data?.message;
           dispatch(
             enqueueSnackbarMessage({
-              message: "Something went wrong while creating a content :(",
+              message: backendMessage || "Something went wrong while creating a content :(",
               type: "error",
               anchorOrigin: {
                 vertical: "bottom",
@@ -983,9 +985,12 @@ export const updateContent = createAsyncThunk(
           resolve({ requestResponse: resp.data });
         })
         .catch((resp) => {
+          // The backend sends a plain-text reason for a rejected update (e.g. a missing transcript link)
+          const backendMessage =
+            typeof resp?.response?.data === "string" ? resp.response.data : resp?.response?.data?.message;
           dispatch(
             enqueueSnackbarMessage({
-              message: "Something went wrong while updating the content :(",
+              message: backendMessage || "Something went wrong while updating the content :(",
               type: "error",
               anchorOrigin: {
                 vertical: "bottom",
