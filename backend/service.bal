@@ -374,9 +374,19 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:CONFLICT;
         }
 
-        // Content with a Google Drive link is additionally indexed for
-        // Smart Search, wherever in Pitstop it was added 
-        if smartsearch:isIndexableLink(contentPayload.contentLink) {
+        if smartsearch:requiresTranscript(contentPayload.contentType, contentPayload.contentSubtype)
+                && (contentPayload.transcriptLink is () || contentPayload.transcriptLink == "") {
+            string customError = "A Google Doc link is required for this content type";
+            log:printWarn(customError);
+            return <http:BadRequest>{
+                body: customError
+            };
+        }
+
+        // Content is additionally indexed for Smart Search, from its own link or its transcript link
+        string? indexLink = smartsearch:indexingLinkFor(contentPayload.contentType, contentPayload.contentSubtype,
+                contentPayload.contentLink, contentPayload.transcriptLink);
+        if indexLink is string && smartsearch:isIndexableLink(indexLink) {
             int|error newContentId = database:addContentAndReturnId(contentPayload, createdBy);
             if newContentId is error {
                 string customError = "Error while adding a content";
@@ -387,8 +397,9 @@ service http:InterceptableService / on new http:Listener(9090) {
             }
 
             // Fire-and-forget - content creation never waits on indexing.
-            _ = start smartsearch:indexContentForSmartSearch(newContentId, contentPayload.contentLink,
-                    contentPayload.description);
+            _ = start smartsearch:indexContentForSmartSearch(newContentId, indexLink, contentPayload.description,
+                    smartsearch:displayLinkFor(contentPayload.contentType, contentPayload.contentSubtype,
+                            contentPayload.contentLink));
             return http:CREATED;
         }
 
@@ -1562,12 +1573,20 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:BAD_REQUEST;
         }
 
-        // Previous link, to tell whether it actually changed
-        string? previousContentLink = ();
-        if contentLink is string {
-            types:ContentResponse[]|error existing = database:getContentsByIds([contentId], false, "");
-            if existing is types:ContentResponse[] && existing.length() > 0 {
-                previousContentLink = existing[0].contentLink;
+        string? transcriptLink = updateContentPayload.transcriptLink;
+        if transcriptLink is string && transcriptLink != "" && !constants:URL.isFullMatch(transcriptLink) {
+            log:printError(constants:INVALID_URL_ERROR, transcriptLink = transcriptLink);
+            return http:BAD_REQUEST;
+        }
+
+        // What was indexed before the edit, so a change can be detected once it's applied
+        boolean indexingFieldsChanged = contentLink is string || updateContentPayload.transcriptLink is string
+                || updateContentPayload.contentType is string || updateContentPayload.contentSubtype is string;
+        database:IndexingInfo? previousInfo = ();
+        if indexingFieldsChanged {
+            database:IndexingInfo|error? lookup = database:getIndexingInfo(contentId);
+            if lookup is database:IndexingInfo {
+                previousInfo = lookup;
             }
         }
 
@@ -1583,10 +1602,42 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:NOT_FOUND;
         }
 
-        if contentLink is string && contentLink != previousContentLink {
-            _ = start smartsearch:reindexAfterLinkChange(contentId, contentLink, previousContentLink);
+        if indexingFieldsChanged && previousInfo is database:IndexingInfo {
+            string? previousLink = smartsearch:indexingLinkFor(previousInfo.contentType, previousInfo.contentSubtype,
+                    previousInfo.contentLink, previousInfo.transcriptLink);
+            database:IndexingInfo|error? freshInfo = database:getIndexingInfo(contentId);
+            if freshInfo is database:IndexingInfo {
+                string? newLink = smartsearch:indexingLinkFor(freshInfo.contentType, freshInfo.contentSubtype,
+                        freshInfo.contentLink, freshInfo.transcriptLink);
+                if newLink != previousLink {
+                    _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, previousLink);
+                }
+            }
         }
         return http:OK;
+    }
+
+    # Get a content's transcript link, for editing - admin only, never shown to a normal user.
+    #
+    # + ctx - Request context
+    # + contentId - The content whose transcript link to fetch
+    # + return - The link, empty if there is none, or an error response
+    resource function get contents/[int contentId]/transcript\-link(http:RequestContext ctx)
+        returns record {|string transcriptLink;|}|http:Forbidden|http:InternalServerError {
+
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        string?|error link = database:getTranscriptLink(contentId);
+        if link is error {
+            log:printError("Error while fetching a content's transcript link", link);
+            return <http:InternalServerError>{
+                body: {message: "Error while fetching a content's transcript link"}
+            };
+        }
+        return {transcriptLink: link ?: ""};
     }
 
     # Add a new section under a particular router path.

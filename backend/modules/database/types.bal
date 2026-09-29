@@ -209,12 +209,43 @@ public type ContentResponse record {|
 # Recently added or edited content to check for an indexing failure.
 #
 # + contentId - Id of the content
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
 # + contentLink - The content's link
+# + transcriptLink - The content's transcript or info link, video/LMS/Salesforce content only
 public type UncheckedIndexCandidate record {|
     @sql:Column {name: "content_id"}
     int contentId;
+    @sql:Column {name: "content_type"}
+    string contentType;
+    @sql:Column {name: "content_sub_type"}
+    string? contentSubtype;
     @sql:Column {name: "content_link"}
     string contentLink;
+    @sql:Column {name: "transcript_link"}
+    string? transcriptLink;
+|};
+
+# What Smart Search would index for one content item right now - never returned to the frontend.
+#
+# + contentId - Id of the content
+# + description - The content's title, for indexing
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + contentLink - The content's link
+# + transcriptLink - The content's transcript or info link, video/LMS/Salesforce content only
+public type IndexingInfo record {|
+    @sql:Column {name: "content_id"}
+    int contentId;
+    string description;
+    @sql:Column {name: "content_type"}
+    string contentType;
+    @sql:Column {name: "content_sub_type"}
+    string? contentSubtype;
+    @sql:Column {name: "content_link"}
+    string contentLink;
+    @sql:Column {name: "transcript_link"}
+    string? transcriptLink;
 |};
 
 # Content that failed to index.

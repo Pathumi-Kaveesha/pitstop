@@ -260,13 +260,16 @@ isolated function recordIndexFailure(int contentId, string reason) {
 # Indexes a content item. Launched with `start` so the caller never waits on it.
 #
 # + contentId - The content's own id, reused as Smart Search's documentId
-# + driveLink - The content's link
+# + driveLink - The link to read text from
 # + title - The content's title
-public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title) {
+# + displayLink - Set only when driveLink is a transcript, not the content's own link
+public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title,
+        string? displayLink = ()) {
     DriveLinkIngestRequest payload = {
         driveLink,
         title,
-        contentId: contentId.toString()
+        contentId: contentId.toString(),
+        displayLink
     };
 
     http:Response|http:ClientError response = smartSearchIngestClient->post("/ingest-drive-link", payload);
@@ -339,30 +342,65 @@ isolated function clearIndexedEntries(int contentId) returns boolean {
     return false;
 }
 
+# Content types that read from a stand-in document instead of their own link.
+#
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + return - Whether this content is indexed via a stand-in document
+public isolated function requiresTranscript(string contentType, string? contentSubtype) returns boolean {
+    return (contentType == "external" && contentSubtype == "video")
+        || contentType == "lms"
+        || contentType == "salesforce";
+}
+
+# What should be indexed for a content item right now - its own link, or its transcript link.
+#
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + contentLink - The content's link
+# + transcriptLink - The content's transcript link, when set
+# + return - The link to index
+public isolated function indexingLinkFor(string contentType, string? contentSubtype, string contentLink,
+        string? transcriptLink) returns string? {
+    return requiresTranscript(contentType, contentSubtype) ? transcriptLink : contentLink;
+}
+
+# The content's own link, when that's not also the link being indexed.
+#
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + contentLink - The content's link
+# + return - The content's own link, when it differs from what's indexed
+public isolated function displayLinkFor(string contentType, string? contentSubtype, string contentLink)
+        returns string? {
+    return requiresTranscript(contentType, contentSubtype) ? contentLink : ();
+}
+
 // Counts clear-and-index runs; only exists so they share one lock and never overlap
 isolated int reindexRuns = 0;
 
-# Re-syncs Smart Search after a content's link is edited. Launched with `start` so the edit never waits on it.
+# Re-syncs Smart Search after a content's indexed link may have changed. Launched with `start` so the edit never waits on it.
 #
 # + contentId - The content that was edited
-# + newLink - Its link after the edit
-# + previousLink - Its link before the edit, when known
-public isolated function reindexAfterLinkChange(int contentId, string newLink, string? previousLink) {
+# + newLink - What should be indexed after the edit, when known at the time
+# + previousLink - What was indexed before the edit, when known
+public isolated function reindexAfterLinkChange(int contentId, string? newLink, string? previousLink) {
     lock {
         reindexRuns += 1;
 
-        types:ContentResponse[]|error current = database:getContentsByIds([contentId], false, "");
+        database:IndexingInfo?|error current = database:getIndexingInfo(contentId);
         if current is error {
             log:printWarn("Smart Search: could not look up content after a link change", current, contentId = contentId);
             _ = clearIndexedEntries(contentId);
             recordIndexFailure(contentId, "Could not check this content after its link changed. Please retry.");
             return;
         }
-        if current.length() == 0 {
+        if current is () {
             return;
         }
         // A newer edit has its own job
-        if current[0].contentLink.trim() != newLink.trim() {
+        if indexingLinkFor(current.contentType, current.contentSubtype, current.contentLink,
+                current.transcriptLink) != newLink {
             return;
         }
 
@@ -381,8 +419,9 @@ public isolated function reindexAfterLinkChange(int contentId, string newLink, s
             }
         }
 
-        if isIndexableLink(newLink) {
-            indexContentForSmartSearch(contentId, newLink, current[0].description);
+        if newLink is string && isIndexableLink(newLink) {
+            indexContentForSmartSearch(contentId, newLink, current.description,
+                    displayLinkFor(current.contentType, current.contentSubtype, current.contentLink));
         } else if previousLink is string && isIndexableLink(previousLink) {
             recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
         }
@@ -397,18 +436,20 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
     lock {
         reindexRuns += 1;
 
-        types:ContentResponse[] matched = check database:getContentsByIds([contentId], false, "");
-        if matched.length() == 0 {
+        database:IndexingInfo? info = check database:getIndexingInfo(contentId);
+        if info is () {
             return http:NOT_FOUND;
         }
-        // No longer a Drive link, so there is nothing to index
-        if !isIndexableLink(matched[0].contentLink) {
+        string? link = indexingLinkFor(info.contentType, info.contentSubtype, info.contentLink, info.transcriptLink);
+        // Nothing that can be indexed, so there is nothing to retry
+        if link is () || !isIndexableLink(link) {
             return database:clearSmartSearchIndexFailure(contentId);
         }
         if !clearIndexedEntries(contentId) {
             return error("Could not clear the previous version of this content");
         }
-        indexContentForSmartSearch(contentId, matched[0].contentLink, matched[0].description);
+        indexContentForSmartSearch(contentId, link, info.description,
+                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink));
         return;
     }
 }
@@ -468,7 +509,9 @@ public isolated function listUnindexedContent() returns database:SmartSearchInde
         database:UncheckedIndexCandidate[] candidates =
             check database:getUncheckedIndexCandidates(RECHECK_WINDOW_HOURS);
         foreach database:UncheckedIndexCandidate candidate in candidates {
-            if isIndexableLink(candidate.contentLink) && !reconcileIndexStatus(candidate.contentId) {
+            string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
+                    candidate.transcriptLink);
+            if link is string && isIndexableLink(link) && !reconcileIndexStatus(candidate.contentId) {
                 break;
             }
         }
