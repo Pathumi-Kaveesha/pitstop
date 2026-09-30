@@ -439,9 +439,14 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
             return http:NOT_FOUND;
         }
         string? link = indexingLinkFor(info.contentType, info.contentSubtype, info.contentLink, info.transcriptLink);
-        // Nothing that can be indexed, so there is nothing to retry
-        if link is () || !isIndexableLink(link) {
-            return database:clearSmartSearchIndexFailure(contentId);
+        // A retry only runs on content that's already flagged as failing, so the problem is real - record why
+        if link is () {
+            recordIndexFailure(contentId, "A Google Doc link is required for this content type");
+            return;
+        }
+        if !isIndexableLink(link) {
+            recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
+            return;
         }
         if !clearIndexedEntries(contentId) {
             return error("Could not clear the previous version of this content");
