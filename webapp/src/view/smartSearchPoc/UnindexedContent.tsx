@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
@@ -31,6 +31,7 @@ import ReplayIcon from "@mui/icons-material/Replay";
 import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
 import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { AppConfig } from "@config/config";
 import { ApiService } from "@utils/apiService";
 import { parseDateAsUtc } from "@utils/utils";
@@ -80,16 +81,19 @@ export default function UnindexedContent() {
   const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
   const [loaded, setLoaded] = useState(false);
 
-  const loadEntries = async () => {
+  const loadEntries = async (): Promise<SmartSearchIndexFailure[] | null> => {
     setLoading(true);
     setError(null);
     try {
       const response = await ApiService.getInstance().get<SmartSearchIndexFailure[]>(
         `${AppConfig.serviceUrls.smartSearch}/unindexed`
       );
-      setEntries(response.data ?? []);
+      const fresh = response.data ?? [];
+      setEntries(fresh);
+      return fresh;
     } catch {
       setError("Couldn't load the list. Check the console/backend logs for details.");
+      return null;
     } finally {
       setLoading(false);
       setLoaded(true);
@@ -100,32 +104,87 @@ export default function UnindexedContent() {
     void loadEntries();
   }, []);
 
+  // Retry-outcome checks scheduled below - cleared on unmount so they never set state on a gone page
+  const pendingRetryChecks = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    return () => {
+      // Timeouts are pushed onto this ref after mount, so it's read live on purpose, not stale
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      pendingRetryChecks.current.forEach(clearTimeout);
+    };
+  }, []);
+
   const handleRefresh = () => {
     setNotice(null);
     void loadEntries();
   };
 
+  const stopRetrying = (contentId: number) => {
+    setRetryingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(contentId);
+      return next;
+    });
+  };
+
+  // A stale failure record can still be in the list right after retrying - only its timestamp moving means a fresh answer
+  const describeRetryOutcome = (
+    fresh: SmartSearchIndexFailure[],
+    contentId: number,
+    beforeRetryUpdatedOn: string | undefined
+  ): { message: string; resolved: boolean } => {
+    const stillFailing = fresh.find((e) => e.contentId === contentId);
+    if (!stillFailing) {
+      return { message: "Retry succeeded - this content is now indexed.", resolved: true };
+    }
+    if (stillFailing.updatedOn !== beforeRetryUpdatedOn) {
+      return { message: `This still failed to index: ${stillFailing.errorMessage}`, resolved: true };
+    }
+    return { message: "", resolved: false };
+  };
+
+  const scheduleRetryOutcomeCheck = (contentId: number, beforeRetryUpdatedOn: string | undefined) => {
+    const timeoutId = setTimeout(() => {
+      void (async () => {
+        const fresh = await loadEntries();
+        if (fresh !== null) {
+          const outcome = describeRetryOutcome(fresh, contentId, beforeRetryUpdatedOn);
+          setNotice(
+            outcome.resolved
+              ? outcome.message
+              : "Still checking - this is taking longer than usual. Refresh in a bit to see the result."
+          );
+        }
+        stopRetrying(contentId);
+      })();
+    }, 65_000);
+    pendingRetryChecks.current.push(timeoutId);
+  };
+
   const handleRetry = async (contentId: number) => {
+    const beforeRetryUpdatedOn = entries.find((e) => e.contentId === contentId)?.updatedOn;
     setRetryingIds((prev) => new Set(prev).add(contentId));
     setNotice(null);
     try {
       await ApiService.getInstance().post(
         `${AppConfig.serviceUrls.smartSearch}/documents/${contentId}/retry-index`
       );
-      await loadEntries();
-      setNotice("Retry started. Indexing takes a moment, so refresh in a minute to see the result.");
+      const fresh = await loadEntries();
+      const outcome = fresh !== null ? describeRetryOutcome(fresh, contentId, beforeRetryUpdatedOn) : null;
+      if (outcome?.resolved) {
+        // Already have the answer - a failure this fast means retrying again won't help either
+        setNotice(outcome.message);
+        stopRetrying(contentId);
+      } else {
+        scheduleRetryOutcomeCheck(contentId, beforeRetryUpdatedOn);
+      }
     } catch (retryError) {
       setError(
         axios.isAxiosError(retryError) && retryError.response?.status === 429
           ? "Too many retries. Please try again in a minute."
-          : `Couldn't retry content ${contentId}. Check the console/backend logs for details.`
+          : "Couldn't retry this content. Check the console/backend logs for details."
       );
-    } finally {
-      setRetryingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(contentId);
-        return next;
-      });
+      stopRetrying(contentId);
     }
   };
 
@@ -259,7 +318,13 @@ export default function UnindexedContent() {
                       {entry.description}
                     </Typography>
                     <Chip
-                      label={`Content ${entry.contentId}`}
+                      component="a"
+                      href={entry.contentLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      clickable
+                      icon={<OpenInNewIcon sx={{ fontSize: "0.85rem !important" }} />}
+                      label="Open content"
                       size="small"
                       sx={{ height: 21, fontSize: "0.72rem", bgcolor: "action.hover" }}
                     />
