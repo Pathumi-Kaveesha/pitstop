@@ -259,6 +259,7 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     title = body.title.strip() if body.title and body.title.strip() else info.drive_title
     document_id = body.contentId if body.contentId else info.file_id
 
+    _clear_index_error(document_id)
     background_tasks.add_task(
         _index_drive_file_in_background, info, title, document_id, body.driveLink, body.displayLink
     )
