@@ -55,6 +55,7 @@ from vectorstore import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smart-search-service")
 
+# No route here checks who's calling - relies on Choreo "Organization" network visibility (not public, but not backend-only either) plus access checks living in the Ballerina backend
 app = FastAPI(title="Pitstop Smart Search (POC)")
 
 
