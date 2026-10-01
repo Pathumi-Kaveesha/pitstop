@@ -15,6 +15,7 @@
 // under the License.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
@@ -24,6 +25,7 @@ import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
 import Card from "@mui/material/Card";
 import Chip from "@mui/material/Chip";
+import Pagination from "@mui/material/Pagination";
 import Tooltip from "@mui/material/Tooltip";
 import { alpha, useTheme } from "@mui/material/styles";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -32,12 +34,14 @@ import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
 import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import { AppConfig } from "@config/config";
 import { ApiService } from "@utils/apiService";
 import { parseDateAsUtc } from "@utils/utils";
 import { SmartSearchIndexFailure } from "@/types/types";
 
 // Admin page listing content that failed Smart Search indexing
+const FAILURES_PER_PAGE = 10;
 
 // Backend timestamps carry no timezone, so parse as UTC and show in the viewer's local time
 const formatRelativeTime = (value: string): { relative: string; exact: string } => {
@@ -74,12 +78,14 @@ const formatRelativeTime = (value: string): { relative: string; exact: string } 
 
 export default function UnindexedContent() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const [entries, setEntries] = useState<SmartSearchIndexFailure[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
   const [loaded, setLoaded] = useState(false);
+  const [page, setPage] = useState(1);
 
   const loadEntries = async (): Promise<SmartSearchIndexFailure[] | null> => {
     setLoading(true);
@@ -192,6 +198,11 @@ export default function UnindexedContent() {
     () => [...entries].sort((a, b) => b.updatedOn.localeCompare(a.updatedOn)),
     [entries]
   );
+  const pageCount = Math.max(1, Math.ceil(sortedEntries.length / FAILURES_PER_PAGE));
+  useEffect(() => {
+    setPage((current) => Math.min(current, pageCount));
+  }, [pageCount]);
+  const pagedEntries = sortedEntries.slice((page - 1) * FAILURES_PER_PAGE, page * FAILURES_PER_PAGE);
 
   return (
     <Box sx={{ maxWidth: 920, mx: "auto", px: 4, pt: 12, pb: 6 }}>
@@ -278,7 +289,7 @@ export default function UnindexedContent() {
       )}
 
       <Stack spacing={2}>
-        {sortedEntries.map((entry) => {
+        {pagedEntries.map((entry) => {
           const isRetrying = retryingIds.has(entry.contentId);
           const { relative, exact } = formatRelativeTime(entry.updatedOn);
           return (
@@ -328,6 +339,16 @@ export default function UnindexedContent() {
                       size="small"
                       sx={{ height: 21, fontSize: "0.72rem", bgcolor: "action.hover" }}
                     />
+                    {entry.routePath && (
+                      <Chip
+                        clickable
+                        onClick={() => navigate(entry.routePath)}
+                        icon={<ArrowForwardIcon sx={{ fontSize: "0.85rem !important" }} />}
+                        label="Go to page"
+                        size="small"
+                        sx={{ height: 21, fontSize: "0.72rem", bgcolor: "action.hover" }}
+                      />
+                    )}
                   </Stack>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontSize: "0.9rem" }}>
                     {entry.errorMessage}
@@ -364,6 +385,12 @@ export default function UnindexedContent() {
           );
         })}
       </Stack>
+
+      {pageCount > 1 && (
+        <Stack alignItems="center" sx={{ mt: 4 }}>
+          <Pagination count={pageCount} page={page} onChange={(_, value) => setPage(value)} color="primary" />
+        </Stack>
+      )}
     </Box>
   );
 }

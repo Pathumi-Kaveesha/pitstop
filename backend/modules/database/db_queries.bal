@@ -1107,12 +1107,19 @@ isolated function getSmartSearchIndexFailuresQuery() returns sql:ParameterizedQu
         s.content_id,
         c.description,
         c.content_link,
+        COALESCE(sec_route.route_path, direct_route.route_path, '') AS route_path,
         s.error_message,
         s.updated_on
     FROM
         smart_search_index_failure s
     JOIN
         content c ON c.content_id = s.content_id
+    LEFT JOIN
+        section sec ON sec.section_id = c.section_id
+    LEFT JOIN
+        route sec_route ON sec_route.route_id = sec.route_id
+    LEFT JOIN
+        route direct_route ON direct_route.route_id = c.route_id
     WHERE
         c.is_deleted = false
     ORDER BY

@@ -253,6 +253,7 @@ public type IndexingInfo record {|
 # + contentId - Id of the content
 # + description - The content's title, for display
 # + contentLink - The content's link
+# + routePath - The Pitstop page this content is on
 # + errorMessage - Why indexing failed
 # + updatedOn - When this failure was last confirmed
 public type SmartSearchIndexFailure record {|
@@ -261,6 +262,8 @@ public type SmartSearchIndexFailure record {|
     string description;
     @sql:Column {name: "content_link"}
     string contentLink;
+    @sql:Column {name: "route_path"}
+    string routePath;
     @sql:Column {name: "error_message"}
     string errorMessage;
     @sql:Column {name: "updated_on"}
