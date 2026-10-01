@@ -86,7 +86,15 @@ const withTextFragment = (url: string, matchedText: string, query: string): stri
   const truncated = normalized.slice(0, 120);
   const wordBreak = truncated.lastIndexOf(" ");
   const snippet = truncated.length < normalized.length && wordBreak > 0 ? truncated.slice(0, wordBreak) : truncated;
-  return snippet ? `${url}#:~:text=${encodeURIComponent(snippet)}` : url;
+  if (!snippet) {
+    return url;
+  }
+  // A bare hyphen breaks the match, and encodeURIComponent doesn't escape it
+  const encoded = encodeURIComponent(snippet).replace(/-/g, "%2D");
+  const parsed = new URL(url);
+  const existingHash = parsed.hash.replace(/^#/, "").replace(/:~:text=.*/, "");
+  parsed.hash = existingHash ? `${existingHash}:~:text=${encoded}` : `:~:text=${encoded}`;
+  return parsed.toString();
 };
 
 export default function SmartSearchPoc() {
