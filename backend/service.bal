@@ -395,7 +395,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         // Content is additionally indexed for Smart Search, from its own link or its transcript link
         string? indexLink = smartsearch:indexingLinkFor(contentPayload.contentType, contentPayload.contentSubtype,
                 contentPayload.contentLink, contentPayload.transcriptLink);
-        if indexLink is string && smartsearch:isIndexableLink(indexLink) {
+        if indexLink is string
+                && smartsearch:isContentLinkIndexable(contentPayload.contentType, contentPayload.contentSubtype, indexLink) {
             int|error newContentId = database:addContentAndReturnId(contentPayload, createdBy);
             if newContentId is error {
                 string customError = "Error while adding a content";

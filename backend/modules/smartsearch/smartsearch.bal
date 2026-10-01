@@ -189,6 +189,28 @@ public isolated function isIndexableLink(string contentLink) returns boolean {
     return host == "drive.google.com" || host == "docs.google.com";
 }
 
+# Whether this link is an ordinary webpage Smart Search can read directly, not a Google Drive/Docs one.
+#
+# + link - The content's link
+# + return - Whether this looks like a plain, readable webpage
+public isolated function isWebPageLink(string link) returns boolean {
+    return link.trim().toLowerAscii().startsWith("https://") && !isIndexableLink(link);
+}
+
+# Whether Smart Search can index this content, given its type.
+#
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + link - The link that would be indexed
+# + return - Whether this content should also be indexed
+public isolated function isContentLinkIndexable(string contentType, string? contentSubtype, string link)
+        returns boolean {
+    if contentType == "external" && contentSubtype == "generic" {
+        return isWebPageLink(link);
+    }
+    return isIndexableLink(link);
+}
+
 # Narrows a raw search response down to sources whose document the caller
 # is actually allowed to see
 #
@@ -374,6 +396,18 @@ public isolated function displayLinkFor(string contentType, string? contentSubty
     return requiresTranscript(contentType, contentSubtype) ? contentLink : ();
 }
 
+# The reason a content's link can't be indexed, tailored to what its type actually needs.
+#
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + return - A user-facing reason
+isolated function unindexableLinkReason(string contentType, string? contentSubtype) returns string {
+    if contentType == "external" && contentSubtype == "generic" {
+        return "This link can't be indexed. Smart Search couldn't read that page.";
+    }
+    return "This link can't be indexed. Smart Search only reads Google Drive links.";
+}
+
 // Counts clear-and-index runs; only exists so they share one lock and never overlap
 isolated int reindexRuns = 0;
 
@@ -410,18 +444,17 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
         }
 
         // Clear the old version first, so a failed re-index never leaves stale results
-        if previousLink is () || isIndexableLink(previousLink) {
-            if !clearIndexedEntries(contentId) {
-                recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
-                return;
-            }
+        if !clearIndexedEntries(contentId) {
+            recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
+            return;
         }
 
-        if newLink is string && isIndexableLink(newLink) {
+        if newLink is string && isContentLinkIndexable(current.contentType, current.contentSubtype, newLink) {
             indexContentForSmartSearch(contentId, newLink, current.description,
                     displayLinkFor(current.contentType, current.contentSubtype, current.contentLink));
-        } else if newLink is string && newLink != "" && previousLink is string && isIndexableLink(previousLink) {
-            recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
+        } else if newLink is string && newLink != "" && previousLink is string
+                && isContentLinkIndexable(current.contentType, current.contentSubtype, previousLink) {
+            recordIndexFailure(contentId, unindexableLinkReason(current.contentType, current.contentSubtype));
         }
     }
 }
@@ -444,8 +477,8 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
             recordIndexFailure(contentId, "A Google Doc link is required for this content type");
             return;
         }
-        if !isIndexableLink(link) {
-            recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
+        if !isContentLinkIndexable(info.contentType, info.contentSubtype, link) {
+            recordIndexFailure(contentId, unindexableLinkReason(info.contentType, info.contentSubtype));
             return;
         }
         if !clearIndexedEntries(contentId) {
@@ -512,7 +545,8 @@ public isolated function listUnindexedContent() returns database:SmartSearchInde
         foreach database:UncheckedIndexCandidate candidate in candidates {
             string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
                     candidate.transcriptLink);
-            if link is string && isIndexableLink(link) && !reconcileIndexStatus(candidate.contentId) {
+            if link is string && isContentLinkIndexable(candidate.contentType, candidate.contentSubtype, link)
+                    && !reconcileIndexStatus(candidate.contentId) {
                 break;
             }
         }

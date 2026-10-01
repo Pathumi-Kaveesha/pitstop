@@ -19,14 +19,17 @@ paths:
   /ingest-drive-link:
     post:
       summary: Ingest Drive Link
-      description: 'Indexes a document from a Google Drive link, no local copy saved.
+      description: 'Indexes a document from a Google Drive link, or an ordinary public
+        webpage, no local
+
+        copy saved.
 
 
         Split either side of the response so document size doesn''t affect
 
-        how long this takes to answer: metadata is resolved first (fast,
+        how long this takes to answer: metadata/text is resolved first (fast,
 
-        catches real errors), then download/chunk/embed/store happens in the
+        catches real errors), then chunk/embed/store happens in the
 
         background - a failure there only reaches the log, not the caller.'
       operationId: ingest_drive_link_ingest_drive_link_post

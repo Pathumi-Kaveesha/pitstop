@@ -61,6 +61,42 @@ const isHttpsUrl = (url: string): boolean => {
   }
 };
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Common words a question is full of but that say nothing about which line actually matters
+const STOP_WORDS = new Set([
+  "this", "that", "with", "from", "have", "does", "what", "when", "where", "which", "about",
+  "there", "would", "could", "should", "while", "these", "those", "into", "over", "then", "than",
+]);
+
+const withTextFragment = (url: string, matchedText: string, query: string): string => {
+  const lines = matchedText.split("\n").map((line) => line.trim()).filter(Boolean);
+  const queryWords = (query.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
+    (word) => word.length > 3 && !STOP_WORDS.has(word)
+  );
+  const scoreLine = (line: string): number => {
+    const lower = line.toLowerCase();
+    return queryWords.filter((word) => new RegExp(`\\b${escapeRegExp(word)}\\b`).test(lower)).length;
+  };
+  const relevantLine = lines.reduce(
+    (best, line) => (scoreLine(line) > scoreLine(best) ? line : best),
+    lines[0] ?? ""
+  );
+  const normalized = relevantLine.replace(/\s+/g, " ");
+  const truncated = normalized.slice(0, 120);
+  const wordBreak = truncated.lastIndexOf(" ");
+  const snippet = truncated.length < normalized.length && wordBreak > 0 ? truncated.slice(0, wordBreak) : truncated;
+  if (!snippet) {
+    return url;
+  }
+  // A bare hyphen breaks the match, and encodeURIComponent doesn't escape it
+  const encoded = encodeURIComponent(snippet).replace(/-/g, "%2D");
+  const parsed = new URL(url);
+  const existingHash = parsed.hash.replace(/^#/, "").replace(/:~:text=.*/, "");
+  parsed.hash = existingHash ? `${existingHash}:~:text=${encoded}` : `:~:text=${encoded}`;
+  return parsed.toString();
+};
+
 export default function SmartSearchPoc() {
   const dispatch = useAppDispatch();
   const [query, setQuery] = useState("");
@@ -134,6 +170,13 @@ export default function SmartSearchPoc() {
     if (source.fileExtension === "reference") {
       if (isHttpsUrl(source.driveLink)) {
         window.open(source.driveLink, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+    // An ordinary webpage - jumps to and highlights the matched text, not just the page
+    if (source.fileExtension === "webpage") {
+      if (isHttpsUrl(source.driveLink)) {
+        window.open(withTextFragment(source.driveLink, source.content, query), "_blank", "noopener,noreferrer");
       }
       return;
     }

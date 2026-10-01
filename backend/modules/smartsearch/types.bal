@@ -24,7 +24,7 @@ import pitstop.types;
 # + similarityScore - How closely it matched the search query (0-1)
 # + documentId - Id of the content this chunk came from
 # + unitLabel - What one piece of this file type is called - Page, Slide, Section or Sheet
-# + fileExtension - The original file's type (pdf/pptx/docx/xlsx)
+# + fileExtension - The original file's type (pdf/pptx/docx/xlsx/webpage), or "reference" for a stand-in document
 # + source - "upload" or "drive"
 # + driveLink - The link used to index this document, when source is "drive"
 # + nativeLink - Link to this chunk's slide/tab/heading, empty when there isn't one
