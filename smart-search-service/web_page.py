@@ -58,7 +58,10 @@ class _ValidatedHTTPSConnectionPool(HTTPSConnectionPool):
 class _ValidatedAdapter(HTTPAdapter):
     def init_poolmanager(self, *args, **kwargs):
         super().init_poolmanager(*args, **kwargs)
-        self.poolmanager.pool_classes_by_scheme["https"] = _ValidatedHTTPSConnectionPool
+        self.poolmanager.pool_classes_by_scheme = {
+            **self.poolmanager.pool_classes_by_scheme,
+            "https": _ValidatedHTTPSConnectionPool,
+        }
 
 
 _session = make_session()
