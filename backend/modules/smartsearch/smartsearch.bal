@@ -59,10 +59,6 @@ public isolated function canViewContent(http:RequestContext ctx, int contentId) 
     return matched.length() > 0;
 }
 
-const int MAX_FILE_DOWNLOADS_PER_MINUTE = 10;
-const int DOWNLOAD_WINDOW_SECONDS = 60;
-const int MAX_TRACKED_DOWNLOAD_USERS = 1000;
-
 // User email -> [window start in seconds, downloads in that window]
 isolated map<[int, int]> fileDownloadWindows = {};
 
@@ -99,19 +95,14 @@ public isolated function isWithinDownloadLimit(http:RequestContext ctx) returns 
     }
 }
 
-const int RETRY_COOLDOWN_SECONDS = 60;
-const int MAX_RETRIES_PER_WINDOW = 10;
-const int RETRY_RATE_WINDOW_SECONDS = 5 * 60;
-const int MAX_TRACKED_RETRIES = 1000;
-
-// "content:<id>" -> [last retry time, 0]; "user:<email>" -> [window start in seconds, retries in that window]
+// "content:<id>" or "user:<email>" -> [window start in seconds, retries in that window]
 isolated map<[int, int]> retryState = {};
 
 # Check whether the caller may retry this content now, and count the retry if so.
 #
 # + ctx - Request object
 # + contentId - The content being retried
-# + return - False if the content was retried recently or the caller is over the retry limit
+# + return - False if this content or this caller is over its retry limit for the current minute
 public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) returns boolean {
     string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
     if userEmail is error {
@@ -124,26 +115,30 @@ public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) 
     lock {
         if retryState.length() > MAX_TRACKED_RETRIES {
             foreach string key in retryState.keys() {
-                if now - retryState.get(key)[0] >= RETRY_RATE_WINDOW_SECONDS {
+                if now - retryState.get(key)[0] >= RETRY_WINDOW_SECONDS {
                     _ = retryState.remove(key);
                 }
             }
         }
 
-        [int, int]? lastRetry = retryState[contentKey];
-        if lastRetry is [int, int] && now - lastRetry[0] < RETRY_COOLDOWN_SECONDS {
+        [int, int]? contentWindow = retryState[contentKey];
+        if contentWindow is [int, int] && now - contentWindow[0] < RETRY_WINDOW_SECONDS
+                && contentWindow[1] >= MAX_RETRIES_PER_CONTENT {
             return false;
         }
 
-        [int, int]? window = retryState[userKey];
-        if window is () || now - window[0] >= RETRY_RATE_WINDOW_SECONDS {
-            retryState[userKey] = [now, 1];
-        } else if window[1] >= MAX_RETRIES_PER_WINDOW {
+        [int, int]? userWindow = retryState[userKey];
+        if userWindow is [int, int] && now - userWindow[0] < RETRY_WINDOW_SECONDS
+                && userWindow[1] >= MAX_RETRIES_PER_USER {
             return false;
-        } else {
-            retryState[userKey] = [window[0], window[1] + 1];
         }
-        retryState[contentKey] = [now, 0];
+
+        retryState[contentKey] = contentWindow is [int, int] && now - contentWindow[0] < RETRY_WINDOW_SECONDS
+                ? [contentWindow[0], contentWindow[1] + 1]
+                : [now, 1];
+        retryState[userKey] = userWindow is [int, int] && now - userWindow[0] < RETRY_WINDOW_SECONDS
+                ? [userWindow[0], userWindow[1] + 1]
+                : [now, 1];
         return true;
     }
 }
@@ -444,9 +439,14 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
             return http:NOT_FOUND;
         }
         string? link = indexingLinkFor(info.contentType, info.contentSubtype, info.contentLink, info.transcriptLink);
-        // Nothing that can be indexed, so there is nothing to retry
-        if link is () || !isIndexableLink(link) {
-            return database:clearSmartSearchIndexFailure(contentId);
+        // A retry only runs on content that's already flagged as failing, so the problem is real - record why
+        if link is () {
+            recordIndexFailure(contentId, "A Google Doc link is required for this content type");
+            return;
+        }
+        if !isIndexableLink(link) {
+            recordIndexFailure(contentId, "This link can't be indexed. Smart Search only reads Google Drive links.");
+            return;
         }
         if !clearIndexedEntries(contentId) {
             return error("Could not clear the previous version of this content");
@@ -465,8 +465,6 @@ type IndexStatusResponse record {|
     boolean indexed;
     string? errorMessage;
 |};
-
-const int RECHECK_WINDOW_HOURS = 24;
 
 # Records or clears a content item's indexing failure based on its status.
 #
@@ -522,8 +520,6 @@ public isolated function listUnindexedContent() returns database:SmartSearchInde
 
     return database:getSmartSearchIndexFailures();
 }
-
-const decimal RECONCILE_INTERVAL_SECONDS = 6 * 60 * 60;
 
 class IndexReconciliationJob {
     *task:Job;
