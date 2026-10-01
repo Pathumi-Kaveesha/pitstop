@@ -145,23 +145,23 @@ def fetch_web_page_text(url: str) -> WebPageInfo:
     _require_safe_https_url(url)
 
     try:
-        response = _fetch_following_safe_redirects(url)
-        response.raise_for_status()
+        with _fetch_following_safe_redirects(url) as response:
+            response.raise_for_status()
 
-        content_type = response.headers.get("Content-Type", "")
-        if "html" not in content_type.lower():
-            raise ValueError("This link doesn't point to a readable web page.")
+            content_type = response.headers.get("Content-Type", "")
+            if "html" not in content_type.lower():
+                raise ValueError("This link doesn't point to a readable web page.")
 
-        raw = response.raw.read(MAX_WEB_PAGE_BYTES + 1, decode_content=True)
+            raw = response.raw.read(MAX_WEB_PAGE_BYTES + 1, decode_content=True)
+            if len(raw) > MAX_WEB_PAGE_BYTES:
+                raise ValueError(f"This page is too large to index (over {MAX_WEB_PAGE_BYTES // 1_048_576} MB).")
+            encoding = response.encoding
     except ValueError:
         raise
     except Exception as error:  # noqa: BLE001 - any network failure is reported the same way
         raise RuntimeError("Could not read that page.") from error
 
-    if len(raw) > MAX_WEB_PAGE_BYTES:
-        raise ValueError(f"This page is too large to index (over {MAX_WEB_PAGE_BYTES // 1_048_576} MB).")
-
-    html = raw.decode(response.encoding or "utf-8", errors="replace")
+    html = raw.decode(encoding or "utf-8", errors="replace")
     markdown = trafilatura.extract(html, url=url, output_format="markdown", include_tables=True) or ""
     text = _dedupe_adjacent_lines(_markdown_to_plain_text(markdown))
     if not text.strip():
