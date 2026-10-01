@@ -46,6 +46,7 @@ UNIT_LABELS = {
     "pptx": "Slide",
     "docx": "Section",
     "xlsx": "Sheet",
+    "webpage": "Section",
 }
 
 @dataclass
@@ -170,11 +171,17 @@ def _extract_xlsx(file_bytes: bytes) -> list[str]:
     return sheets
 
 
+def _extract_webpage(file_bytes: bytes) -> list[str]:
+    """Already-extracted page text, passed through as one single unit - a webpage has no natural pages."""
+    return [file_bytes.decode("utf-8")]
+
+
 _EXTRACTORS = {
     "pdf": _extract_pdf,
     "pptx": _extract_pptx,
     "docx": _extract_docx,
     "xlsx": _extract_xlsx,
+    "webpage": _extract_webpage,
 }
 
 

@@ -47,6 +47,11 @@ MAX_PDF_VIEW_BYTES = 30 * 1024 * 1024
 # Checked against the entries' declared sizes before any parsing.
 MAX_OOXML_UNCOMPRESSED_BYTES = 400 * 1024 * 1024
 
+# Reject a webpage before reading past this many bytes of its HTML.
+MAX_WEB_PAGE_BYTES = 10 * 1024 * 1024
+
+WEB_PAGE_FETCH_TIMEOUT_SECONDS = 20
+
 # Changing this means re-embedding and re-indexing everything already stored.
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-2"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"

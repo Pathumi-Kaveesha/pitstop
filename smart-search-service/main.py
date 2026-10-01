@@ -17,6 +17,7 @@
 """Smart Search POC service, in Python. Handles chunking, embedding and
 vector search; login and admin checks stay in the Ballerina backend."""
 
+import hashlib
 import logging
 import threading
 import time
@@ -27,9 +28,10 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Query, Respon
 from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 
-from chunking import UNIT_LABELS, chunk_document
+from chunking import Chunk, UNIT_LABELS, chunk_document
 from deep_links import build_native_links
 from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
+from web_page import fetch_web_page_text, is_web_page_link
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     DELETE_TOMBSTONE_TTL_SECONDS,
@@ -190,37 +192,70 @@ def _index_drive_file_in_background(
                 for c in chunks
             ]
 
-        logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
-        vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
-
-        # Chunk ids are derived from the document id, so this overwrites a
-        # previous version in place - the old copy stays searchable if the
-        # write fails, instead of being deleted up front.
-        upsert_chunks(
-            vectors,
-            [c.text for c in chunks],
-            title,
-            [c.page for c in chunks],
-            document_id,
-            UNIT_LABELS[info.extension],
-            "reference" if display_link else info.extension,
-            "drive",
-            display_link or drive_link,
-            chunk_native_links,
+        _embed_and_store(
+            chunks, title, document_id, job_started_at,
+            UNIT_LABELS[info.extension], "reference" if display_link else info.extension,
+            "drive", display_link or drive_link, chunk_native_links,
         )
+    except Exception as error:  # noqa: BLE001 - nobody is left to return an error to
+        logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
+        _set_index_error(document_id, str(error) or type(error).__name__)
 
-        # Delete may have landed mid-upsert - undo the write if so.
-        if _is_tombstoned(document_id, since=job_started_at):
-            logger.info("Content %s was deleted while indexing was writing - cleaning up.", document_id)
-            delete_by_document_id(document_id)
-            _clear_search_cache()
+
+def _embed_and_store(
+    chunks: list[Chunk], title: str, document_id: str, job_started_at: float,
+    unit_label: str, file_extension: str, source: str, link: str, native_links: list[Optional[str]],
+) -> None:
+    """Shared tail of every background indexing job: embed, store, and clean up if the content
+    was deleted while this was running."""
+    logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
+    vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
+
+    # Chunk ids are derived from the document id, so this overwrites a
+    # previous version in place - the old copy stays searchable if the
+    # write fails, instead of being deleted up front.
+    upsert_chunks(
+        vectors, [c.text for c in chunks], title, [c.page for c in chunks],
+        document_id, unit_label, file_extension, source, link, native_links,
+    )
+
+    # Delete may have landed mid-upsert - undo the write if so.
+    if _is_tombstoned(document_id, since=job_started_at):
+        logger.info("Content %s was deleted while indexing was writing - cleaning up.", document_id)
+        delete_by_document_id(document_id)
+        _clear_search_cache()
+        return
+
+    # Only once the new version is safely stored.
+    delete_stale_chunks(document_id, len(chunks))
+    _clear_search_cache()
+    logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
+
+
+def _index_webpage_in_background(title: str, document_id: str, url: str, text: str) -> None:
+    """Chunks, embeds and stores one webpage's already-extracted text, run after the response
+    has already gone back. Never raises - failures go to the log, since there's no caller left
+    to report them to."""
+    logger.info("Started indexing '%s' (id %s, webpage) - chunking", title, document_id)
+    job_started_at = time.time()
+    _clear_index_error(document_id)
+
+    try:
+        chunks, _unit_headings = chunk_document(text.encode("utf-8"), "webpage")
+        if not chunks:
+            logger.warning("Nothing worth indexing in '%s' (id %s) - too short", title, document_id)
+            _set_index_error(document_id, "Nothing worth indexing was found on this page.")
             return
 
-        # Only once the new version is safely stored.
-        delete_stale_chunks(document_id, len(chunks))
-        _clear_search_cache()
-        logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
-    except Exception as error:  # noqa: BLE001 - nobody is left to return an error to
+        if _is_tombstoned(document_id, since=job_started_at):
+            logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
+            return
+
+        _embed_and_store(
+            chunks, title, document_id, job_started_at,
+            UNIT_LABELS["webpage"], "webpage", "web", url, [None] * len(chunks),
+        )
+    except Exception as error:  # noqa: BLE001 - nobody is left to report an error to
         logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
         _set_index_error(document_id, str(error) or type(error).__name__)
 
@@ -237,12 +272,33 @@ class IngestDriveLinkRequest(BaseModel):
 
 @app.post("/ingest-drive-link")
 async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: BackgroundTasks) -> dict:
-    """Indexes a document from a Google Drive link, no local copy saved.
+    """Indexes a document from a Google Drive link, or an ordinary public webpage, no local
+    copy saved.
 
     Split either side of the response so document size doesn't affect
-    how long this takes to answer: metadata is resolved first (fast,
-    catches real errors), then download/chunk/embed/store happens in the
+    how long this takes to answer: metadata/text is resolved first (fast,
+    catches real errors), then chunk/embed/store happens in the
     background - a failure there only reaches the log, not the caller."""
+    if is_web_page_link(body.driveLink):
+        try:
+            page = await run_in_threadpool(fetch_web_page_text, body.driveLink)
+        except ValueError as error:
+            if body.contentId:
+                _set_index_error(body.contentId, str(error))
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            logger.exception("Could not read webpage for indexing")
+            if body.contentId:
+                _set_index_error(body.contentId, "Could not read that page.")
+            raise HTTPException(status_code=502, detail="Could not read that page.") from error
+
+        title = body.title.strip() if body.title and body.title.strip() else page.title
+        document_id = body.contentId or hashlib.sha256(body.driveLink.encode()).hexdigest()[:16]
+
+        background_tasks.add_task(_index_webpage_in_background, title, document_id, body.driveLink, page.text)
+
+        return {"status": "indexing", "title": title, "documentId": document_id, "fileType": "webpage"}
+
     try:
         info = await run_in_threadpool(resolve_drive_file, body.driveLink)
     except ValueError as error:
