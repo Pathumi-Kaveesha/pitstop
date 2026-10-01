@@ -444,11 +444,9 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
         }
 
         // Clear the old version first, so a failed re-index never leaves stale results
-        if previousLink is () || isContentLinkIndexable(current.contentType, current.contentSubtype, previousLink) {
-            if !clearIndexedEntries(contentId) {
-                recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
-                return;
-            }
+        if !clearIndexedEntries(contentId) {
+            recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
+            return;
         }
 
         if newLink is string && isContentLinkIndexable(current.contentType, current.contentSubtype, newLink) {
