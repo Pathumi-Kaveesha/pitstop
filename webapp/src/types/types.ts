@@ -824,6 +824,7 @@ export interface SmartSearchIndexFailure {
   contentId: number;
   description: string;
   contentLink: string;
+  routePath: string;
   errorMessage: string;
   updatedOn: string;
 }
