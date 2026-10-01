@@ -82,7 +82,10 @@ const withTextFragment = (url: string, matchedText: string, query: string): stri
     (best, line) => (scoreLine(line) > scoreLine(best) ? line : best),
     lines[0] ?? ""
   );
-  const snippet = relevantLine.replace(/\s+/g, " ").slice(0, 120);
+  const normalized = relevantLine.replace(/\s+/g, " ");
+  const truncated = normalized.slice(0, 120);
+  const wordBreak = truncated.lastIndexOf(" ");
+  const snippet = truncated.length < normalized.length && wordBreak > 0 ? truncated.slice(0, wordBreak) : truncated;
   return snippet ? `${url}#:~:text=${encodeURIComponent(snippet)}` : url;
 };
 
