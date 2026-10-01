@@ -65,7 +65,7 @@ class _ValidatedAdapter(HTTPAdapter):
 
 
 _session = make_session()
-_session.mount("https://", _ValidatedAdapter())
+_session.mount("https://", _ValidatedAdapter(max_retries=_session.get_adapter("https://").max_retries))
 
 
 @dataclass
