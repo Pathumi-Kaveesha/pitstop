@@ -14,10 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Fetches an ordinary public webpage and pulls out its readable text - the
-source for "External Link, Generic" content, which has no file to download.
-Only plain HTML is read - a page that needs JavaScript to show its real
-content won't index."""
+"""Fetches an ordinary public webpage and pulls out its readable text. Plain HTML only - no JS rendering."""
 
 import ipaddress
 import re
@@ -27,14 +24,45 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 import trafilatura
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPSConnection
+from urllib3.connectionpool import HTTPSConnectionPool
 
 from config import MAX_WEB_PAGE_BYTES, WEB_PAGE_FETCH_TIMEOUT_SECONDS
 from http_session import make_session
 
-_session = make_session()
-
 _USER_AGENT = "Mozilla/5.0 (compatible; PitstopSmartSearch/1.0)"
 _MAX_REDIRECTS = 5
+
+
+def _is_unsafe_ip(ip_str: str) -> bool:
+    ip = ipaddress.ip_address(ip_str)
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+
+
+class _ValidatedHTTPSConnection(HTTPSConnection):
+    """Checks the address actually connected to, right after connecting - closes the DNS-rebinding gap without pinning."""
+
+    def _new_conn(self):
+        sock = super()._new_conn()
+        if _is_unsafe_ip(sock.getpeername()[0]):
+            sock.close()
+            raise ValueError("This link can't be indexed.")
+        return sock
+
+
+class _ValidatedHTTPSConnectionPool(HTTPSConnectionPool):
+    ConnectionCls = _ValidatedHTTPSConnection
+
+
+class _ValidatedAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        super().init_poolmanager(*args, **kwargs)
+        self.poolmanager.pool_classes_by_scheme["https"] = _ValidatedHTTPSConnectionPool
+
+
+_session = make_session()
+_session.mount("https://", _ValidatedAdapter())
 
 
 @dataclass
@@ -59,8 +87,7 @@ def _is_private_address(host: str) -> bool:
     except socket.gaierror:
         return True  # can't resolve - refuse rather than guess
     for _family, _type, _proto, _canonname, sockaddr in addr_info:
-        ip = ipaddress.ip_address(sockaddr[0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        if _is_unsafe_ip(sockaddr[0]):
             return True
     return False
 
@@ -74,9 +101,7 @@ def _require_safe_https_url(url: str) -> None:
 
 
 def _fetch_following_safe_redirects(url: str) -> requests.Response:
-    """Fetches a URL, checking each hop a redirect leads to the same way the original link was
-    checked - `requests`' own automatic redirect handling never re-checks where it ends up, so a
-    page that looks public could otherwise redirect somewhere internal and this would fetch it."""
+    """Fetches a URL, re-checking each redirect hop the same way the original link was checked."""
     current_url = url
     for _ in range(_MAX_REDIRECTS + 1):
         _require_safe_https_url(current_url)
@@ -99,9 +124,7 @@ def _fetch_following_safe_redirects(url: str) -> requests.Response:
 
 
 def _dedupe_adjacent_lines(text: str) -> str:
-    """Card/grid layouts often repeat a heading right next to itself (once visible, once for
-    accessibility), sometimes as its own line, sometimes trailing the line before it - collapses
-    those exact repeats, which otherwise break text-fragment matching."""
+    """Collapses a heading that's immediately repeated - common in card/grid layouts, and breaks text-fragment matching if left in."""
     lines = text.split("\n")
     deduped: list[str] = []
     for line in lines:
@@ -119,10 +142,7 @@ _INLINE_EMPHASIS = re.compile(r"\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*([^*]+?)\*(?!\*
 
 
 def _markdown_to_plain_text(markdown: str) -> str:
-    """Plain-text extraction throws away headings and card titles, letting unrelated page
-    sections (e.g. neighbouring cards in a feature grid) read as one continuous paragraph.
-    Markdown keeps that structure - this puts a hard paragraph break before each heading or
-    standalone bold title, so the chunker keeps those sections apart."""
+    """Inserts a paragraph break before each heading or bold title, so unrelated sections don't get chunked together."""
     blocks: list[str] = []
     for line in markdown.split("\n"):
         stripped = line.strip()
@@ -140,8 +160,7 @@ def _markdown_to_plain_text(markdown: str) -> str:
 
 
 def fetch_web_page_text(url: str) -> WebPageInfo:
-    """Fetches a public webpage and extracts its title and main readable text - raises ValueError
-    for anything not safe or not readable, RuntimeError for a genuine network failure."""
+    """Fetches a public webpage and extracts its title and text - ValueError if unsafe/unreadable, RuntimeError on a network failure."""
     _require_safe_https_url(url)
 
     try:
