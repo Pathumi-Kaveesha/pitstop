@@ -84,6 +84,9 @@ EMBED_RETRY_DELAY_SECONDS = 5
 UPSERT_MAX_RETRIES = 2
 UPSERT_RETRY_DELAY_SECONDS = 3
 
+DELETE_MAX_RETRIES = 2
+DELETE_RETRY_DELAY_SECONDS = 3
+
 # A search's results are kept this long, so its answer request reuses them instead of looking up again.
 SEARCH_CACHE_TTL_SECONDS = 60
 SEARCH_CACHE_MAX_ENTRIES = 100

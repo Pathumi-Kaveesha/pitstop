@@ -27,6 +27,8 @@ import requests
 import time
 
 from config import (
+    DELETE_MAX_RETRIES,
+    DELETE_RETRY_DELAY_SECONDS,
     EMBEDDING_DIMENSION,
     MAX_CHUNKS_PER_DOCUMENT,
     MAX_SCORE_GAP_FROM_TOP_MATCH,
@@ -333,14 +335,30 @@ def delete_stale_chunks(document_id: str, keep_count: int) -> None:
         response.raise_for_status()
 
 def delete_by_document_id(document_id: str) -> None:
-    """Removes every chunk belonging to one Pitstop content item.
+    """Removes every chunk belonging to one Pitstop content item. Deleting an
+    already-deleted or never-indexed id is a safe no-op, so this retries just like upsert_chunks.
 
     Keyed on documentId rather than the title - the id is the content's own
     id and never changes, while two documents can share a title."""
-    response = _delete_session.post(
-        f"{PINECONE_SERVICE_URL}/vectors/delete",
-        headers=_HEADERS,
-        json={"filter": {"documentId": {"$eq": document_id}}},
-        timeout=30,
-    )
-    response.raise_for_status()
+    last_error: Exception | None = None
+    for attempt in range(DELETE_MAX_RETRIES + 1):
+        try:
+            response = _delete_session.post(
+                f"{PINECONE_SERVICE_URL}/vectors/delete",
+                headers=_HEADERS,
+                json={"filter": {"documentId": {"$eq": document_id}}},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return
+        except requests.exceptions.HTTPError as error:
+            last_error = error
+            status = error.response.status_code if error.response is not None else None
+            if status is not None and status != 429 and status < 500:
+                break
+        except requests.exceptions.RequestException as error:
+            last_error = error
+
+        if attempt < DELETE_MAX_RETRIES:
+            time.sleep(DELETE_RETRY_DELAY_SECONDS)
+    raise RuntimeError(f"Failed to delete document {document_id} from Pinecone: {last_error}") from last_error

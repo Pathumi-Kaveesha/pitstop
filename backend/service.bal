@@ -1268,7 +1268,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         // Clears the content's Smart Search entries if it had any
-        _ = start smartsearch:deleteContentFromSmartSearch(contentId);
+        string|error deletedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+        _ = start smartsearch:deleteContentFromSmartSearch(contentId, deletedBy is string ? deletedBy : "unknown");
 
         return http:OK;
     }
