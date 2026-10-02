@@ -374,6 +374,7 @@ export default function SmartSearchPoc() {
                 bgcolor: alpha(theme.palette.text.primary, 0.05),
                 transition: "background-color 0.15s",
                 "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.1), color: "primary.main" },
+                "&.Mui-focusVisible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
               }}
             >
               {prompt}
