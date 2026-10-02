@@ -334,6 +334,7 @@ export default function SmartSearchPoc() {
                   onClick={handleSearch}
                   disabled={searching || !query.trim()}
                   color="primary"
+                  aria-label="Search"
                   sx={{
                     bgcolor: query.trim() ? alpha(theme.palette.primary.main, 0.1) : "transparent",
                     "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.18) },
