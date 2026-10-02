@@ -25,6 +25,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass
+from typing import Optional
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -34,8 +35,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openpyxl import load_workbook
 from pptx import Presentation
 from pypdf import PdfReader
-
-from typing import Optional
 
 from config import (
     MAX_CHUNK_OVERLAP,
