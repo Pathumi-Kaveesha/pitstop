@@ -20,17 +20,24 @@ import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
 import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
-import Button from "@mui/material/Button";
+import InputAdornment from "@mui/material/InputAdornment";
+import IconButton from "@mui/material/IconButton";
 import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
 import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import Stack from "@mui/material/Stack";
 import Divider from "@mui/material/Divider";
-import SearchOffIcon from "@mui/icons-material/SearchOff";
-import DescriptionIcon from "@mui/icons-material/Description";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import { alpha, useTheme } from "@mui/material/styles";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
+import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
+import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
+import OndemandVideoRoundedIcon from "@mui/icons-material/OndemandVideoRounded";
+import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
+import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
+import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded";
 import { AppConfig } from "@config/config";
 import { ApiService } from "@utils/apiService";
 import { formatSmartSearchSnippet, groupSmartSearchSourcesByDocument } from "@utils/utils";
@@ -39,8 +46,21 @@ import { ContentResponse, SmartSearchResponse, SmartSearchResult } from "@/types
 import { useAppDispatch } from "@slices/store";
 import { enqueueSnackbarMessage } from "@slices/commonSlice/common";
 
-// Proof-of-concept page for the smart search feature - reachable directly
-// at /smart-search-poc, not yet linked from the main navigation.
+// Shown as clickable suggestions before the first search
+const EXAMPLE_PROMPTS = [
+  "How do we handle a customer escalation?",
+  "What's our refund policy?",
+  "Onboarding steps for a new hire",
+];
+
+// A small icon per result type, so it reads at a glance
+const resultTypeIcon = (source: SmartSearchResult): typeof DescriptionRoundedIcon => {
+  if (source.unitLabel === "Moment") return OndemandVideoRoundedIcon;
+  if (source.fileExtension === "pdf") return PictureAsPdfRoundedIcon;
+  if (source.fileExtension === "webpage") return LanguageRoundedIcon;
+  if (source.fileExtension === "reference") return LinkRoundedIcon;
+  return DescriptionRoundedIcon;
+};
 
 // Exact origin check, not a substring match
 const isTrustedDriveOrigin = (url: string): boolean => {
@@ -116,6 +136,7 @@ const withTextFragment = (url: string, matchedText: string, query: string): stri
 };
 
 export default function SmartSearchPoc() {
+  const theme = useTheme();
   const dispatch = useAppDispatch();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -267,72 +288,151 @@ export default function SmartSearchPoc() {
   };
 
   return (
-    <Box sx={{ maxWidth: 1000, mx: "auto", px: 4, pt: 7, pb: 4 }}>
-      <Typography variant="h4" fontWeight={600} sx={{ mb: 1 }}>
-        Smart Search (POC)
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-        Search Pitstop's content in plain language below. This page is a proof of concept only - content is added
-        the normal way, on the Smart Search POC page, and is indexed here automatically.
-      </Typography>
-
-      <Card variant="outlined" sx={{ borderRadius: 3, boxShadow: 1 }}>
-        <CardContent>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Search
+    <Box sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2.5, sm: 4 }, pt: 7, pb: 6 }}>
+      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 4 }}>
+        <Box
+          sx={{
+            width: 48,
+            height: 48,
+            borderRadius: 3,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: alpha(theme.palette.primary.main, 0.12),
+            flexShrink: 0,
+          }}
+        >
+          <TravelExploreRoundedIcon sx={{ color: theme.palette.primary.main, fontSize: 26 }} />
+        </Box>
+        <Box>
+          <Typography variant="h5" fontWeight={700}>
+            Smart Search
           </Typography>
-          <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
-            <TextField
-              label="Ask something..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && handleSearch()}
-              size="small"
-              fullWidth
-            />
-            <Button variant="contained" onClick={handleSearch} disabled={searching || !query.trim()}>
-              {searching ? <CircularProgress size={20} /> : "Search"}
-            </Button>
-          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, fontSize: "0.9rem" }}>
+            Ask a question in plain language - Pitstop finds the exact page, slide, moment or passage that answers it.
+          </Typography>
+        </Box>
+      </Stack>
 
-          {searchError && <Alert severity="error" sx={{ mb: 2 }}>{searchError}</Alert>}
+      <TextField
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => event.key === "Enter" && handleSearch()}
+        placeholder={`Try: "${EXAMPLE_PROMPTS[0]}"`}
+        fullWidth
+        autoFocus
+        slotProps={{
+          input: {
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchRoundedIcon color="action" />
+              </InputAdornment>
+            ),
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  onClick={handleSearch}
+                  disabled={searching || !query.trim()}
+                  color="primary"
+                  sx={{
+                    bgcolor: query.trim() ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+                    "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.18) },
+                  }}
+                >
+                  {searching ? <CircularProgress size={20} /> : <SearchRoundedIcon />}
+                </IconButton>
+              </InputAdornment>
+            ),
+            sx: {
+              borderRadius: 5,
+              py: 0.5,
+              pr: 0.75,
+              fontSize: "1.05rem",
+              bgcolor: "background.paper",
+              boxShadow: `0 2px 14px ${alpha(theme.palette.common.black, 0.07)}`,
+            },
+          },
+        }}
+      />
 
-          {/* Search can succeed even when answer generation fails. */}
-          {hasSearched && !searching && !answerLoading && !answer && sources.length > 0 && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Couldn't generate an AI summary right now - showing the matching documents below instead.
-            </Alert>
-          )}
+      {!hasSearched && !searching && (
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 2, rowGap: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ alignSelf: "center", mr: 0.5 }}>
+            Try asking:
+          </Typography>
+          {EXAMPLE_PROMPTS.map((prompt) => (
+            <ButtonBase
+              key={prompt}
+              onClick={() => setQuery(prompt)}
+              sx={{
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 4,
+                fontSize: "0.8rem",
+                color: "text.secondary",
+                bgcolor: alpha(theme.palette.text.primary, 0.05),
+                transition: "background-color 0.15s",
+                "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.1), color: "primary.main" },
+              }}
+            >
+              {prompt}
+            </ButtonBase>
+          ))}
+        </Stack>
+      )}
 
-          {answerLoading && (
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-              <CircularProgress size={16} />
-              <Typography variant="body2" color="text.secondary">
-                Writing an AI answer...
-              </Typography>
-            </Stack>
-          )}
+      {searchError && (
+        <Alert severity="error" sx={{ mt: 3, borderRadius: 2 }}>
+          {searchError}
+        </Alert>
+      )}
 
-          {answer && (
-            <Card variant="outlined" sx={{ mb: 2, bgcolor: "action.hover" }}>
-              <CardContent>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                  <AutoAwesomeIcon fontSize="small" color="primary" />
-                  <Typography variant="subtitle2" fontWeight={600} color="primary">
-                    AI-generated answer
-                  </Typography>
-                </Stack>
-                <Typography variant="body1">{answer}</Typography>
-              </CardContent>
-            </Card>
-          )}
+      {/* Search can succeed even when answer generation fails. */}
+      {hasSearched && !searching && !answerLoading && !answer && sources.length > 0 && (
+        <Alert severity="info" sx={{ mt: 3, borderRadius: 2 }}>
+          Couldn't generate an AI summary right now - showing the matching documents below instead.
+        </Alert>
+      )}
 
-        </CardContent>
-      </Card>
+      {answerLoading && (
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mt: 3 }}>
+          <CircularProgress size={16} />
+          <Typography variant="body2" color="text.secondary">
+            Writing an AI answer...
+          </Typography>
+        </Stack>
+      )}
+
+      {answer && (
+        <Card
+          variant="outlined"
+          sx={{
+            mt: 3,
+            p: 2.5,
+            borderRadius: 3,
+            borderColor: alpha(theme.palette.primary.main, 0.25),
+            bgcolor: alpha(theme.palette.primary.main, 0.045),
+          }}
+        >
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <AutoAwesomeRoundedIcon fontSize="small" color="primary" />
+            <Typography variant="subtitle2" fontWeight={700} color="primary">
+              AI-generated answer
+            </Typography>
+          </Stack>
+          <Typography variant="body1" sx={{ lineHeight: 1.65 }}>
+            {answer}
+          </Typography>
+        </Card>
+      )}
 
       {sources.length > 0 && (
         <Box sx={{ mt: 5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
+          <Typography
+            variant="overline"
+            color="text.secondary"
+            sx={{ display: "block", mb: 2, letterSpacing: 1.2, fontWeight: 600 }}
+          >
             Sources
           </Typography>
           {/* Not wrapped in a Card - a content card overflows on hover, and MUI's Card clips that. */}
@@ -344,6 +444,7 @@ export default function SmartSearchPoc() {
               const hasJumpableLocation = group.excerpts.some(({ source }) => Boolean(source.nativeLink));
               const isReferenceOnly = group.excerpts[0]?.source.fileExtension === "reference" && !hasJumpableLocation;
               const isVideo = group.excerpts[0]?.source.unitLabel === "Moment";
+              const TypeIcon = resultTypeIcon(group.excerpts[0]?.source);
               return (
                 <Box
                   key={group.documentId || group.title}
@@ -363,8 +464,21 @@ export default function SmartSearchPoc() {
                   {!(isReferenceOnly && content) && (
                   <Box sx={{ flexGrow: 1, minWidth: 0, width: "100%" }}>
                     {!content && (
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                        <DescriptionIcon fontSize="small" color="action" />
+                      <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1 }}>
+                        <Box
+                          sx={{
+                            width: 32,
+                            height: 32,
+                            flexShrink: 0,
+                            borderRadius: 2,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            bgcolor: alpha(theme.palette.primary.main, 0.1),
+                          }}
+                        >
+                          <TypeIcon sx={{ fontSize: 18, color: "primary.main" }} />
+                        </Box>
                         <Typography variant="subtitle1" fontWeight={600} sx={{ flexGrow: 1 }}>
                           {group.title}
                         </Typography>
@@ -400,8 +514,8 @@ export default function SmartSearchPoc() {
                           </Typography>
                           {canPreview && (
                             <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
-                              <OpenInNewIcon sx={{ fontSize: 14 }} color="primary" />
-                              <Typography variant="caption" color="primary">
+                              <OpenInNewRoundedIcon sx={{ fontSize: 14 }} color="primary" />
+                              <Typography variant="caption" color="primary" fontWeight={600}>
                                 {canJumpToLocation ? `Open at ${location}` : "Open this document"}
                               </Typography>
                             </Stack>
@@ -418,12 +532,12 @@ export default function SmartSearchPoc() {
                                 display: "block",
                                 width: "100%",
                                 textAlign: "left",
-                                borderRadius: 1,
-                                mx: -0.5,
-                                px: 0.5,
-                                py: 0.5,
+                                borderRadius: 2,
+                                mx: -1,
+                                px: 1,
+                                py: 0.75,
                                 transition: "background-color 0.15s",
-                                "&:hover": { bgcolor: "action.hover" },
+                                "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.06) },
                               }}
                             >
                               {excerptContent}
@@ -444,16 +558,39 @@ export default function SmartSearchPoc() {
       )}
 
       {hasSearched && !searching && !searchError && sources.length === 0 && (
-        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", py: 6 }}>
-          <SearchOffIcon sx={{ fontSize: 48, color: "text.secondary", mb: 1 }} />
-          <Typography variant="subtitle1" fontWeight={600}>
+        <Card
+          variant="outlined"
+          sx={{
+            mt: 5,
+            py: 7,
+            borderRadius: 4,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 1.5,
+          }}
+        >
+          <Box
+            sx={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: alpha(theme.palette.text.secondary, 0.1),
+            }}
+          >
+            <SearchOffRoundedIcon sx={{ color: "text.secondary", fontSize: 30 }} />
+          </Box>
+          <Typography variant="h6" fontWeight={600}>
             No results found
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 380, textAlign: "center", fontSize: "0.9rem" }}>
             We couldn't find anything matching your search. Try different words, or add a document about this topic
             first.
           </Typography>
-        </Box>
+        </Card>
       )}
     </Box>
   );
