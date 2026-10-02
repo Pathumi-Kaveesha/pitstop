@@ -446,7 +446,7 @@ export default function SmartSearchPoc() {
               const hasJumpableLocation = group.excerpts.some(({ source }) => Boolean(source.nativeLink));
               const isReferenceOnly = group.excerpts[0]?.source.fileExtension === "reference" && !hasJumpableLocation;
               const isVideo = group.excerpts[0]?.source.unitLabel === "Moment";
-              const TypeIcon = resultTypeIcon(group.excerpts[0]?.source);
+              const TypeIcon = resultTypeIcon(group.excerpts[0].source);
               return (
                 <Box
                   key={group.documentId || group.title}
