@@ -22,8 +22,10 @@ section (no page numbers in .docx), XLSX -> sheet tab.
 """
 
 import io
+import re
 import zipfile
 from dataclasses import dataclass
+from typing import Optional
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -47,12 +49,15 @@ UNIT_LABELS = {
     "docx": "Section",
     "xlsx": "Sheet",
     "webpage": "Section",
+    "transcript": "Moment",
 }
 
 @dataclass
 class Chunk:
     text: str
     page: int
+    # (seconds, text) for every transcript moment this chunk spans, not just its first one
+    moments: Optional[list[tuple[str, str]]] = None
 
 
 def _extract_pdf(file_bytes: bytes) -> list[str]:
@@ -141,6 +146,58 @@ def _extract_docx(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
     return sections, headings
 
 
+_TIMESTAMP_LINE = re.compile(r"^\d{1,2}(:\d{2}){1,2}$")
+
+
+def _timestamp_to_seconds(text: str) -> int | None:
+    """None for a line that matches the shape of a timestamp but isn't a valid one, e.g. 1:65."""
+    parts = [int(part) for part in text.split(":")]
+    if any(part >= 60 for part in parts[1:]):
+        return None
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + part
+    return seconds
+
+
+def _extract_transcript(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
+    """One string per timestamp-delimited segment, plus each segment's start time in seconds."""
+    _reject_oversized_ooxml(file_bytes)
+    document = Document(io.BytesIO(file_bytes))
+
+    lines: list[str] = []
+    for block in _iter_docx_blocks(document):
+        if isinstance(block, Table):
+            lines.extend(
+                ", ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                for row in block.rows
+            )
+            continue
+        lines.extend(line.strip() for line in block.text.split("\n"))
+
+    segments: list[str] = []
+    timestamps: list[str | None] = []
+    current: list[str] = []
+    current_timestamp: str | None = None
+    for line in lines:
+        if not line:
+            continue
+        seconds = _timestamp_to_seconds(line) if _TIMESTAMP_LINE.match(line) else None
+        if seconds is not None:
+            if current:
+                segments.append("\n".join(current))
+                timestamps.append(current_timestamp)
+                current = []
+            current_timestamp = str(seconds)
+            continue
+        current.append(line)
+
+    if current:
+        segments.append("\n".join(current))
+        timestamps.append(current_timestamp)
+    return segments, timestamps
+
+
 def _extract_xlsx(file_bytes: bytes) -> list[str]:
     """One string per sheet, rows written as "Header: value" pairs."""
     _reject_oversized_ooxml(file_bytes)
@@ -182,13 +239,16 @@ _EXTRACTORS = {
     "docx": _extract_docx,
     "xlsx": _extract_xlsx,
     "webpage": _extract_webpage,
+    "transcript": _extract_transcript,
 }
+
+_EXTRACTORS_WITH_UNIT_METADATA = {"docx", "transcript"}
 
 
 def extract_units(file_bytes: bytes, extension: str) -> tuple[list[str], list[str | None]]:
-    """One string per piece of the document, plus each piece's heading (docx only)."""
+    """One string per piece of the document, plus each piece's heading (docx) or start time (transcript)."""
     result = _EXTRACTORS[extension](file_bytes)
-    if extension == "docx":
+    if extension in _EXTRACTORS_WITH_UNIT_METADATA:
         return result
     return result, [None] * len(result)
 
@@ -228,7 +288,15 @@ def chunk_document(file_bytes: bytes, extension: str) -> tuple[list[Chunk], list
 
         if len(text.strip()) < MIN_CHUNK_LENGTH:
             continue
-        chunks.append(Chunk(text=text, page=find_page_number(offset, unit_start_offsets)))
+        moments = None
+        if extension == "transcript" and offset != -1:
+            end = offset + len(text)
+            moments = [
+                (unit_headings[i], unit_texts[i])
+                for i, start in enumerate(unit_start_offsets)
+                if offset <= start < end and unit_headings[i] is not None
+            ] or None
+        chunks.append(Chunk(text=text, page=find_page_number(offset, unit_start_offsets), moments=moments))
     return chunks, unit_headings
 
 

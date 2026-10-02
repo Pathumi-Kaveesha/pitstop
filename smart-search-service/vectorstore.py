@@ -17,6 +17,8 @@
 """Talks to Pinecone's REST API: stores chunk vectors, searches them, and
 applies the score-based filtering that decides what counts as a real match."""
 
+import json
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -34,7 +36,42 @@ from config import (
     UPSERT_MAX_RETRIES,
     UPSERT_RETRY_DELAY_SECONDS,
 )
+from deep_links import with_timestamp
 from http_session import make_session
+
+# Common words a question is full of but that say nothing about which moment actually matters
+_STOP_WORDS = {
+    "this", "that", "with", "from", "have", "does", "what", "when", "where", "which", "about",
+    "there", "would", "could", "should", "while", "these", "those", "into", "over", "then", "than",
+}
+
+
+def _query_words(query: str) -> list[str]:
+    return [w for w in re.findall(r"[a-z0-9]+", query.lower()) if len(w) > 3 and w not in _STOP_WORDS]
+
+
+def _score_text(text: str, query_words: list[str]) -> int:
+    lower = text.lower()
+    return sum(1 for word in query_words if re.search(rf"\b{re.escape(word)}\b", lower))
+
+
+def _best_native_link(metadata: dict, drive_link: str, query_words: list[str]) -> Optional[str]:
+    """Picks whichever of the chunk's moments actually matches the query, not just the first one."""
+    fallback = metadata.get("nativeLink") or None
+    raw_moments = metadata.get("moments")
+    if not raw_moments or not query_words:
+        return fallback
+    try:
+        moments = json.loads(raw_moments)
+    except (TypeError, ValueError):
+        return fallback
+    if not moments:
+        return fallback
+
+    best_seconds, best_text = max(moments, key=lambda m: _score_text(m[1], query_words))
+    if _score_text(best_text, query_words) == 0 or not drive_link:
+        return fallback
+    return with_timestamp(drive_link, best_seconds)
 
 _session = make_session()
 _delete_session = make_session(retry_read=False)
@@ -76,6 +113,7 @@ def upsert_chunks(
     source: str,
     drive_link: str,
     native_links: list[Optional[str]],
+    moments: Optional[list[Optional[list[tuple[str, str]]]]] = None,
 ) -> None:
     """Stores each (vector, text, metadata) triple in Pinecone."""
     if len({len(vectors), len(texts), len(pages), len(native_links)}) > 1:
@@ -83,6 +121,7 @@ def upsert_chunks(
             f"Vector/text/page/native_link length mismatch: vectors={len(vectors)}, "
             f"texts={len(texts)}, pages={len(pages)}, native_links={len(native_links)}"
         )
+    chunk_moments = moments or [None] * len(vectors)
     records = [
         {
             "id": f"{document_id}#{index}",
@@ -98,10 +137,11 @@ def upsert_chunks(
                 "driveLink": drive_link,
                 # Pinecone can't store null, so "" means no link.
                 "nativeLink": native_link or "",
+                "moments": json.dumps(entry_moments) if entry_moments else "",
             },
         }
-        for index, (vector, text, page, native_link) in enumerate(
-            zip(vectors, texts, pages, native_links)
+        for index, (vector, text, page, native_link, entry_moments) in enumerate(
+            zip(vectors, texts, pages, native_links, chunk_moments)
         )
     ]
     last_error: Exception | None = None
@@ -128,10 +168,13 @@ def upsert_chunks(
     raise RuntimeError(f"Failed to store chunks in Pinecone: {last_error}") from last_error
 
 
-def search(query_vector: list[float], top_results_count: int, pool_multiplier: int) -> list[SearchResult]:
+def search(
+    query_vector: list[float], query_text: str, top_results_count: int, pool_multiplier: int
+) -> list[SearchResult]:
     """Pulls a wider pool of raw matches than requested, then narrows it
     down to the strongest ones, allowing up to MAX_CHUNKS_PER_DOCUMENT
     from the same document."""
+    query_words = _query_words(query_text)
     raw_pool_size = top_results_count * pool_multiplier
     response = _session.post(
         f"{PINECONE_SERVICE_URL}/query",
@@ -173,7 +216,7 @@ def search(query_vector: list[float], top_results_count: int, pool_multiplier: i
                 file_extension=metadata.get("fileExtension", "pdf"),
                 source=metadata.get("source", "upload"),
                 drive_link=metadata.get("driveLink", ""),
-                native_link=metadata.get("nativeLink") or None,
+                native_link=_best_native_link(metadata, metadata.get("driveLink", ""), query_words),
             )
         )
         if len(results) >= top_results_count:

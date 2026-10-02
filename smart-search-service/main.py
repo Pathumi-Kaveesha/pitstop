@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 
 from chunking import Chunk, UNIT_LABELS, chunk_document
-from deep_links import build_native_links
+from deep_links import build_native_links, build_video_timestamp_links
 from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
 from web_page import fetch_web_page_text, is_web_page_link
 from config import (
@@ -125,7 +125,7 @@ def _find_results(user_query: str, limit: int) -> list[SearchResult]:
         if cached and now - cached[0] < SEARCH_CACHE_TTL_SECONDS:
             return cached[1]
 
-    results = search(embed_text(format_query_text(user_query)), limit, RAW_MATCH_POOL_MULTIPLIER)
+    results = search(embed_text(format_query_text(user_query)), user_query, limit, RAW_MATCH_POOL_MULTIPLIER)
 
     with _search_cache_lock:
         _search_cache[key] = (now, results)
@@ -170,7 +170,9 @@ def _index_drive_file_in_background(
         file_bytes = download_drive_file(info)
         logger.info("Downloaded '%s' (%.1f MB), chunking", title, len(file_bytes) / 1_048_576)
 
-        chunks, unit_headings = chunk_document(file_bytes, info.extension)
+        # A stand-in doc is read for timestamps instead of headings - only docx actually has them
+        extraction_extension = "transcript" if display_link and info.extension == "docx" else info.extension
+        chunks, unit_headings = chunk_document(file_bytes, extraction_extension)
         if not chunks:
             logger.warning(
                 "Nothing worth indexing in '%s' (id %s) - too short or unreadable", title, document_id
@@ -182,19 +184,19 @@ def _index_drive_file_in_background(
             logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
             return
 
-        # No deep links into a stand-in document - it's never the thing to open
         if display_link:
-            chunk_native_links = [None] * len(chunks)
+            # Also called for LMS/Salesforce transcripts, which just have no timestamps to find
+            unit_native_links = build_video_timestamp_links(display_link, unit_headings)
         else:
             unit_native_links = build_native_links(info, unit_headings)
-            chunk_native_links = [
-                unit_native_links[c.page - 1] if c.page - 1 < len(unit_native_links) else None
-                for c in chunks
-            ]
+        chunk_native_links = [
+            unit_native_links[c.page - 1] if c.page - 1 < len(unit_native_links) else None
+            for c in chunks
+        ]
 
         _embed_and_store(
             chunks, title, document_id, job_started_at,
-            UNIT_LABELS[info.extension], "reference" if display_link else info.extension,
+            UNIT_LABELS[extraction_extension], "reference" if display_link else info.extension,
             "drive", display_link or drive_link, chunk_native_links,
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to return an error to
@@ -217,6 +219,7 @@ def _embed_and_store(
     upsert_chunks(
         vectors, [c.text for c in chunks], title, [c.page for c in chunks],
         document_id, unit_label, file_extension, source, link, native_links,
+        [c.moments for c in chunks],
     )
 
     # Delete may have landed mid-upsert - undo the write if so.

@@ -63,6 +63,24 @@ const isHttpsUrl = (url: string): boolean => {
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// The timestamp is already in the link's query string or hash (?t=90 or #t=90s) - this just reads it back out
+const parseVideoTimestampSeconds = (nativeLink: string): number | null => {
+  try {
+    const url = new URL(nativeLink);
+    const seconds = parseInt(url.searchParams.get("t") ?? url.hash.match(/t=(\d+)/)?.[1] ?? "", 10);
+    return Number.isFinite(seconds) ? seconds : null;
+  } catch {
+    return null;
+  }
+};
+
+const formatVideoTimestamp = (totalSeconds: number): string => {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return hours > 0 ? `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+};
+
 // Common words a question is full of but that say nothing about which line actually matters
 const STOP_WORDS = new Set([
   "this", "that", "with", "from", "have", "does", "what", "when", "where", "which", "about",
@@ -322,8 +340,10 @@ export default function SmartSearchPoc() {
             {groupedSources.map((group) => {
               const canPreview = Boolean(group.documentId);
               const content = contentsById.get(group.documentId);
-              // A reference result's matched text is never shown - the card alone is enough
-              const isReferenceOnly = group.excerpts[0]?.source.fileExtension === "reference";
+              // A reference result's matched text is hidden - unless there's a timestamp to jump to
+              const hasJumpableLocation = group.excerpts.some(({ source }) => Boolean(source.nativeLink));
+              const isReferenceOnly = group.excerpts[0]?.source.fileExtension === "reference" && !hasJumpableLocation;
+              const isVideo = group.excerpts[0]?.source.unitLabel === "Moment";
               return (
                 <Box
                   key={group.documentId || group.title}
@@ -357,12 +377,15 @@ export default function SmartSearchPoc() {
                         color="text.secondary"
                         sx={{ display: "block", mb: 1 }}
                       >
-                        Matched passages
+                        {isVideo ? "Relevant moments" : "Matched passages"}
                       </Typography>
                     )}
 
                     {!isReferenceOnly && group.excerpts.map(({ source, originalIndex }, excerptPosition) => {
-                      const location = source.page !== null ? `${source.unitLabel || "Page"} ${source.page}` : null;
+                      const videoTimestampSeconds = isVideo ? parseVideoTimestampSeconds(source.nativeLink) : null;
+                      const location = videoTimestampSeconds !== null
+                        ? formatVideoTimestamp(videoTimestampSeconds)
+                        : source.page !== null ? `${source.unitLabel || "Page"} ${source.page}` : null;
                       const canJumpToLocation =
                         location !== null && (Boolean(source.nativeLink) || source.fileExtension === "pdf");
                       const excerptContent = (
