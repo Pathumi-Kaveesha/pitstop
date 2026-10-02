@@ -18,7 +18,7 @@
 
 import logging
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from drive_constants import DOCS_API_BASE, EXPORT_FORMATS, SHEETS_API_BASE, SLIDES_API_BASE
 from google_drive import DriveFileInfo, _request_with_retry
@@ -28,14 +28,21 @@ logger = logging.getLogger("smart-search-service")
 _DRIVE_HOSTS = {"drive.google.com"}
 
 
+def _with_timestamp(video_link: str, seconds: str) -> str:
+    """Sets the link's t query parameter, replacing any existing one and keeping the fragment."""
+    parts = urlsplit(video_link)
+    query = [(key, value) for key, value in parse_qsl(parts.query) if key != "t"]
+    query.append(("t", seconds))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
 def build_video_timestamp_links(video_link: str, unit_timestamps: list[Optional[str]]) -> list[Optional[str]]:
     """One Drive link per segment that starts the video at that moment, None where it can't."""
     host = (urlparse(video_link).hostname or "").lower()
     if host not in _DRIVE_HOSTS:
         return [None] * len(unit_timestamps)
 
-    separator = "&" if "?" in video_link else "?"
-    return [f"{video_link}{separator}t={seconds}" if seconds else None for seconds in unit_timestamps]
+    return [_with_timestamp(video_link, seconds) if seconds else None for seconds in unit_timestamps]
 
 
 def _get_slide_ids(presentation_id: str) -> list[str]:
