@@ -323,21 +323,23 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
 # deleting a content never waits on it.
 #
 # + contentId - The content that was deleted
-public isolated function deleteContentFromSmartSearch(int contentId) {
+# + deletedBy - Email of the admin who deleted it, for the audit log
+public isolated function deleteContentFromSmartSearch(int contentId, string deletedBy) {
     error? clearError = database:clearSmartSearchIndexFailure(contentId);
     if clearError is error {
         log:printWarn("Smart Search: could not clear a deleted content's index failure", clearError,
                 contentId = contentId);
     }
 
-    _ = clearIndexedEntries(contentId);
+    _ = clearIndexedEntries(contentId, deletedBy);
 }
 
 # Removes a content's entries from the search index.
 #
 # + contentId - The content whose entries to remove
+# + deletedBy - Email of the admin who deleted the content, when this is a real deletion
 # + return - False if the entries could not be removed
-isolated function clearIndexedEntries(int contentId) returns boolean {
+isolated function clearIndexedEntries(int contentId, string? deletedBy = ()) returns boolean {
     http:Response|http:ClientError response =
         smartSearchServiceClient->delete(string `/documents/${contentId}`);
     if response is http:ClientError {
@@ -347,7 +349,11 @@ isolated function clearIndexedEntries(int contentId) returns boolean {
     }
 
     if response.statusCode >= 200 && response.statusCode < 300 {
-        log:printInfo(string `Smart Search: cleared any indexed entries for content ${contentId}`);
+        if deletedBy is string {
+            log:printInfo(string `Smart Search: cleared any indexed entries for content ${contentId}`, deletedBy = deletedBy);
+        } else {
+            log:printInfo(string `Smart Search: cleared any indexed entries for content ${contentId}`);
+        }
         return true;
     }
 
