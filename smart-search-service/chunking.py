@@ -35,6 +35,8 @@ from openpyxl import load_workbook
 from pptx import Presentation
 from pypdf import PdfReader
 
+from typing import Optional
+
 from config import (
     MAX_CHUNK_OVERLAP,
     MAX_CHUNK_SIZE,
@@ -55,6 +57,8 @@ UNIT_LABELS = {
 class Chunk:
     text: str
     page: int
+    # (seconds, text) for every transcript moment this chunk spans, not just its first one
+    moments: Optional[list[tuple[str, str]]] = None
 
 
 def _extract_pdf(file_bytes: bytes) -> list[str]:
@@ -285,7 +289,15 @@ def chunk_document(file_bytes: bytes, extension: str) -> tuple[list[Chunk], list
 
         if len(text.strip()) < MIN_CHUNK_LENGTH:
             continue
-        chunks.append(Chunk(text=text, page=find_page_number(offset, unit_start_offsets)))
+        moments = None
+        if extension == "transcript" and offset != -1:
+            end = offset + len(text)
+            moments = [
+                (unit_headings[i], unit_texts[i])
+                for i, start in enumerate(unit_start_offsets)
+                if offset <= start < end and unit_headings[i] is not None
+            ] or None
+        chunks.append(Chunk(text=text, page=find_page_number(offset, unit_start_offsets), moments=moments))
     return chunks, unit_headings
 
 

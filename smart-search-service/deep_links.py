@@ -28,7 +28,7 @@ logger = logging.getLogger("smart-search-service")
 _DRIVE_HOSTS = {"drive.google.com"}
 
 
-def _with_timestamp(video_link: str, seconds: str) -> str:
+def with_timestamp(video_link: str, seconds: str) -> str:
     """Sets the link's t query parameter, replacing any existing one and keeping the fragment."""
     parts = urlsplit(video_link)
     query = [(key, value) for key, value in parse_qsl(parts.query) if key != "t"]
@@ -42,7 +42,7 @@ def build_video_timestamp_links(video_link: str, unit_timestamps: list[Optional[
     if host not in _DRIVE_HOSTS:
         return [None] * len(unit_timestamps)
 
-    return [_with_timestamp(video_link, seconds) if seconds else None for seconds in unit_timestamps]
+    return [with_timestamp(video_link, seconds) if seconds else None for seconds in unit_timestamps]
 
 
 def _get_slide_ids(presentation_id: str) -> list[str]:

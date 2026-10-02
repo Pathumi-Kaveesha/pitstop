@@ -125,7 +125,7 @@ def _find_results(user_query: str, limit: int) -> list[SearchResult]:
         if cached and now - cached[0] < SEARCH_CACHE_TTL_SECONDS:
             return cached[1]
 
-    results = search(embed_text(format_query_text(user_query)), limit, RAW_MATCH_POOL_MULTIPLIER)
+    results = search(embed_text(format_query_text(user_query)), user_query, limit, RAW_MATCH_POOL_MULTIPLIER)
 
     with _search_cache_lock:
         _search_cache[key] = (now, results)
@@ -219,6 +219,7 @@ def _embed_and_store(
     upsert_chunks(
         vectors, [c.text for c in chunks], title, [c.page for c in chunks],
         document_id, unit_label, file_extension, source, link, native_links,
+        [c.moments for c in chunks],
     )
 
     # Delete may have landed mid-upsert - undo the write if so.
