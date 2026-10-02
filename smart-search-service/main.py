@@ -170,8 +170,8 @@ def _index_drive_file_in_background(
         file_bytes = download_drive_file(info)
         logger.info("Downloaded '%s' (%.1f MB), chunking", title, len(file_bytes) / 1_048_576)
 
-        # A stand-in document is read for timestamps, not headings - none found behaves like a plain docx
-        extraction_extension = "transcript" if display_link else info.extension
+        # A stand-in doc is read for timestamps instead of headings - only docx actually has them
+        extraction_extension = "transcript" if display_link and info.extension == "docx" else info.extension
         chunks, unit_headings = chunk_document(file_bytes, extraction_extension)
         if not chunks:
             logger.warning(
