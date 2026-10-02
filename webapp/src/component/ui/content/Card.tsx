@@ -729,6 +729,7 @@ const ComponentCard = ({
           src={embedUrl}
           width={`${PREVIEW_W}px`}
           height={`${PREVIEW_H}px`}
+          referrerPolicy="no-referrer"
           sandbox="allow-same-origin allow-scripts allow-presentation allow-popups"
           style={{
             ...(isGoogleDrivePdf

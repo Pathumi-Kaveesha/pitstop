@@ -471,6 +471,7 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
           ref={iframeRef}
           title="Content Preview"
           src={finalIframeSrc}
+          referrerPolicy="no-referrer"
           sandbox="allow-same-origin allow-scripts allow-presentation allow-forms"
           style={{
             border: "none",
