@@ -109,6 +109,21 @@ def _is_current_generation(document_id: str, generation: int) -> bool:
         return _document_generations.get(document_id, 0) == generation
 
 
+# document_id -> lock serializing its actual writes/deletes, so two jobs for the same document can never have their remote mutations interleave
+_document_mutation_locks: dict[str, threading.Lock] = {}
+_document_mutation_locks_meta_lock = threading.Lock()
+
+
+def _document_mutation_lock(document_id: str) -> threading.Lock:
+    """The lock a document's writes/deletes must hold - created once per id, reused after that."""
+    with _document_mutation_locks_meta_lock:
+        lock = _document_mutation_locks.get(document_id)
+        if lock is None:
+            lock = threading.Lock()
+            _document_mutation_locks[document_id] = lock
+        return lock
+
+
 # document_id -> (when it failed, reason)
 _index_errors: dict[str, tuple[float, str]] = {}
 _index_errors_lock = threading.Lock()
@@ -234,36 +249,39 @@ def _embed_and_store(
     logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
     vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
 
-    # Embedding is slow - a newer job could easily have already finished and written fresher chunks
-    if not _is_current_generation(document_id, generation):
-        logger.info("Content %s was re-indexed again while this job was embedding - discarding this attempt.", document_id)
-        return
+    # Everything below actually touches Pinecone - held for one document at a time, so two jobs'
+    # writes/deletes for it can never interleave, only the generation checks they gate on could
+    with _document_mutation_lock(document_id):
+        # Embedding is slow - a newer job could easily have already finished and written fresher chunks
+        if not _is_current_generation(document_id, generation):
+            logger.info("Content %s was re-indexed again while this job was embedding - discarding this attempt.", document_id)
+            return
 
-    # Chunk ids are derived from the document id, so this overwrites a
-    # previous version in place - the old copy stays searchable if the
-    # write fails, instead of being deleted up front.
-    upsert_chunks(
-        vectors, [c.text for c in chunks], title, [c.page for c in chunks],
-        document_id, unit_label, file_extension, source, link, native_links,
-        [c.moments for c in chunks],
-    )
+        # Chunk ids are derived from the document id, so this overwrites a
+        # previous version in place - the old copy stays searchable if the
+        # write fails, instead of being deleted up front.
+        upsert_chunks(
+            vectors, [c.text for c in chunks], title, [c.page for c in chunks],
+            document_id, unit_label, file_extension, source, link, native_links,
+            [c.moments for c in chunks],
+        )
 
-    # Delete may have landed mid-upsert - undo the write if so.
-    if _is_tombstoned(document_id, since=job_started_at):
-        logger.info("Content %s was deleted while indexing was writing - cleaning up.", document_id)
-        delete_by_document_id(document_id)
+        # Delete may have landed mid-upsert - undo the write if so.
+        if _is_tombstoned(document_id, since=job_started_at):
+            logger.info("Content %s was deleted while indexing was writing - cleaning up.", document_id)
+            delete_by_document_id(document_id)
+            _clear_search_cache()
+            return
+
+        # A newer job may have already written its own chunks - don't clean up based on this one's count
+        if not _is_current_generation(document_id, generation):
+            logger.info("Content %s was re-indexed again while this job was writing - leaving the newer version in place.", document_id)
+            return
+
+        # Only once the new version is safely stored.
+        delete_stale_chunks(document_id, len(chunks))
         _clear_search_cache()
-        return
-
-    # A newer job may have already written its own chunks - don't clean up based on this one's count
-    if not _is_current_generation(document_id, generation):
-        logger.info("Content %s was re-indexed again while this job was writing - leaving the newer version in place.", document_id)
-        return
-
-    # Only once the new version is safely stored.
-    delete_stale_chunks(document_id, len(chunks))
-    _clear_search_cache()
-    logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
+        logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
 
 
 def _index_webpage_in_background(
@@ -385,20 +403,23 @@ def delete_document_endpoint(document_id: str) -> dict:
     _tombstone(document_id)
     _bump_generation(document_id)
 
-    try:
-        existed = document_exists(document_id)
-    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
-        logger.exception("Failed to check document %s before deleting", document_id)
-        raise HTTPException(status_code=500, detail=f"Error while deleting document: {error}") from error
+    # Waits for any in-flight indexing job's own write to finish first, so this can never
+    # delete chunks that job is still in the middle of writing.
+    with _document_mutation_lock(document_id):
+        try:
+            existed = document_exists(document_id)
+        except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+            logger.exception("Failed to check document %s before deleting", document_id)
+            raise HTTPException(status_code=500, detail=f"Error while deleting document: {error}") from error
 
-    if not existed:
-        raise HTTPException(status_code=404, detail=f"No indexed chunks found for document {document_id}.")
+        if not existed:
+            raise HTTPException(status_code=404, detail=f"No indexed chunks found for document {document_id}.")
 
-    try:
-        delete_by_document_id(document_id)
-    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
-        logger.exception("Failed to delete document %s", document_id)
-        raise HTTPException(status_code=500, detail=f"Error while deleting document: {error}") from error
+        try:
+            delete_by_document_id(document_id)
+        except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+            logger.exception("Failed to delete document %s", document_id)
+            raise HTTPException(status_code=500, detail=f"Error while deleting document: {error}") from error
 
     _clear_search_cache()
     logger.info("Removed indexed chunks for document %s", document_id)
