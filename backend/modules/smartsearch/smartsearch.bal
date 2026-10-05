@@ -15,6 +15,7 @@
 // under the License.
 
 import pitstop.authorization;
+import pitstop.constants;
 import pitstop.database;
 import pitstop.types;
 
@@ -95,6 +96,34 @@ public isolated function isWithinDownloadLimit(http:RequestContext ctx) returns 
     }
 }
 
+// User email -> [window start in seconds, indexing requests in that window]
+isolated map<[int, int]> ingestWindows = {};
+
+# Counts one indexing-triggering save for the caller and says whether they are still within the limit.
+#
+# + ctx - Request object
+# + return - False once the caller has used up this minute's indexing requests
+public isolated function isIngestAllowed(http:RequestContext ctx) returns boolean {
+    string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+    if userEmail is error {
+        return false;
+    }
+    int now = time:utcNow()[0];
+
+    lock {
+        [int, int]? window = ingestWindows[userEmail];
+        if window is () || now - window[0] >= INGEST_WINDOW_SECONDS {
+            ingestWindows[userEmail] = [now, 1];
+            return true;
+        }
+        if window[1] >= MAX_INGESTS_PER_USER {
+            return false;
+        }
+        ingestWindows[userEmail] = [window[0], window[1] + 1];
+        return true;
+    }
+}
+
 // "content:<id>" or "user:<email>" -> [window start in seconds, retries in that window]
 isolated map<[int, int]> retryState = {};
 
@@ -133,6 +162,16 @@ public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) 
             return false;
         }
 
+    }
+
+    // Only a retry that's actually allowed uses up a shared indexing slot
+    if !isIngestAllowed(ctx) {
+        return false;
+    }
+
+    lock {
+        [int, int]? contentWindow = retryState[contentKey];
+        [int, int]? userWindow = retryState[userKey];
         retryState[contentKey] = contentWindow is [int, int] && now - contentWindow[0] < RETRY_WINDOW_SECONDS
                 ? [contentWindow[0], contentWindow[1] + 1]
                 : [now, 1];
@@ -275,6 +314,13 @@ isolated function recordIndexFailure(int contentId, string reason) {
     if failureError is error {
         log:printWarn("Smart Search: could not record an index failure", failureError, contentId = contentId);
     }
+}
+
+# Records that a re-index was skipped because of the caller's save limit, so an admin can retry it.
+#
+# + contentId - The content whose re-index was skipped
+public isolated function deferReindex(int contentId) {
+    recordIndexFailure(contentId, constants:SMART_SEARCH_DEFERRED_REINDEX);
 }
 
 # Indexes a content item. Launched with `start` so the caller never waits on it.
@@ -490,6 +536,10 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
         if !clearIndexedEntries(contentId) {
             return error("Could not clear the previous version of this content");
         }
+        error? clearError = database:clearSmartSearchIndexFailure(contentId);
+        if clearError is error {
+            log:printWarn("Smart Search: could not clear index failure before a retry", clearError, contentId = contentId);
+        }
         indexContentForSmartSearch(contentId, link, info.description,
                 displayLinkFor(info.contentType, info.contentSubtype, info.contentLink));
         return;
@@ -539,6 +589,10 @@ public isolated function listUnindexedContent() returns database:SmartSearchInde
     database:SmartSearchIndexFailure[] knownFailures = check database:getSmartSearchIndexFailures();
     boolean reachable = true;
     foreach database:SmartSearchIndexFailure failure in knownFailures {
+        // Old version is still indexed, so a status check would wrongly clear this marker
+        if failure.errorMessage == constants:SMART_SEARCH_DEFERRED_REINDEX {
+            continue;
+        }
         reachable = reconcileIndexStatus(failure.contentId);
         if !reachable {
             break;
