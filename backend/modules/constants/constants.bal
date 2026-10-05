@@ -25,7 +25,8 @@ public const CHECK_SECTION_EXISTS_ERROR = "Error while checking whether the give
 public const GET_CONTENTS_ERROR = "Error while fetching contents of given section.";
 public const DELETE_CONTENT_ERROR = "Error while deleting the content.";
 public const SMART_SEARCH_ERROR = "Error while searching.";
-public const SMART_SEARCH_DEFERRED_REINDEX = "Too many saves right now - please retry this content in a minute.";
+// Stored as-is on content rows and matched by text - changing it leaves existing entries unrecognised
+public const SMART_SEARCH_DEFERRED_REINDEX ="Too many saves right now - please retry this content in a minute.";
 public const SMART_SEARCH_INGEST_LIMIT = "Too many saves that re-index content right now. Please try again in a minute.";
 public const UPDATE_ROUTE_ERROR = "Error while updating route.";
 public const GET_PAGE_DATA_ERROR = "Error while fetching page data.";
