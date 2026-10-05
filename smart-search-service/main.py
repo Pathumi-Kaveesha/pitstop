@@ -90,8 +90,7 @@ def _is_tombstoned(document_id: str, since: float) -> bool:
     return deleted_at is not None and deleted_at >= since
 
 
-# document_id -> generation number - bumped each time an index or delete job starts, so an
-# older job can tell a newer one has superseded it and back off instead of overwriting it.
+# document_id -> generation number, bumped when an index or delete job starts, so an older job can tell it's been superseded
 _document_generations: dict[str, int] = {}
 _document_generations_lock = threading.Lock()
 
@@ -175,16 +174,17 @@ def health() -> dict:
 
 
 def _index_drive_file_in_background(
-    info: DriveFileInfo, title: str, document_id: str, drive_link: str, display_link: Optional[str] = None
+    info: DriveFileInfo, title: str, document_id: str, drive_link: str, job_started_at: float, generation: int,
+    display_link: Optional[str] = None
 ) -> None:
     """Downloads, chunks, embeds and stores one Drive document, run after
     the response has already gone back. Never raises - failures go to the
     log, since there's no caller left to report them to.
 
+    job_started_at/generation are claimed by the caller at accept time, not in here, so a queued task can't miss a delete that lands before it actually starts.
+
     display_link is set when drive_link is only a stand-in document, read for its text but never itself shown."""
     logger.info("Started indexing '%s' (id %s, %s) - downloading", title, document_id, info.extension)
-    job_started_at = time.time()
-    generation = _bump_generation(document_id)
     _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
 
     try:
@@ -234,8 +234,7 @@ def _embed_and_store(
     logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
     vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
 
-    # Embedding is the slow step - a newer job for the same document could easily have
-    # finished in the meantime. Writing now would overwrite its fresher chunks with stale ones.
+    # Embedding is slow - a newer job could easily have already finished and written fresher chunks
     if not _is_current_generation(document_id, generation):
         logger.info("Content %s was re-indexed again while this job was embedding - discarding this attempt.", document_id)
         return
@@ -256,8 +255,7 @@ def _embed_and_store(
         _clear_search_cache()
         return
 
-    # A newer job may have raced this one and already written its own chunks -
-    # leave them alone rather than cleaning up based on this older job's chunk count.
+    # A newer job may have already written its own chunks - don't clean up based on this one's count
     if not _is_current_generation(document_id, generation):
         logger.info("Content %s was re-indexed again while this job was writing - leaving the newer version in place.", document_id)
         return
@@ -268,13 +266,15 @@ def _embed_and_store(
     logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
 
 
-def _index_webpage_in_background(title: str, document_id: str, url: str, text: str) -> None:
+def _index_webpage_in_background(
+    title: str, document_id: str, url: str, text: str, job_started_at: float, generation: int
+) -> None:
     """Chunks, embeds and stores one webpage's already-extracted text, run after the response
     has already gone back. Never raises - failures go to the log, since there's no caller left
-    to report them to."""
+    to report them to.
+
+    job_started_at/generation are claimed by the caller at accept time - see the same note on _index_drive_file_in_background."""
     logger.info("Started indexing '%s' (id %s, webpage) - chunking", title, document_id)
-    job_started_at = time.time()
-    generation = _bump_generation(document_id)
     _clear_index_error(document_id)
 
     try:
@@ -332,7 +332,12 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
         title = body.title.strip() if body.title and body.title.strip() else page.title
         document_id = body.contentId or hashlib.sha256(body.driveLink.encode()).hexdigest()[:16]
 
-        background_tasks.add_task(_index_webpage_in_background, title, document_id, body.driveLink, page.text)
+        # Claimed now, not once the task actually starts, or a delete queued behind it would go unnoticed
+        job_started_at = time.time()
+        generation = _bump_generation(document_id)
+        background_tasks.add_task(
+            _index_webpage_in_background, title, document_id, body.driveLink, page.text, job_started_at, generation
+        )
 
         return {"status": "indexing", "title": title, "documentId": document_id, "fileType": "webpage"}
 
@@ -353,8 +358,12 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     document_id = body.contentId if body.contentId else info.file_id
 
     _clear_index_error(document_id)
+    # Claimed now, not once the background task actually starts - see the note above.
+    job_started_at = time.time()
+    generation = _bump_generation(document_id)
     background_tasks.add_task(
-        _index_drive_file_in_background, info, title, document_id, body.driveLink, body.displayLink
+        _index_drive_file_in_background, info, title, document_id, body.driveLink, job_started_at, generation,
+        body.displayLink
     )
 
     return {
