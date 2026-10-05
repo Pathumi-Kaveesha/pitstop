@@ -90,6 +90,26 @@ def _is_tombstoned(document_id: str, since: float) -> bool:
     return deleted_at is not None and deleted_at >= since
 
 
+# document_id -> generation number - bumped each time an index or delete job starts, so an
+# older job can tell a newer one has superseded it and back off instead of overwriting it.
+_document_generations: dict[str, int] = {}
+_document_generations_lock = threading.Lock()
+
+
+def _bump_generation(document_id: str) -> int:
+    """Claims the next generation for a document - call once, right when a job for it starts."""
+    with _document_generations_lock:
+        next_generation = _document_generations.get(document_id, 0) + 1
+        _document_generations[document_id] = next_generation
+        return next_generation
+
+
+def _is_current_generation(document_id: str, generation: int) -> bool:
+    """Whether no newer job has started for this document since the caller claimed its generation."""
+    with _document_generations_lock:
+        return _document_generations.get(document_id, 0) == generation
+
+
 # document_id -> (when it failed, reason)
 _index_errors: dict[str, tuple[float, str]] = {}
 _index_errors_lock = threading.Lock()
@@ -164,6 +184,7 @@ def _index_drive_file_in_background(
     display_link is set when drive_link is only a stand-in document, read for its text but never itself shown."""
     logger.info("Started indexing '%s' (id %s, %s) - downloading", title, document_id, info.extension)
     job_started_at = time.time()
+    generation = _bump_generation(document_id)
     _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
 
     try:
@@ -195,7 +216,7 @@ def _index_drive_file_in_background(
         ]
 
         _embed_and_store(
-            chunks, title, document_id, job_started_at,
+            chunks, title, document_id, job_started_at, generation,
             UNIT_LABELS[extraction_extension], "reference" if display_link else info.extension,
             "drive", display_link or drive_link, chunk_native_links,
         )
@@ -205,13 +226,19 @@ def _index_drive_file_in_background(
 
 
 def _embed_and_store(
-    chunks: list[Chunk], title: str, document_id: str, job_started_at: float,
+    chunks: list[Chunk], title: str, document_id: str, job_started_at: float, generation: int,
     unit_label: str, file_extension: str, source: str, link: str, native_links: list[Optional[str]],
 ) -> None:
     """Shared tail of every background indexing job: embed, store, and clean up if the content
-    was deleted while this was running."""
+    was deleted, or re-indexed again by a newer job, while this was running."""
     logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
     vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
+
+    # Embedding is the slow step - a newer job for the same document could easily have
+    # finished in the meantime. Writing now would overwrite its fresher chunks with stale ones.
+    if not _is_current_generation(document_id, generation):
+        logger.info("Content %s was re-indexed again while this job was embedding - discarding this attempt.", document_id)
+        return
 
     # Chunk ids are derived from the document id, so this overwrites a
     # previous version in place - the old copy stays searchable if the
@@ -229,6 +256,12 @@ def _embed_and_store(
         _clear_search_cache()
         return
 
+    # A newer job may have raced this one and already written its own chunks -
+    # leave them alone rather than cleaning up based on this older job's chunk count.
+    if not _is_current_generation(document_id, generation):
+        logger.info("Content %s was re-indexed again while this job was writing - leaving the newer version in place.", document_id)
+        return
+
     # Only once the new version is safely stored.
     delete_stale_chunks(document_id, len(chunks))
     _clear_search_cache()
@@ -241,6 +274,7 @@ def _index_webpage_in_background(title: str, document_id: str, url: str, text: s
     to report them to."""
     logger.info("Started indexing '%s' (id %s, webpage) - chunking", title, document_id)
     job_started_at = time.time()
+    generation = _bump_generation(document_id)
     _clear_index_error(document_id)
 
     try:
@@ -255,7 +289,7 @@ def _index_webpage_in_background(title: str, document_id: str, url: str, text: s
             return
 
         _embed_and_store(
-            chunks, title, document_id, job_started_at,
+            chunks, title, document_id, job_started_at, generation,
             UNIT_LABELS["webpage"], "webpage", "web", url, [None] * len(chunks),
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to report an error to
@@ -340,6 +374,7 @@ def delete_document_endpoint(document_id: str) -> dict:
     background index for the same id discards its work instead of
     recreating what was just deleted. A never-indexed id gets a 404."""
     _tombstone(document_id)
+    _bump_generation(document_id)
 
     try:
         existed = document_exists(document_id)
