@@ -246,6 +246,11 @@ def _embed_and_store(
 ) -> None:
     """Shared tail of every background indexing job: embed, store, and clean up if the content
     was deleted, or re-indexed again by a newer job, while this was running."""
+    # Skip the billed embedding calls entirely if a newer job already superseded this one
+    if not _is_current_generation(document_id, generation):
+        logger.info("Content %s was re-indexed again before this job started embedding - discarding this attempt.", document_id)
+        return
+
     logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
     vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
 
