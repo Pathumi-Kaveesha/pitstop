@@ -516,10 +516,6 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
         if info is () {
             return http:NOT_FOUND;
         }
-        error? clearError = database:clearSmartSearchIndexFailure(contentId);
-        if clearError is error {
-            log:printWarn("Smart Search: could not clear index failure before a retry", clearError, contentId = contentId);
-        }
         string? link = indexingLinkFor(info.contentType, info.contentSubtype, info.contentLink, info.transcriptLink);
         // A retry only runs on content that's already flagged as failing, so the problem is real - record why
         if link is () {
@@ -532,6 +528,10 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
         }
         if !clearIndexedEntries(contentId) {
             return error("Could not clear the previous version of this content");
+        }
+        error? clearError = database:clearSmartSearchIndexFailure(contentId);
+        if clearError is error {
+            log:printWarn("Smart Search: could not clear index failure before a retry", clearError, contentId = contentId);
         }
         indexContentForSmartSearch(contentId, link, info.description,
                 displayLinkFor(info.contentType, info.contentSubtype, info.contentLink));
