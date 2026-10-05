@@ -278,11 +278,6 @@ def _embed_and_store(
             _clear_search_cache()
             return
 
-        # A newer job may have already written its own chunks - don't clean up based on this one's count
-        if not _is_current_generation(document_id, generation):
-            logger.info("Content %s was re-indexed again while this job was writing - leaving the newer version in place.", document_id)
-            return
-
         # Only once the new version is safely stored.
         delete_stale_chunks(document_id, len(chunks))
         _clear_search_cache()
