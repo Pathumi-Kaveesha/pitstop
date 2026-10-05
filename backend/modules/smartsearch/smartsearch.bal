@@ -15,6 +15,7 @@
 // under the License.
 
 import pitstop.authorization;
+import pitstop.constants;
 import pitstop.database;
 import pitstop.types;
 
@@ -312,7 +313,7 @@ isolated function recordIndexFailure(int contentId, string reason) {
 #
 # + contentId - The content whose re-index was skipped
 public isolated function deferReindex(int contentId) {
-    recordIndexFailure(contentId, "Too many saves right now - please retry this content in a minute.");
+    recordIndexFailure(contentId, constants:SMART_SEARCH_DEFERRED_REINDEX);
 }
 
 # Indexes a content item. Launched with `start` so the caller never waits on it.
@@ -515,6 +516,10 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
         if info is () {
             return http:NOT_FOUND;
         }
+        error? clearError = database:clearSmartSearchIndexFailure(contentId);
+        if clearError is error {
+            log:printWarn("Smart Search: could not clear index failure before a retry", clearError, contentId = contentId);
+        }
         string? link = indexingLinkFor(info.contentType, info.contentSubtype, info.contentLink, info.transcriptLink);
         // A retry only runs on content that's already flagged as failing, so the problem is real - record why
         if link is () {
@@ -577,6 +582,10 @@ public isolated function listUnindexedContent() returns database:SmartSearchInde
     database:SmartSearchIndexFailure[] knownFailures = check database:getSmartSearchIndexFailures();
     boolean reachable = true;
     foreach database:SmartSearchIndexFailure failure in knownFailures {
+        // Old version is still indexed, so a status check would wrongly clear this marker
+        if failure.errorMessage == constants:SMART_SEARCH_DEFERRED_REINDEX {
+            continue;
+        }
         reachable = reconcileIndexStatus(failure.contentId);
         if !reachable {
             break;

@@ -399,7 +399,7 @@ service http:InterceptableService / on new http:Listener(9090) {
                 && smartsearch:isContentLinkIndexable(contentPayload.contentType, contentPayload.contentSubtype, indexLink) {
             if !smartsearch:isIngestAllowed(ctx) {
                 return <http:TooManyRequests>{
-                    body: "Too many saves that re-index content right now. Please try again in a minute."
+                    body: constants:SMART_SEARCH_INGEST_LIMIT
                 };
             }
             int|error newContentId = database:addContentAndReturnId(contentPayload, createdBy);
