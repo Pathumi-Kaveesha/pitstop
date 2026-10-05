@@ -1668,11 +1668,10 @@ service http:InterceptableService / on new http:Listener(9090) {
                 boolean titleChanged = freshInfo.description != previousInfo.description && newLink is string
                         && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
                 if newLink != previousLink || newDisplayLink != previousDisplayLink || titleChanged {
-                    boolean involvesIndexing = (newLink is string
-                            && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink))
-                            || (previousLink is string
-                            && smartsearch:isContentLinkIndexable(previousInfo.contentType, previousInfo.contentSubtype, previousLink));
-                    if !involvesIndexing || smartsearch:isIngestAllowed(ctx) {
+                    // Only a new version that needs indexing uses the limit; clearing old entries never does
+                    boolean newNeedsIndexing = newLink is string
+                            && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
+                    if !newNeedsIndexing || smartsearch:isIngestAllowed(ctx) {
                         _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, previousLink);
                     } else {
                         smartsearch:deferReindex(contentId);
