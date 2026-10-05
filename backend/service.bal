@@ -310,7 +310,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + contentPayload - ContentPayload data (can contain either sectionId or routeId, but not both)
     # + return - Success or error responses
     resource function post contents(http:RequestContext ctx, types:ContentPayload contentPayload)
-        returns http:Created|http:Conflict|http:Forbidden|http:BadRequest|http:InternalServerError {
+        returns http:Created|http:Conflict|http:Forbidden|http:BadRequest|http:TooManyRequests|http:InternalServerError {
 
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         if userEmail is error {
@@ -397,6 +397,11 @@ service http:InterceptableService / on new http:Listener(9090) {
                 contentPayload.contentLink, contentPayload.transcriptLink);
         if indexLink is string
                 && smartsearch:isContentLinkIndexable(contentPayload.contentType, contentPayload.contentSubtype, indexLink) {
+            if !smartsearch:isIngestAllowed(ctx) {
+                return <http:TooManyRequests>{
+                    body: "Too many saves that re-index content right now. Please try again in a minute."
+                };
+            }
             int|error newContentId = database:addContentAndReturnId(contentPayload, createdBy);
             if newContentId is error {
                 string customError = "Error while adding a content";
@@ -1592,7 +1597,8 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         // What was indexed before the edit, so a change can be detected once it's applied
         boolean indexingFieldsChanged = contentLink is string || updateContentPayload.transcriptLink is string
-                || updateContentPayload.contentType is string || updateContentPayload.contentSubtype is string;
+                || updateContentPayload.contentType is string || updateContentPayload.contentSubtype is string
+                || updateContentPayload.description is string;
         database:IndexingInfo? previousInfo = ();
         if indexingFieldsChanged {
             database:IndexingInfo|error? lookup = database:getIndexingInfo(contentId);
@@ -1658,8 +1664,19 @@ service http:InterceptableService / on new http:Listener(9090) {
                         previousInfo.contentSubtype, previousInfo.contentLink);
                 string? newDisplayLink = smartsearch:displayLinkFor(freshInfo.contentType,
                         freshInfo.contentSubtype, freshInfo.contentLink);
-                if newLink != previousLink || newDisplayLink != previousDisplayLink {
-                    _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, previousLink);
+                // Title is part of what gets embedded and stored, so a rename re-indexes too
+                boolean titleChanged = freshInfo.description != previousInfo.description && newLink is string
+                        && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
+                if newLink != previousLink || newDisplayLink != previousDisplayLink || titleChanged {
+                    boolean involvesIndexing = (newLink is string
+                            && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink))
+                            || (previousLink is string
+                            && smartsearch:isContentLinkIndexable(previousInfo.contentType, previousInfo.contentSubtype, previousLink));
+                    if !involvesIndexing || smartsearch:isIngestAllowed(ctx) {
+                        _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, previousLink);
+                    } else {
+                        smartsearch:deferReindex(contentId);
+                    }
                 }
             }
         }

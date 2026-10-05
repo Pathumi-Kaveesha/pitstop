@@ -95,6 +95,34 @@ public isolated function isWithinDownloadLimit(http:RequestContext ctx) returns 
     }
 }
 
+// User email -> [window start in seconds, indexing requests in that window]
+isolated map<[int, int]> ingestWindows = {};
+
+# Counts one indexing-triggering save for the caller and says whether they are still within the limit.
+#
+# + ctx - Request object
+# + return - False once the caller has used up this minute's indexing requests
+public isolated function isIngestAllowed(http:RequestContext ctx) returns boolean {
+    string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+    if userEmail is error {
+        return false;
+    }
+    int now = time:utcNow()[0];
+
+    lock {
+        [int, int]? window = ingestWindows[userEmail];
+        if window is () || now - window[0] >= INGEST_WINDOW_SECONDS {
+            ingestWindows[userEmail] = [now, 1];
+            return true;
+        }
+        if window[1] >= MAX_INGESTS_PER_USER {
+            return false;
+        }
+        ingestWindows[userEmail] = [window[0], window[1] + 1];
+        return true;
+    }
+}
+
 // "content:<id>" or "user:<email>" -> [window start in seconds, retries in that window]
 isolated map<[int, int]> retryState = {};
 
@@ -275,6 +303,13 @@ isolated function recordIndexFailure(int contentId, string reason) {
     if failureError is error {
         log:printWarn("Smart Search: could not record an index failure", failureError, contentId = contentId);
     }
+}
+
+# Records that a re-index was skipped because of the caller's save limit, so an admin can retry it.
+#
+# + contentId - The content whose re-index was skipped
+public isolated function deferReindex(int contentId) {
+    recordIndexFailure(contentId, "Too many saves right now - please retry this content in a minute.");
 }
 
 # Indexes a content item. Launched with `start` so the caller never waits on it.
