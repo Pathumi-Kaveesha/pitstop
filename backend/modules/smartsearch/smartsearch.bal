@@ -136,6 +136,9 @@ public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) 
     if userEmail is error {
         return false;
     }
+    if !isIngestAllowed(ctx) {
+        return false;
+    }
     string contentKey = string `content:${contentId}`;
     string userKey = string `user:${userEmail}`;
     int now = time:utcNow()[0];
