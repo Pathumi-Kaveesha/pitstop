@@ -137,9 +137,6 @@ public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) 
     if userEmail is error {
         return false;
     }
-    if !isIngestAllowed(ctx) {
-        return false;
-    }
     string contentKey = string `content:${contentId}`;
     string userKey = string `user:${userEmail}`;
     int now = time:utcNow()[0];
@@ -165,6 +162,16 @@ public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) 
             return false;
         }
 
+    }
+
+    // Only a retry that's actually allowed uses up a shared indexing slot
+    if !isIngestAllowed(ctx) {
+        return false;
+    }
+
+    lock {
+        [int, int]? contentWindow = retryState[contentKey];
+        [int, int]? userWindow = retryState[userKey];
         retryState[contentKey] = contentWindow is [int, int] && now - contentWindow[0] < RETRY_WINDOW_SECONDS
                 ? [contentWindow[0], contentWindow[1] + 1]
                 : [now, 1];
