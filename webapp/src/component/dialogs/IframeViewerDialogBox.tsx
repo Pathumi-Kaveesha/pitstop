@@ -105,12 +105,11 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     contentType === FILETYPE.Slide ||
     contentType === FILETYPE.GSheet ||
     contentType === FILETYPE.Youtube ||
-    (IS_SMART_SEARCH_ENABLED
-      ? isSafeGoogleEmbedUrl(link, "docs.google.com", "/presentation/") ||
-        isSafeGoogleEmbedUrl(link, "docs.google.com", "/spreadsheets/") ||
-        isSafeGoogleEmbedUrl(link, "docs.google.com", "/document/") ||
-        isSafeGoogleEmbedUrl(link, "drive.google.com", "/file/d/")
-      : link?.includes("docs.google.com/presentation") || link?.includes("docs.google.com/spreadsheets"));
+    isSafeGoogleEmbedUrl(link, "docs.google.com", "/presentation/") ||
+    isSafeGoogleEmbedUrl(link, "docs.google.com", "/spreadsheets/") ||
+    (IS_SMART_SEARCH_ENABLED &&
+      (isSafeGoogleEmbedUrl(link, "docs.google.com", "/document/") ||
+        isSafeGoogleEmbedUrl(link, "drive.google.com", "/file/d/")));
 
   const blockedUrls = useAppSelector((state: RootState) => state.page.blockedIframeUrls);
   const blockedUrlsState = useAppSelector((state: RootState) => state.page.blockedUrlsState);
