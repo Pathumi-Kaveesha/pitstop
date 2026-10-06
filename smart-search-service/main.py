@@ -324,6 +324,12 @@ def _index_webpage_in_background(
         _set_index_error(document_id, str(error) or type(error).__name__)
 
 
+def _safe_actor(value: Optional[str]) -> str:
+    """Strips control characters and caps length, so a caller-supplied value can't forge log lines."""
+    cleaned = "".join(ch for ch in (value or "") if ch.isprintable())[:254]
+    return cleaned or "unknown"
+
+
 class IngestDriveLinkRequest(BaseModel):
     driveLink: str
     title: Optional[str] = None
@@ -345,7 +351,7 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     how long this takes to answer: metadata/text is resolved first (fast,
     catches real errors), then chunk/embed/store happens in the
     background - a failure there only reaches the log, not the caller."""
-    logger.info("Ingest requested for %s by %s", body.contentId or body.driveLink, body.adminEmail or "unknown")
+    logger.info("Ingest requested for %s by %s", body.contentId or body.driveLink, _safe_actor(body.adminEmail))
     if is_web_page_link(body.driveLink):
         try:
             page = await run_in_threadpool(fetch_web_page_text, body.driveLink)
@@ -415,7 +421,7 @@ def delete_document_endpoint(
     """Removes a document's chunks. Marks the id deleted first, so a
     background index for the same id discards its work instead of
     recreating what was just deleted. A never-indexed id gets a 404."""
-    logger.info("Delete requested for document %s by %s", document_id, x_admin_email or "unknown")
+    logger.info("Delete requested for document %s by %s", document_id, _safe_actor(x_admin_email))
     _tombstone(document_id)
     _bump_generation(document_id)
 
