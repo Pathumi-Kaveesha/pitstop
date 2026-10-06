@@ -36,6 +36,7 @@ from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     DELETE_TOMBSTONE_TTL_SECONDS,
     INDEX_ERROR_TTL_SECONDS,
+    MAX_CONCURRENT_INDEX_JOBS,
     MAX_PDF_VIEW_BYTES,
     RAW_MATCH_POOL_MULTIPLIER,
     EMBED_REQUEST_SPACING_SECONDS,
@@ -186,6 +187,14 @@ def _forget_results(user_query: str, limit: int) -> None:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+_index_slots = threading.BoundedSemaphore(MAX_CONCURRENT_INDEX_JOBS)
+
+
+def _run_in_index_slot(job, *args) -> None:
+    with _index_slots:
+        job(*args)
 
 
 def _index_drive_file_in_background(
@@ -354,7 +363,8 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
         job_started_at = time.time()
         generation = _bump_generation(document_id)
         background_tasks.add_task(
-            _index_webpage_in_background, title, document_id, body.driveLink, page.text, job_started_at, generation
+            _run_in_index_slot, _index_webpage_in_background, title, document_id, body.driveLink, page.text,
+            job_started_at, generation,
         )
 
         return {"status": "indexing", "title": title, "documentId": document_id, "fileType": "webpage"}
@@ -380,8 +390,8 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     job_started_at = time.time()
     generation = _bump_generation(document_id)
     background_tasks.add_task(
-        _index_drive_file_in_background, info, title, document_id, body.driveLink, job_started_at, generation,
-        body.displayLink
+        _run_in_index_slot, _index_drive_file_in_background, info, title, document_id, body.driveLink,
+        job_started_at, generation, body.displayLink,
     )
 
     return {
