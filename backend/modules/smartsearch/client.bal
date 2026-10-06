@@ -20,6 +20,9 @@ import ballerina/http;
 // it needs are far more mature there than in Ballerina today.
 public configurable SmartSearchServiceConfig smartSearchServiceConfig = ?;
 
+// Off means nothing is indexed, searched or deleted in Smart Search.
+configurable boolean smartSearchEnabled = false;
+
 // Used for search and delete - safe to retry, neither has a side effect
 // that duplicates on a second attempt.
 final http:Client smartSearchServiceClient = check initSmartSearchClient(true);

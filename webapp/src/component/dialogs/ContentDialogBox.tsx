@@ -58,6 +58,7 @@ import {
 } from "@slices/pageSlice/page";
 import { RootState, useAppDispatch, useAppSelector } from "@slices/store";
 import { AppConfig } from "@config/config";
+import { IS_SMART_SEARCH_ENABLED } from "@config/constant";
 import { ApiService } from "@utils/apiService";
 import { CONTENT_SUBTYPE, FILETYPE } from "@utils/types";
 
@@ -70,9 +71,10 @@ import {
 
 // Content that Smart Search indexes via a separate stand-in document instead of its own link
 const needsTranscript = (contentType: string, contentSubtype?: string): boolean =>
-  (contentType === FILETYPE.External_Link && contentSubtype === CONTENT_SUBTYPE.Video) ||
-  contentType === FILETYPE.Lms ||
-  contentType === FILETYPE.Salesforce;
+  IS_SMART_SEARCH_ENABLED &&
+  ((contentType === FILETYPE.External_Link && contentSubtype === CONTENT_SUBTYPE.Video) ||
+    contentType === FILETYPE.Lms ||
+    contentType === FILETYPE.Salesforce);
 
 // The same stored link means something different to fill in, depending on content type.
 const transcriptFieldInfo = (contentType: string) =>

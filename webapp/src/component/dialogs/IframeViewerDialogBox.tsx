@@ -33,7 +33,7 @@ import { useAppDispatch, useAppSelector, RootState } from "@slices/store";
 import { getBlockedIframeUrls } from "@slices/pageSlice/page";
 import { verifyLinkPreview, resetPreviewStatus } from "@slices/previewSlice/preview";
 import { logAnalyticsEvent } from "@slices/analyticsSlice/analytics";
-import { CONTENT_STATE_IDLE, CONTENT_STATE_FAILED } from "@config/constant";
+import { CONTENT_STATE_IDLE, CONTENT_STATE_FAILED, IS_SMART_SEARCH_ENABLED } from "@config/constant";
 import { isGoogleDriveFolderLink } from "@utils/utils";
 import { FILETYPE, CONTENT_SUBTYPE } from "@utils/types";
 import { useContentTracker } from "../../hooks/useContentTracker";
@@ -105,10 +105,12 @@ const IframeViewerDialogBox: React.FC<ExtendedIframeViewerDialogBoxProps> = ({
     contentType === FILETYPE.Slide ||
     contentType === FILETYPE.GSheet ||
     contentType === FILETYPE.Youtube ||
-    isSafeGoogleEmbedUrl(link, "docs.google.com", "/presentation/") ||
-    isSafeGoogleEmbedUrl(link, "docs.google.com", "/spreadsheets/") ||
-    isSafeGoogleEmbedUrl(link, "docs.google.com", "/document/") ||
-    isSafeGoogleEmbedUrl(link, "drive.google.com", "/file/d/");
+    (IS_SMART_SEARCH_ENABLED
+      ? isSafeGoogleEmbedUrl(link, "docs.google.com", "/presentation/") ||
+        isSafeGoogleEmbedUrl(link, "docs.google.com", "/spreadsheets/") ||
+        isSafeGoogleEmbedUrl(link, "docs.google.com", "/document/") ||
+        isSafeGoogleEmbedUrl(link, "drive.google.com", "/file/d/")
+      : link?.includes("docs.google.com/presentation") || link?.includes("docs.google.com/spreadsheets"));
 
   const blockedUrls = useAppSelector((state: RootState) => state.page.blockedIframeUrls);
   const blockedUrlsState = useAppSelector((state: RootState) => state.page.blockedUrlsState);

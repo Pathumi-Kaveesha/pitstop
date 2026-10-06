@@ -62,6 +62,7 @@ import {
   ROUTE_ID_QUIZ_ADMIN,
   ROUTE_ID_ANALYTICS_DASHBOARD,
   ROUTE_ID_SMART_SEARCH_UNINDEXED,
+  IS_SMART_SEARCH_ENABLED,
 } from "@config/constant";
 import { useAppAuthContext } from "@context/AuthContext";
 import { selectUserInfo } from "@slices/authSlice";
@@ -228,14 +229,18 @@ const Header = (props: HeaderProps) => {
             children: [],
             isRouteVisible: true,
           },
-          {
-            menuItem: "Smart Search Unindexed Content",
-            path: "/smart-search-unindexed",
-            routeId: ROUTE_ID_SMART_SEARCH_UNINDEXED,
-            routeOrder: 5,
-            children: [],
-            isRouteVisible: true,
-          },
+          ...(IS_SMART_SEARCH_ENABLED
+            ? [
+                {
+                  menuItem: "Smart Search Unindexed Content",
+                  path: "/smart-search-unindexed",
+                  routeId: ROUTE_ID_SMART_SEARCH_UNINDEXED,
+                  routeOrder: 5,
+                  children: [],
+                  isRouteVisible: true,
+                },
+              ]
+            : []),
         ],
         isRouteVisible: true,
       };

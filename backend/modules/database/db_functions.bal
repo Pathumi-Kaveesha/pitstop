@@ -50,9 +50,11 @@ public isolated function getAllRoutesFlat() returns types:Route[]|error {
 #
 # + createdBy - Created by user email
 # + content - Content details
+# + includeTranscript - Whether to save the transcript link, which needs the Smart Search column
 # + return - Error or nil
-public isolated function addContent(types:ContentPayload content, string createdBy) returns error? {
-    _ = check dbClient->execute(addContentQuery(content, createdBy));
+public isolated function addContent(types:ContentPayload content, string createdBy, boolean includeTranscript)
+    returns error? {
+    _ = check dbClient->execute(addContentQuery(content, createdBy, includeTranscript));
 }
 
 # Add new content and return its id. Used by Smart Search to tag its
@@ -60,9 +62,11 @@ public isolated function addContent(types:ContentPayload content, string created
 #
 # + createdBy - Created by user email
 # + content - Content details
+# + includeTranscript - Whether to save the transcript link, which needs the Smart Search column
 # + return - The new content's id, or an error
-public isolated function addContentAndReturnId(types:ContentPayload content, string createdBy) returns int|error {
-    sql:ExecutionResult result = check dbClient->execute(addContentQuery(content, createdBy));
+public isolated function addContentAndReturnId(types:ContentPayload content, string createdBy, boolean includeTranscript)
+    returns int|error {
+    sql:ExecutionResult result = check dbClient->execute(addContentQuery(content, createdBy, includeTranscript));
     return result.lastInsertId.ensureType(int);
 }
 

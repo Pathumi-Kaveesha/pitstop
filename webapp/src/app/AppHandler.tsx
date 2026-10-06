@@ -25,6 +25,7 @@ import PreLoader from "@components/common/PreLoader";
 import ErrorHandler from "@components/common/ErrorHandler";
 import Search from "@view/search/index";
 import SmartSearchPoc from "@view/smartSearchPoc/index";
+import { IS_SMART_SEARCH_ENABLED } from "@config/constant";
 import LibrarySearchButton from "@view/smartSearchPoc/LibrarySearchButton";
 import UnindexedContent from "@view/smartSearchPoc/UnindexedContent";
 import { Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
@@ -75,7 +76,7 @@ const GlobalSnackbarListener = () => {
 const AppShell = () => (
   <>
     <Outlet />
-    <LibrarySearchButton />
+    {IS_SMART_SEARCH_ENABLED && <LibrarySearchButton />}
   </>
 );
 
@@ -117,16 +118,17 @@ const AppHandler = () => {
               },
               {
                 path: "/smart-search-poc",
-                element: <SmartSearchPoc />,
+                element: IS_SMART_SEARCH_ENABLED ? <SmartSearchPoc /> : <Error />,
                 errorElement: <Error />,
               },
               {
                 path: "/smart-search-unindexed",
-                element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
-                  <UnindexedContent />
-                ) : (
-                  <Error />
-                ),
+                element:
+                  IS_SMART_SEARCH_ENABLED && authorizedRoles.includes(Role.SALES_ADMIN) ? (
+                    <UnindexedContent />
+                  ) : (
+                    <Error />
+                  ),
                 errorElement: <Error />,
               },
             ],

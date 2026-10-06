@@ -78,3 +78,6 @@ export const ROUTE_ID_QUIZ_ADMIN = -6;
 export const INVALID_ROUTE_ID = -1;
 export const ROUTE_ID_ANALYTICS_DASHBOARD = -7;
 export const ROUTE_ID_SMART_SEARCH_UNINDEXED = -8;
+
+// Smart Search is off unless VITE_SMART_SEARCH_ENABLED=true is set at build time.
+export const IS_SMART_SEARCH_ENABLED = import.meta.env.VITE_SMART_SEARCH_ENABLED === "true";

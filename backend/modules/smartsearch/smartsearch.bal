@@ -25,6 +25,11 @@ import ballerina/task;
 import ballerina/time;
 import ballerina/url;
 
+# Whether Smart Search is switched on.
+#
+# + return - True when Smart Search is enabled
+public isolated function isSmartSearchEnabled() returns boolean => smartSearchEnabled;
+
 # Runs a search against the Smart Search service.
 #
 # + userQuery - What the user typed into the search box
@@ -636,6 +641,10 @@ class IndexReconciliationJob {
 }
 
 function init() {
+    // Off means no background job either
+    if !smartSearchEnabled {
+        return;
+    }
     // A scheduling failure must not stop the backend from starting
     task:JobId|task:Error scheduled =
         task:scheduleJobRecurByFrequency(new IndexReconciliationJob(), RECONCILE_INTERVAL_SECONDS);

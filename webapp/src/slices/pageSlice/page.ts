@@ -17,6 +17,7 @@
 import { enqueueSnackbarMessage } from "@slices/commonSlice/common";
 import { ApiService } from "@utils/apiService";
 import { AppConfig } from "@config/config";
+import { IS_SMART_SEARCH_ENABLED } from "@config/constant";
 import {
   ContentResponse,
   ContentPayload,
@@ -944,7 +945,7 @@ export const createNewContent = createAsyncThunk(
             typeof resp?.response?.data === "string" ? resp.response.data : resp?.response?.data?.message;
           dispatch(
             enqueueSnackbarMessage({
-              message: backendMessage || "Something went wrong while creating a content :(",
+              message: (IS_SMART_SEARCH_ENABLED && backendMessage) || "Something went wrong while creating a content :(",
               type: "error",
               anchorOrigin: {
                 vertical: "bottom",
@@ -990,7 +991,7 @@ export const updateContent = createAsyncThunk(
             typeof resp?.response?.data === "string" ? resp.response.data : resp?.response?.data?.message;
           dispatch(
             enqueueSnackbarMessage({
-              message: backendMessage || "Something went wrong while updating the content :(",
+              message: (IS_SMART_SEARCH_ENABLED && backendMessage) || "Something went wrong while updating the content :(",
               type: "error",
               anchorOrigin: {
                 vertical: "bottom",
