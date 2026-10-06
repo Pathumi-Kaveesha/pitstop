@@ -231,15 +231,19 @@ isolated function updateRouteQuery(int? routeId, types:UpdateRoutePayload payloa
 #
 # + content - Content payload (with either sectionId or routeId)
 # + createdBy - User email who created the content
+# + includeTranscript - Whether to include the transcript_link column
 # + return - SQL parameterized query
-isolated function addContentQuery(types:ContentPayload content, string createdBy)
-    returns sql:ParameterizedQuery => `
+isolated function addContentQuery(types:ContentPayload content, string createdBy, boolean includeTranscript)
+    returns sql:ParameterizedQuery {
+    // transcript_link only exists after the Smart Search migration
+    sql:ParameterizedQuery transcriptColumn = includeTranscript ? `transcript_link, ` : ``;
+    sql:ParameterizedQuery transcriptValue = includeTranscript ? `${content.transcriptLink}, ` : ``;
+    return sql:queryConcat(`
         INSERT INTO content(
             section_id, 
             route_id,
             content_link, 
-            transcript_link,
-            content_type, 
+            `, transcriptColumn, `content_type, 
             content_sub_type,
             description, 
             thumbnail, 
@@ -255,22 +259,22 @@ isolated function addContentQuery(types:ContentPayload content, string createdBy
         VALUES (
             ${content.sectionId}, 
             ${content.routeId},
-            ${content.contentLink}, 
-            ${content.transcriptLink},
-            ${content.contentType},
+            ${content.contentLink},
+            `, transcriptValue, `${content.contentType},
             ${content.contentSubtype},
-            ${content.description}, 
-            ${content.thumbnail}, 
+            ${content.description},
+            ${content.thumbnail},
             ${(content.customContentTheme is types:CustomTheme) ? content.customContentTheme.toJsonString() : ()},
-            ${content.isDeleted}, 
-            ${createdBy}, 
-            ${createdBy}, 
+            ${content.isDeleted},
+            ${createdBy},
+            ${createdBy},
             ${createdBy},
             ${content.note},
             ${content.tags},
             ${content.isReused}
         )
-    `;
+    `);
+}
 
 # Query to add comment.
 #

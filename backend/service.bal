@@ -374,7 +374,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:CONFLICT;
         }
 
-        if smartsearch:requiresTranscript(contentPayload.contentType, contentPayload.contentSubtype) {
+        if smartsearch:isSmartSearchEnabled() && smartsearch:requiresTranscript(contentPayload.contentType, contentPayload.contentSubtype) {
             string? newTranscriptLink = contentPayload.transcriptLink;
             if newTranscriptLink is () || newTranscriptLink == "" {
                 string customError = "A Google Doc link is required for this content type";
@@ -395,14 +395,15 @@ service http:InterceptableService / on new http:Listener(9090) {
         // Content is additionally indexed for Smart Search, from its own link or its transcript link
         string? indexLink = smartsearch:indexingLinkFor(contentPayload.contentType, contentPayload.contentSubtype,
                 contentPayload.contentLink, contentPayload.transcriptLink);
-        if indexLink is string
+        if smartsearch:isSmartSearchEnabled() && indexLink is string
                 && smartsearch:isContentLinkIndexable(contentPayload.contentType, contentPayload.contentSubtype, indexLink) {
             if !smartsearch:isIngestAllowed(ctx) {
                 return <http:TooManyRequests>{
                     body: constants:SMART_SEARCH_INGEST_LIMIT
                 };
             }
-            int|error newContentId = database:addContentAndReturnId(contentPayload, createdBy);
+            int|error newContentId = database:addContentAndReturnId(contentPayload, createdBy,
+                    smartsearch:isSmartSearchEnabled());
             if newContentId is error {
                 string customError = "Error while adding a content";
                 log:printError(customError, newContentId);
@@ -418,7 +419,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:CREATED;
         }
 
-        error? result = database:addContent(contentPayload, createdBy);
+        error? result = database:addContent(contentPayload, createdBy, smartsearch:isSmartSearchEnabled());
         if result is error {
             string customError = "Error while adding a content";
             log:printError(customError, result);
@@ -1273,8 +1274,10 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         // Clears the content's Smart Search entries if it had any
-        string|error deletedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-        _ = start smartsearch:deleteContentFromSmartSearch(contentId, deletedBy is string ? deletedBy : "unknown");
+        if smartsearch:isSmartSearchEnabled() {
+            string|error deletedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+            _ = start smartsearch:deleteContentFromSmartSearch(contentId, deletedBy is string ? deletedBy : "unknown");
+        }
 
         return http:OK;
     }
@@ -1589,8 +1592,11 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:BAD_REQUEST;
         }
 
+        if !smartsearch:isSmartSearchEnabled() {
+            updateContentPayload.transcriptLink = ();
+        }
         string? transcriptLink = updateContentPayload.transcriptLink;
-        if transcriptLink is string && transcriptLink != "" && !constants:URL.isFullMatch(transcriptLink) {
+        if smartsearch:isSmartSearchEnabled() && transcriptLink is string && transcriptLink != "" && !constants:URL.isFullMatch(transcriptLink) {
             log:printError(constants:INVALID_URL_ERROR, transcriptLink = transcriptLink);
             return http:BAD_REQUEST;
         }
@@ -1600,7 +1606,7 @@ service http:InterceptableService / on new http:Listener(9090) {
                 || updateContentPayload.contentType is string || updateContentPayload.contentSubtype is string
                 || updateContentPayload.description is string;
         database:IndexingInfo? previousInfo = ();
-        if indexingFieldsChanged {
+        if indexingFieldsChanged && smartsearch:isSmartSearchEnabled() {
             database:IndexingInfo|error? lookup = database:getIndexingInfo(contentId);
             if lookup is database:IndexingInfo {
                 previousInfo = lookup;
@@ -1653,7 +1659,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:NOT_FOUND;
         }
 
-        if indexingFieldsChanged && previousInfo is database:IndexingInfo {
+        if smartsearch:isSmartSearchEnabled() && indexingFieldsChanged && previousInfo is database:IndexingInfo {
             string? previousLink = smartsearch:indexingLinkFor(previousInfo.contentType, previousInfo.contentSubtype,
                     previousInfo.contentLink, previousInfo.transcriptLink);
             database:IndexingInfo|error? freshInfo = database:getIndexingInfo(contentId);
@@ -1688,8 +1694,11 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + contentId - The content whose transcript link to fetch
     # + return - The link, empty if there is none, or an error response
     resource function get contents/[int contentId]/transcript\-link(http:RequestContext ctx)
-        returns record {|string transcriptLink;|}|http:Forbidden|http:InternalServerError {
+        returns record {|string transcriptLink;|}|http:Forbidden|http:NotFound|http:InternalServerError {
 
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
@@ -1879,8 +1888,11 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + includeAnswer - False returns just the sources, without waiting for the generated answer
     # + return - A generated answer plus its sources, or an error
     resource function get smart\-search(http:RequestContext ctx, string userQuery, boolean includeAnswer = true)
-        returns smartsearch:SmartSearchResponse|http:InternalServerError {
+        returns smartsearch:SmartSearchResponse|http:NotFound|http:InternalServerError {
 
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
         smartsearch:SmartSearchResponse|error result = smartsearch:searchDocuments(userQuery, includeAnswer);
         if result is error {
             log:printError(constants:SMART_SEARCH_ERROR, result);
@@ -1899,6 +1911,9 @@ service http:InterceptableService / on new http:Listener(9090) {
     resource function get smart\-search/documents/[int contentId]/file(http:RequestContext ctx)
         returns http:Response|http:Forbidden|http:NotFound|http:TooManyRequests|http:PayloadTooLarge|http:InternalServerError {
 
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
         if !smartsearch:canViewContent(ctx, contentId) {
             return http:FORBIDDEN;
         }
@@ -1935,8 +1950,11 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + ctx - Request context
     # + return - The list, 403 Forbidden, or 500 Internal Server Error
     resource function get smart\-search/unindexed(http:RequestContext ctx)
-        returns database:SmartSearchIndexFailure[]|http:Forbidden|http:InternalServerError {
+        returns database:SmartSearchIndexFailure[]|http:Forbidden|http:NotFound|http:InternalServerError {
 
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
@@ -1960,6 +1978,9 @@ service http:InterceptableService / on new http:Listener(9090) {
     resource function post smart\-search/documents/[int contentId]/retry\-index(http:RequestContext ctx)
         returns http:Accepted|http:Forbidden|http:NotFound|http:TooManyRequests|http:InternalServerError {
 
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
         http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;

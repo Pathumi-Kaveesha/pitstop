@@ -25,6 +25,8 @@ import ballerina/task;
 import ballerina/time;
 import ballerina/url;
 
+public isolated function isSmartSearchEnabled() returns boolean => smartSearchEnabled;
+
 # Runs a search against the Smart Search service.
 #
 # + userQuery - What the user typed into the search box
@@ -36,7 +38,8 @@ public isolated function searchDocuments(string userQuery, boolean includeAnswer
     // Explicit encoding - a query can contain a comma, which Ballerina's
     // query-parameter parser otherwise treats as a list separator.
     string encodedQuery = check url:encode(userQuery, "UTF-8");
-    return smartSearchServiceClient->get(string `/search?userQuery=${encodedQuery}&includeAnswer=${includeAnswer}`);
+    http:Client serviceClient = check getSearchClient();
+    return serviceClient->get(string `/search?userQuery=${encodedQuery}&includeAnswer=${includeAnswer}`);
 }
 
 # Whether the caller may see this content - the same rule search uses. Denies on any doubt.
@@ -187,7 +190,8 @@ public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) 
 # + contentId - The content whose PDF to fetch
 # + return - The file's bytes, a not-found or too-large response, or an error
 public isolated function fetchDocumentFile(int contentId) returns byte[]|http:NotFound|http:PayloadTooLarge|error {
-    http:Response upstream = check smartSearchServiceClient->get(string `/documents/${contentId}/file`);
+    http:Client serviceClient = check getSearchClient();
+    http:Response upstream = check serviceClient->get(string `/documents/${contentId}/file`);
     if upstream.statusCode == http:STATUS_NOT_FOUND {
         return http:NOT_FOUND;
     }
@@ -340,7 +344,11 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
         adminEmail: requestedBy
     };
 
-    http:Response|http:ClientError response = smartSearchIngestClient->post("/ingest-drive-link", payload);
+    http:Client|error ingestClient = getIngestClient();
+    if ingestClient is error {
+        return;
+    }
+    http:Response|http:ClientError response = ingestClient->post("/ingest-drive-link", payload);
     if response is http:ClientError {
         log:printWarn(string `Smart Search: could not reach the indexing service for content ${contentId}`,
                 reason = response.message());
@@ -392,8 +400,12 @@ isolated function clearIndexedEntries(int contentId, string? deletedBy = ()) ret
     if deletedBy is string {
         headers["X-Admin-Email"] = deletedBy;
     }
+    http:Client|error serviceClient = getSearchClient();
+    if serviceClient is error {
+        return false;
+    }
     http:Response|http:ClientError response =
-        smartSearchServiceClient->delete(string `/documents/${contentId}`, headers = headers);
+        serviceClient->delete(string `/documents/${contentId}`, headers = headers);
     if response is http:ClientError {
         log:printWarn(string `Smart Search: could not reach the indexing service to un-index content ${contentId}`,
                 reason = response.message());
@@ -569,8 +581,11 @@ type IndexStatusResponse record {|
 # + contentId - The content to check
 # + return - False if the Smart Search service could not be reached
 isolated function reconcileIndexStatus(int contentId) returns boolean {
-    IndexStatusResponse|http:ClientError status =
-        smartSearchServiceClient->get(string `/documents/${contentId}/status`);
+    http:Client|error serviceClient = getSearchClient();
+    if serviceClient is error {
+        return false;
+    }
+    IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
     if status is http:ClientError {
         return false;
     }
@@ -636,6 +651,9 @@ class IndexReconciliationJob {
 }
 
 function init() {
+    if !smartSearchEnabled {
+        return;
+    }
     // A scheduling failure must not stop the backend from starting
     task:JobId|task:Error scheduled =
         task:scheduleJobRecurByFrequency(new IndexReconciliationJob(), RECONCILE_INTERVAL_SECONDS);

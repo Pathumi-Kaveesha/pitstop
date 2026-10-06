@@ -18,17 +18,27 @@ import ballerina/http;
 
 // Smart Search (POC) runs as a separate Python service - the AI libraries
 // it needs are far more mature there than in Ballerina today.
-public configurable SmartSearchServiceConfig smartSearchServiceConfig = ?;
+public configurable SmartSearchServiceConfig? smartSearchServiceConfig = ();
+
+configurable boolean smartSearchEnabled = false;
 
 // Used for search and delete - safe to retry, neither has a side effect
 // that duplicates on a second attempt.
-final http:Client smartSearchServiceClient = check initSmartSearchClient(true);
+final http:Client? smartSearchServiceClient = smartSearchEnabled ? check initSmartSearchClient(true) : ();
 
 // Used only for /ingest-drive-link. No retry - a retried POST after a
 // connection failure can land while the first attempt's background
 // indexing job is still running, producing two overlapping jobs and
 // duplicate vectors for the same document.
-final http:Client smartSearchIngestClient = check initSmartSearchClient(false);
+final http:Client? smartSearchIngestClient = smartSearchEnabled ? check initSmartSearchClient(false) : ();
+
+isolated function getSearchClient() returns http:Client|error {
+    return smartSearchServiceClient ?: error("Smart Search is off");
+}
+
+isolated function getIngestClient() returns http:Client|error {
+    return smartSearchIngestClient ?: error("Smart Search is off");
+}
 
 final http:RetryConfig & readonly smartSearchRetryConfig = {
     count: 2,
@@ -47,27 +57,32 @@ final http:RetryConfig & readonly smartSearchRetryConfig = {
 isolated function initSmartSearchClient(boolean withRetry) returns http:Client|error {
     // HTTP/1.1 - the Python server (uvicorn) doesn't support the HTTP/2
     // cleartext upgrade Ballerina otherwise attempts for larger bodies.
-    Oauth2Config? oauthConfig = smartSearchServiceConfig.oauthConfig;
+    SmartSearchServiceConfig? configured = smartSearchServiceConfig;
+    if configured is () {
+        return error("Smart Search is on, but its service settings are not configured");
+    }
+
+    Oauth2Config? oauthConfig = configured.oauthConfig;
     if oauthConfig is () {
         return withRetry
-            ? new (smartSearchServiceConfig.apiEndpoint, {
+            ? new (configured.apiEndpoint, {
                 httpVersion: http:HTTP_1_1,
                 timeout: 300,
                 retryConfig: smartSearchRetryConfig
             })
-            : new (smartSearchServiceConfig.apiEndpoint, {
+            : new (configured.apiEndpoint, {
                 httpVersion: http:HTTP_1_1,
                 timeout: 300
             });
     }
     return withRetry
-        ? new (smartSearchServiceConfig.apiEndpoint, {
+        ? new (configured.apiEndpoint, {
             auth: {...oauthConfig},
             httpVersion: http:HTTP_1_1,
             timeout: 300,
             retryConfig: smartSearchRetryConfig
         })
-        : new (smartSearchServiceConfig.apiEndpoint, {
+        : new (configured.apiEndpoint, {
             auth: {...oauthConfig},
             httpVersion: http:HTTP_1_1,
             timeout: 300
