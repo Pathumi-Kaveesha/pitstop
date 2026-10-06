@@ -24,7 +24,7 @@ import time
 
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Query, Response
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 
@@ -332,6 +332,8 @@ class IngestDriveLinkRequest(BaseModel):
     contentId: Optional[str] = Field(default=None, pattern=r"^[0-9]+$")
     # Set when driveLink is only a stand-in document, read for its text but never itself shown
     displayLink: Optional[str] = None
+    # The admin whose action triggered this, for the logs only
+    adminEmail: Optional[str] = None
 
 
 @app.post("/ingest-drive-link")
@@ -343,6 +345,7 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     how long this takes to answer: metadata/text is resolved first (fast,
     catches real errors), then chunk/embed/store happens in the
     background - a failure there only reaches the log, not the caller."""
+    logger.info("Ingest requested for %s by %s", body.contentId or body.driveLink, body.adminEmail or "unknown")
     if is_web_page_link(body.driveLink):
         try:
             page = await run_in_threadpool(fetch_web_page_text, body.driveLink)
@@ -406,10 +409,13 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     "/documents/{document_id}",
     responses={404: {"model": ErrorResponse, "description": "No indexed chunks found for this document id."}},
 )
-def delete_document_endpoint(document_id: str) -> dict:
+def delete_document_endpoint(
+    document_id: str, x_admin_email: Optional[str] = Header(default=None),
+) -> dict:
     """Removes a document's chunks. Marks the id deleted first, so a
     background index for the same id discards its work instead of
     recreating what was just deleted. A never-indexed id gets a 404."""
+    logger.info("Delete requested for document %s by %s", document_id, x_admin_email or "unknown")
     _tombstone(document_id)
     _bump_generation(document_id)
 
