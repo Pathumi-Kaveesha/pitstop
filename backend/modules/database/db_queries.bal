@@ -472,7 +472,8 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0) as durationSecs
+                GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0) as durationSecs,
+                IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0) as isRunningTotal
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -492,7 +493,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             SELECT 
                 user_email,
                 dedupeEventId,
-                MAX(durationSecs) as durationSecs
+                CASE WHEN MAX(isRunningTotal) = 1 THEN MAX(durationSecs) ELSE SUM(durationSecs) END as durationSecs
             FROM DeduplicatedLogs
             WHERE UPPER(event_type) = 'SESSION_TIME'
             GROUP BY user_email, dedupeEventId
@@ -553,7 +554,8 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0) as durationSecs
+                GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0) as durationSecs,
+                IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0) as isRunningTotal
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -574,7 +576,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
                 region,
                 user_email,
                 dedupeEventId,
-                MAX(durationSecs) as totalDuration
+                CASE WHEN MAX(isRunningTotal) = 1 THEN MAX(durationSecs) ELSE SUM(durationSecs) END as totalDuration
             FROM BaseLogs
             WHERE UPPER(event_type) = 'SESSION_TIME'
             GROUP BY region, user_email, dedupeEventId
@@ -746,7 +748,7 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
+                CASE WHEN MAX(IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0)) = 1 THEN MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) ELSE SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) END as totalDuration
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -855,7 +857,7 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) as totalDuration
+                CASE WHEN MAX(IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0)) = 1 THEN MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) ELSE SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) END as totalDuration
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id

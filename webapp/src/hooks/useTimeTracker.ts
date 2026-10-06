@@ -42,6 +42,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
   const lastTickTimeRef = useRef<number>(performance.now());
   const activeDurationRef = useRef<number>(0);
   const inFlightDurationRef = useRef<number>(0);
+  const sentTotalRef = useRef<number>(0);
   const lastUserActivityRef = useRef<number>(performance.now());
   
   const isFlushingRef = useRef<boolean>(false);
@@ -72,6 +73,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
     lastTickTimeRef.current = performance.now();
     activeDurationRef.current = 0;
     inFlightDurationRef.current = 0;
+    sentTotalRef.current = 0;
     isFlushingRef.current = false;
 
     const routeKeyPart = pageRoute ?? "content";
@@ -142,7 +144,8 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
 
       try {
         const metadata = {
-          durationSeconds: secondsToSend,
+          durationSeconds: sentTotalRef.current + secondsToSend,
+          isRunningTotal: true,
           pageRoute: routeToSend,
           eventId: eventIdToSend,
           trackingType,
@@ -151,6 +154,7 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
 
         if (isLeavingPage) {
           inFlightDurationRef.current = 0;
+          sentTotalRef.current += secondsToSend;
           localStorage.removeItem(storageKey);
           flushBeaconEvent(
             AnalyticsEventType.SESSION_TIME,
@@ -170,11 +174,13 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
             );
             if (res) {
               inFlightDurationRef.current = 0;
+              sentTotalRef.current += secondsToSend;
               if (activeDurationRef.current < 1) {
                 localStorage.removeItem(storageKey);
               } else if (userInfo?.email) {
                 const pendingData = {
-                  durationSeconds: activeDurationRef.current,
+                  durationSeconds: sentTotalRef.current + activeDurationRef.current,
+                  isRunningTotal: true,
                   pageRoute: routeToSend,
                   eventId: eventIdToSend,
                   trackingType,
@@ -236,11 +242,13 @@ export const useActiveTimer = (options: TimeTrackerOptions = {}) => {
         // Backup total un-flushed accumulated seconds (including in-flight) to localStorage
         const eventIdToSend = activeEventIdRef.current;
         const storageKey = `pitstop_pending_time_${eventIdToSend}`;
-        const totalBackupSeconds = activeDurationRef.current + inFlightDurationRef.current;
+        const totalBackupSeconds =
+          sentTotalRef.current + activeDurationRef.current + inFlightDurationRef.current;
 
         if (userInfo?.email) {
           const pendingData = {
             durationSeconds: totalBackupSeconds,
+            isRunningTotal: true,
             pageRoute: resolvePageRoute(),
             eventId: eventIdToSend,
             trackingType,
