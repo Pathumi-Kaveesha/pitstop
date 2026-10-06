@@ -1592,7 +1592,6 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:BAD_REQUEST;
         }
 
-        // Transcript links are only saved while Smart Search is on
         if !smartsearch:isSmartSearchEnabled() {
             updateContentPayload.transcriptLink = ();
         }

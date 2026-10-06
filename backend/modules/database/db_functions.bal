@@ -50,7 +50,7 @@ public isolated function getAllRoutesFlat() returns types:Route[]|error {
 #
 # + createdBy - Created by user email
 # + content - Content details
-# + includeTranscript - Whether to save the transcript link, which needs the Smart Search column
+# + includeTranscript - Whether to save transcript_link
 # + return - Error or nil
 public isolated function addContent(types:ContentPayload content, string createdBy, boolean includeTranscript)
     returns error? {
@@ -62,7 +62,7 @@ public isolated function addContent(types:ContentPayload content, string created
 #
 # + createdBy - Created by user email
 # + content - Content details
-# + includeTranscript - Whether to save the transcript link, which needs the Smart Search column
+# + includeTranscript - Whether to save transcript_link
 # + return - The new content's id, or an error
 public isolated function addContentAndReturnId(types:ContentPayload content, string createdBy, boolean includeTranscript)
     returns int|error {
