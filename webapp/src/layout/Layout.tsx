@@ -76,6 +76,7 @@ export default function Layout() {
 
               const metadata = {
                 durationSeconds: data.durationSeconds,
+                isRunningTotal: data.isRunningTotal === true,
                 pageRoute: data.pageRoute,
                 eventId: data.eventId,
                 trackingType: data.trackingType || "page_view_duration",
