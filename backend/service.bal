@@ -414,7 +414,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             // Fire-and-forget - content creation never waits on indexing.
             _ = start smartsearch:indexContentForSmartSearch(newContentId, indexLink, contentPayload.description,
                     smartsearch:displayLinkFor(contentPayload.contentType, contentPayload.contentSubtype,
-                            contentPayload.contentLink));
+                            contentPayload.contentLink), createdBy);
             return http:CREATED;
         }
 
@@ -1672,7 +1672,7 @@ service http:InterceptableService / on new http:Listener(9090) {
                     boolean newNeedsIndexing = newLink is string
                             && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
                     if !newNeedsIndexing || smartsearch:isIngestAllowed(ctx) {
-                        _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, previousLink);
+                        _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, previousLink, userEmail);
                     } else {
                         smartsearch:deferReindex(contentId);
                     }
@@ -1968,7 +1968,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:TOO_MANY_REQUESTS;
         }
 
-        http:NotFound|error? result = smartsearch:retryIndexContent(contentId);
+        string|error retryUser = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+        http:NotFound|error? result = smartsearch:retryIndexContent(contentId, retryUser is string ? retryUser : ());
         if result is http:NotFound {
             return result;
         }

@@ -58,11 +58,13 @@ public type SmartSearchResponse record {|
 # + title - Shown as this document's title in search results
 # + contentId - Reused as Smart Search's own documentId
 # + displayLink - Set when driveLink is only a transcript - the content's own link is shown instead
+# + adminEmail - The admin whose action triggered this, for the logs only
 public type DriveLinkIngestRequest record {|
     string driveLink;
     string? title = ();
     string? contentId = ();
     string? displayLink = ();
+    string? adminEmail = ();
 |};
 
 # Auth configurations, same shape the email module uses.

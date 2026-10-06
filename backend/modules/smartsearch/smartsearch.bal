@@ -329,13 +329,15 @@ public isolated function deferReindex(int contentId) {
 # + driveLink - The link to read text from
 # + title - The content's title
 # + displayLink - Set only when driveLink is a transcript, not the content's own link
+# + requestedBy - Email of the admin whose action triggered this, for the logs
 public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title,
-        string? displayLink = ()) {
+        string? displayLink = (), string? requestedBy = ()) {
     DriveLinkIngestRequest payload = {
         driveLink,
         title,
         contentId: contentId.toString(),
-        displayLink
+        displayLink,
+        adminEmail: requestedBy
     };
 
     http:Response|http:ClientError response = smartSearchIngestClient->post("/ingest-drive-link", payload);
@@ -386,8 +388,12 @@ public isolated function deleteContentFromSmartSearch(int contentId, string dele
 # + deletedBy - Email of the admin who deleted the content, when this is a real deletion
 # + return - False if the entries could not be removed
 isolated function clearIndexedEntries(int contentId, string? deletedBy = ()) returns boolean {
+    map<string|string[]> headers = {};
+    if deletedBy is string {
+        headers["X-Admin-Email"] = deletedBy;
+    }
     http:Response|http:ClientError response =
-        smartSearchServiceClient->delete(string `/documents/${contentId}`);
+        smartSearchServiceClient->delete(string `/documents/${contentId}`, headers = headers);
     if response is http:ClientError {
         log:printWarn(string `Smart Search: could not reach the indexing service to un-index content ${contentId}`,
                 reason = response.message());
@@ -468,7 +474,9 @@ isolated int reindexRuns = 0;
 # + contentId - The content that was edited
 # + newLink - What should be indexed after the edit, when known at the time
 # + previousLink - What was indexed before the edit, when known
-public isolated function reindexAfterLinkChange(int contentId, string? newLink, string? previousLink) {
+# + requestedBy - Email of the admin who made the edit, for the logs
+public isolated function reindexAfterLinkChange(int contentId, string? newLink, string? previousLink,
+        string? requestedBy = ()) {
     lock {
         reindexRuns += 1;
 
@@ -503,7 +511,7 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
 
         if newLink is string && isContentLinkIndexable(current.contentType, current.contentSubtype, newLink) {
             indexContentForSmartSearch(contentId, newLink, current.description,
-                    displayLinkFor(current.contentType, current.contentSubtype, current.contentLink));
+                    displayLinkFor(current.contentType, current.contentSubtype, current.contentLink), requestedBy);
         } else if newLink is string && newLink != "" && previousLink is string
                 && isContentLinkIndexable(current.contentType, current.contentSubtype, previousLink) {
             recordIndexFailure(contentId, unindexableLinkReason(current.contentType, current.contentSubtype));
@@ -514,8 +522,9 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
 # Re-triggers indexing for a content item.
 #
 # + contentId - The content to retry
+# + requestedBy - Email of the admin who retried it, for the logs
 # + return - Not-found when there's no such content, an error, or nil on success
-public isolated function retryIndexContent(int contentId) returns http:NotFound|error? {
+public isolated function retryIndexContent(int contentId, string? requestedBy = ()) returns http:NotFound|error? {
     lock {
         reindexRuns += 1;
 
@@ -541,7 +550,7 @@ public isolated function retryIndexContent(int contentId) returns http:NotFound|
             log:printWarn("Smart Search: could not clear index failure before a retry", clearError, contentId = contentId);
         }
         indexContentForSmartSearch(contentId, link, info.description,
-                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink));
+                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy);
         return;
     }
 }
