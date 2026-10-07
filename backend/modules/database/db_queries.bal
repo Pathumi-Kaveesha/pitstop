@@ -851,6 +851,8 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
     int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
 
     sql:ParameterizedQuery datePredicate = buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset);
+    sql:ParameterizedQuery timeLookbackPredicate = buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset, 1);
+    string effectiveStartDate = getEffectiveStartDate(filter.startDate);
 
     sql:ParameterizedQuery query = `
         WITH DeduplicatedSessionTimes AS (
@@ -871,7 +873,7 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
             WHERE UPPER(l.event_type) = 'SESSION_TIME'
     `;
 
-    query = sql:queryConcat(query, datePredicate);
+    query = sql:queryConcat(query, timeLookbackPredicate);
     query = sql:queryConcat(query, buildRegionPredicate(filter.region));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
@@ -893,6 +895,7 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
                 eventDate,
                 SUM(totalDuration) as dailyTimeSpent
             FROM DailyEventTimes
+            WHERE eventDate >= ${effectiveStartDate}
             GROUP BY eventDate
         ),
         PlatformDailyLogs AS (
