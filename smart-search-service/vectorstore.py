@@ -183,6 +183,7 @@ def search(
     vector_text = _vector_literal(query_vector)
     _ensure_schema()
     with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(queries.SET_EF_SEARCH, (str(max(40, raw_pool_size)),))
         cur.execute(queries.SEARCH, (vector_text, vector_text, raw_pool_size))
         matches = cur.fetchall()
 

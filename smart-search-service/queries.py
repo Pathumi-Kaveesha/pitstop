@@ -55,6 +55,9 @@ ON CONFLICT (id) DO UPDATE SET
     moments = EXCLUDED.moments
 """
 
+# Raises how many candidates HNSW checks - "true" scopes it to just this one query.
+SET_EF_SEARCH = "SELECT set_config('hnsw.ef_search', %s, true)"
+
 SEARCH = """
 SELECT content, title, page, document_id, unit_label, file_extension, source,
        drive_link, native_link, moments,
