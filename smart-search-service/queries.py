@@ -20,6 +20,7 @@ from config import EMBEDDING_DIMENSION
 
 # One row per chunk. The id is "documentId#index", so re-indexing overwrites in place.
 SCHEMA = f"""
+CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS chunks (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL,
