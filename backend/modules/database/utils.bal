@@ -618,6 +618,18 @@ isolated function isValidCanonicalDate(string dateStr) returns boolean {
     return true;
 }
 
+# Returns the start date analytics queries actually use: the requested start date, but never before the production launch date.
+#
+# + startDate - Optional start date string (YYYY-MM-DD)
+# + return - Effective start date string (YYYY-MM-DD)
+isolated function getEffectiveStartDate(string? startDate) returns string {
+    string? cleanStart = startDate is string ? startDate.trim() : ();
+    if cleanStart is string && isValidCanonicalDate(cleanStart) && cleanStart > PROD_LAUNCH_DATE_STR {
+        return cleanStart;
+    }
+    return PROD_LAUNCH_DATE_STR;
+}
+
 # Constructs parameterized SQL predicates for date range filtering.
 # Converts local date inputs to UTC timestamp boundaries to enable index-seeking on event_timestamp.
 # Enforces a strict minimum start date of PROD_LAUNCH_DATE_STR (2026-08-21) across all analytics queries.
@@ -625,20 +637,17 @@ isolated function isValidCanonicalDate(string dateStr) returns boolean {
 # + startDate - Optional start date string (YYYY-MM-DD)
 # + endDate - Optional end date string (YYYY-MM-DD)
 # + tzOffset - Timezone offset in minutes for local day alignment
+# + lookbackDays - Extra days to read before the start date, for queries that compare a day with the previous day
 # + return - Parameterized SQL query fragment
-isolated function buildDateRangePredicates(string? startDate, string? endDate, int tzOffset = DEFAULT_TZ_OFFSET_MINUTES) 
+isolated function buildDateRangePredicates(string? startDate, string? endDate, int tzOffset = DEFAULT_TZ_OFFSET_MINUTES, int lookbackDays = 0) 
     returns sql:ParameterizedQuery {
 
-    string? cleanStart = startDate is string ? startDate.trim() : ();
     string? cleanEnd = endDate is string ? endDate.trim() : ();
 
     // Strictly enforce minimum production launch date (2026-08-21)
-    string effectiveStart = PROD_LAUNCH_DATE_STR;
-    if cleanStart is string && isValidCanonicalDate(cleanStart) && cleanStart > PROD_LAUNCH_DATE_STR {
-        effectiveStart = cleanStart;
-    }
+    string effectiveStart = getEffectiveStartDate(startDate);
 
-    sql:ParameterizedQuery query = ` AND l.event_timestamp >= DATE_SUB(${effectiveStart}, INTERVAL ${tzOffset} MINUTE)`;
+    sql:ParameterizedQuery query = ` AND l.event_timestamp >= DATE_SUB(DATE_SUB(${effectiveStart}, INTERVAL ${lookbackDays} DAY), INTERVAL ${tzOffset} MINUTE)`;
 
     if cleanEnd is string && isValidCanonicalDate(cleanEnd) {
         string effectiveEnd = cleanEnd;

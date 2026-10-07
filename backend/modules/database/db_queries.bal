@@ -851,6 +851,8 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
     int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
 
     sql:ParameterizedQuery datePredicate = buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset);
+    sql:ParameterizedQuery timeLookbackPredicate = buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset, 1);
+    string effectiveStartDate = getEffectiveStartDate(filter.startDate);
 
     sql:ParameterizedQuery query = `
         WITH DeduplicatedSessionTimes AS (
@@ -861,7 +863,8 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                CASE WHEN MAX(IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0)) = 1 THEN MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) ELSE SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) END as totalDuration
+                CASE WHEN MAX(IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0)) = 1 THEN MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) ELSE SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) END as totalDuration,
+                MAX(IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0)) as isRunningTotal
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -870,7 +873,7 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
             WHERE UPPER(l.event_type) = 'SESSION_TIME'
     `;
 
-    query = sql:queryConcat(query, datePredicate);
+    query = sql:queryConcat(query, timeLookbackPredicate);
     query = sql:queryConcat(query, buildRegionPredicate(filter.region));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
@@ -878,11 +881,21 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
     query = sql:queryConcat(query, `
             GROUP BY eventDate, l.user_email, dedupeEventId
         ),
+        DailyEventTimes AS (
+            SELECT 
+                eventDate,
+                CASE WHEN isRunningTotal = 1
+                    THEN GREATEST(totalDuration - COALESCE(LAG(totalDuration) OVER (PARTITION BY user_email, dedupeEventId ORDER BY eventDate), 0), 0)
+                    ELSE totalDuration
+                END as totalDuration
+            FROM DeduplicatedSessionTimes
+        ),
         DailySessionDurationSummary AS (
             SELECT 
                 eventDate,
                 SUM(totalDuration) as dailyTimeSpent
-            FROM DeduplicatedSessionTimes
+            FROM DailyEventTimes
+            WHERE eventDate >= ${effectiveStartDate}
             GROUP BY eventDate
         ),
         PlatformDailyLogs AS (
