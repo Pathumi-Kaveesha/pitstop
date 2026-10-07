@@ -14,32 +14,32 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Talks to Pinecone's REST API: stores chunk vectors, searches them, and
+"""Stores chunk vectors in PostgreSQL (pgvector), searches them, and
 applies the score-based filtering that decides what counts as a real match."""
 
 import json
 import re
+import threading
+import time
 from dataclasses import dataclass
 from typing import Optional
 
-import requests
+import psycopg
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
-import time
-
+import queries
 from config import (
     DELETE_MAX_RETRIES,
     DELETE_RETRY_DELAY_SECONDS,
-    EMBEDDING_DIMENSION,
     MAX_CHUNKS_PER_DOCUMENT,
     MAX_SCORE_GAP_FROM_TOP_MATCH,
     MINIMUM_SIMILARITY_SCORE,
-    PINECONE_API_KEY,
-    PINECONE_SERVICE_URL,
+    POSTGRES_DSN,
     UPSERT_MAX_RETRIES,
     UPSERT_RETRY_DELAY_SECONDS,
 )
 from deep_links import with_timestamp
-from http_session import make_session
 
 # Common words a question is full of but that say nothing about which moment actually matters
 _STOP_WORDS = {
@@ -75,15 +75,6 @@ def _best_native_link(metadata: dict, drive_link: str, query_words: list[str]) -
         return fallback
     return with_timestamp(drive_link, best_seconds)
 
-_session = make_session()
-_delete_session = make_session(retry_read=False)
-
-_HEADERS = {
-    "Api-Key": PINECONE_API_KEY,
-    "Content-Type": "application/json",
-    "X-Pinecone-API-Version": "2025-04",
-}
-
 
 @dataclass
 class SearchResult:
@@ -100,8 +91,29 @@ class SearchResult:
     native_link: Optional[str] = None
 
 
-# For queries that only filter by documentId - an all-zero vector matches nothing on a cosine index.
-_FILTER_ONLY_VECTOR = [1.0] + [0.0] * (EMBEDDING_DIMENSION - 1)
+# Shared pool - a new connection per call doesn't scale under concurrent search and indexing.
+_pool = ConnectionPool(POSTGRES_DSN, min_size=1, max_size=10, open=True)
+
+_schema_ready = False
+_schema_lock = threading.Lock()
+
+
+def _ensure_schema() -> None:
+    """Creates the table the first time it's needed. Safe to call from multiple threads at once."""
+    global _schema_ready
+    if _schema_ready:
+        return
+    with _schema_lock:
+        if _schema_ready:
+            return
+        with _pool.connection() as conn:
+            conn.execute(queries.SCHEMA)
+        _schema_ready = True
+
+
+def _vector_literal(vector: list[float]) -> str:
+    """Turns a list of numbers into the text form pgvector reads, like [0.1,0.2]."""
+    return "[" + ",".join(str(float(value)) for value in vector) + "]"
 
 
 def upsert_chunks(
@@ -117,57 +129,47 @@ def upsert_chunks(
     native_links: list[Optional[str]],
     moments: Optional[list[Optional[list[tuple[str, str]]]]] = None,
 ) -> None:
-    """Stores each (vector, text, metadata) triple in Pinecone."""
+    """Stores each (vector, text, metadata) triple in PostgreSQL."""
     if len({len(vectors), len(texts), len(pages), len(native_links)}) > 1:
         raise ValueError(
             f"Vector/text/page/native_link length mismatch: vectors={len(vectors)}, "
             f"texts={len(texts)}, pages={len(pages)}, native_links={len(native_links)}"
         )
     chunk_moments = moments or [None] * len(vectors)
-    records = [
-        {
-            "id": f"{document_id}#{index}",
-            "values": vector,
-            "metadata": {
-                "fileName": title,
-                "page": page,
-                "content": text,
-                "documentId": document_id,
-                "unitLabel": unit_label,
-                "fileExtension": file_extension,
-                "source": source,
-                "driveLink": drive_link,
-                # Pinecone can't store null, so "" means no link.
-                "nativeLink": native_link or "",
-                "moments": json.dumps(entry_moments) if entry_moments else "",
-            },
-        }
+    rows = [
+        (
+            f"{document_id}#{index}",
+            document_id,
+            _vector_literal(vector),
+            text,
+            title,
+            page,
+            unit_label,
+            file_extension,
+            source,
+            drive_link,
+            # native_link is NOT NULL, so "" means no link.
+            native_link or "",
+            json.dumps(entry_moments) if entry_moments else "",
+        )
         for index, (vector, text, page, native_link, entry_moments) in enumerate(
             zip(vectors, texts, pages, native_links, chunk_moments)
         )
     ]
+    _ensure_schema()
     last_error: Exception | None = None
     for attempt in range(UPSERT_MAX_RETRIES + 1):
         try:
-            response = _session.post(
-                f"{PINECONE_SERVICE_URL}/vectors/upsert",
-                headers=_HEADERS,
-                json={"vectors": records},
-                timeout=30,
-            )
-            response.raise_for_status()
+            with _pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.executemany(queries.UPSERT_CHUNK, rows)
             return
-        except requests.exceptions.HTTPError as error:
-            last_error = error
-            status = error.response.status_code if error.response is not None else None
-            if status is not None and status != 429 and status < 500:
-                break
-        except requests.exceptions.RequestException as error:
+        except psycopg.Error as error:
             last_error = error
 
         if attempt < UPSERT_MAX_RETRIES:
             time.sleep(UPSERT_RETRY_DELAY_SECONDS)
-    raise RuntimeError(f"Failed to store chunks in Pinecone: {last_error}") from last_error
+    raise RuntimeError(f"Failed to store chunks in PostgreSQL: {last_error}") from last_error
 
 
 def search(
@@ -178,30 +180,26 @@ def search(
     from the same document."""
     query_words = _query_words(query_text)
     raw_pool_size = top_results_count * pool_multiplier
-    response = _session.post(
-        f"{PINECONE_SERVICE_URL}/query",
-        headers=_HEADERS,
-        json={"vector": query_vector, "topK": raw_pool_size, "includeMetadata": True},
-        timeout=30,
-    )
-    response.raise_for_status()
-    matches = response.json().get("matches", [])
+    vector_text = _vector_literal(query_vector)
+    _ensure_schema()
+    with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(queries.SEARCH, (vector_text, vector_text, raw_pool_size))
+        matches = cur.fetchall()
 
-    candidates = [m for m in matches if m["score"] >= MINIMUM_SIMILARITY_SCORE]
+    candidates = [m for m in matches if m["similarity"] >= MINIMUM_SIMILARITY_SCORE]
     if not candidates:
         return []
 
-    candidates.sort(key=lambda m: m["score"], reverse=True)
+    candidates.sort(key=lambda m: m["similarity"], reverse=True)
 
-    top_score = candidates[0]["score"]
-    candidates = [m for m in candidates if top_score - m["score"] <= MAX_SCORE_GAP_FROM_TOP_MATCH]
+    top_score = candidates[0]["similarity"]
+    candidates = [m for m in candidates if top_score - m["similarity"] <= MAX_SCORE_GAP_FROM_TOP_MATCH]
 
     chunks_used_per_document: dict[str, int] = {}
     results: list[SearchResult] = []
     for match in candidates:
-        metadata = match.get("metadata", {})
-        title = metadata.get("fileName", "Untitled")
-        document_key = metadata.get("documentId") or title
+        title = match["title"]
+        document_key = match["document_id"] or title
         used = chunks_used_per_document.get(document_key, 0)
         if used >= MAX_CHUNKS_PER_DOCUMENT:
             continue
@@ -209,16 +207,20 @@ def search(
 
         results.append(
             SearchResult(
-                content=metadata.get("content", ""),
+                content=match["content"],
                 title=title,
-                page=metadata.get("page", 1),
-                similarity_score=match["score"],
-                document_id=metadata.get("documentId", ""),
-                unit_label=metadata.get("unitLabel", "Page"),
-                file_extension=metadata.get("fileExtension", "pdf"),
-                source=metadata.get("source", "upload"),
-                drive_link=metadata.get("driveLink", ""),
-                native_link=_best_native_link(metadata, metadata.get("driveLink", ""), query_words),
+                page=match["page"],
+                similarity_score=float(match["similarity"]),
+                document_id=match["document_id"],
+                unit_label=match["unit_label"],
+                file_extension=match["file_extension"],
+                source=match["source"],
+                drive_link=match["drive_link"],
+                native_link=_best_native_link(
+                    {"nativeLink": match["native_link"], "moments": match["moments"]},
+                    match["drive_link"],
+                    query_words,
+                ),
             )
         )
         if len(results) >= top_results_count:
@@ -227,112 +229,35 @@ def search(
     return results
 
 
-def delete_document(title: str) -> None:
-    """Removes every chunk belonging to one document, by title."""
-    response = _delete_session.post(
-        f"{PINECONE_SERVICE_URL}/vectors/delete",
-        headers=_HEADERS,
-        json={"filter": {"fileName": {"$eq": title}}},
-        timeout=30,
-    )
-    response.raise_for_status()
-
-
 def document_exists(document_id: str) -> bool:
     """Whether any chunk is indexed under this documentId - checked before
     a delete so a never-indexed id gets an honest 404."""
-    response = _session.post(
-        f"{PINECONE_SERVICE_URL}/query",
-        headers=_HEADERS,
-        json={
-            "vector": _FILTER_ONLY_VECTOR,
-            "topK": 1,
-            "filter": {"documentId": {"$eq": document_id}},
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return len(response.json().get("matches", [])) > 0
+    _ensure_schema()
+    with _pool.connection() as conn, conn.cursor() as cur:
+        cur.execute(queries.DOCUMENT_EXISTS, (document_id,))
+        return cur.fetchone() is not None
 
 
 def find_document_source(document_id: str) -> Optional[tuple[str, str]]:
     """The Drive link and file type recorded for an indexed document, or
     None when nothing is indexed under that id."""
-    response = _session.post(
-        f"{PINECONE_SERVICE_URL}/query",
-        headers=_HEADERS,
-        json={
-            "vector": _FILTER_ONLY_VECTOR,
-            "topK": 1,
-            "includeMetadata": True,
-            "filter": {"documentId": {"$eq": document_id}},
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    matches = response.json().get("matches", [])
-    if not matches:
+    _ensure_schema()
+    with _pool.connection() as conn, conn.cursor() as cur:
+        cur.execute(queries.FIND_DOCUMENT_SOURCE, (document_id,))
+        row = cur.fetchone()
+    if row is None:
         return None
-    metadata = matches[0].get("metadata", {})
-    return metadata.get("driveLink", ""), metadata.get("fileExtension", "")
+    return row[0], row[1]
 
 
 def delete_stale_chunks(document_id: str, keep_count: int) -> None:
     """Removes chunks left over from an earlier version of this document -
-    both extras from a longer version and any written before chunk ids
-    became predictable. Runs after a successful upsert, never before."""
-    expected = {f"{document_id}#{index}" for index in range(keep_count)}
+    the extras from a longer version. Runs after a successful upsert, never before."""
+    expected = [f"{document_id}#{index}" for index in range(keep_count)]
+    _ensure_schema()
+    with _pool.connection() as conn:
+        conn.execute(queries.DELETE_STALE_CHUNKS, (document_id, expected))
 
-    # Deterministic ids all share this prefix - list() enumerates every one
-    # of them via pagination, with no cap on how many chunks a document has.
-    all_ids: set[str] = set()
-    pagination_token = None
-    while True:
-        params = {"prefix": f"{document_id}#", "limit": 100}
-        if pagination_token:
-            params["paginationToken"] = pagination_token
-        response = _session.get(
-            f"{PINECONE_SERVICE_URL}/vectors/list",
-            headers=_HEADERS,
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
-        page = response.json()
-        all_ids.update(v["id"] for v in page.get("vectors", []))
-        pagination_token = page.get("pagination", {}).get("next")
-        if not pagination_token:
-            break
-
-    # Best-effort catch-all for chunks written before ids became
-    # predictable (random uuids, so list()'s prefix match can't find them).
-    response = _session.post(
-        f"{PINECONE_SERVICE_URL}/query",
-        headers=_HEADERS,
-        json={
-            "vector": _FILTER_ONLY_VECTOR,
-            "topK": 1000,
-            "includeMetadata": False,
-            "filter": {"documentId": {"$eq": document_id}},
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    all_ids.update(m["id"] for m in response.json().get("matches", []))
-
-    stale = [vid for vid in all_ids if vid not in expected]
-    if not stale:
-        return
-
-    for i in range(0, len(stale), 1000):
-        batch = stale[i:i + 1000]
-        response = _delete_session.post(
-            f"{PINECONE_SERVICE_URL}/vectors/delete",
-            headers=_HEADERS,
-            json={"ids": batch},
-            timeout=30,
-        )
-        response.raise_for_status()
 
 def delete_by_document_id(document_id: str) -> None:
     """Removes every chunk belonging to one Pitstop content item. Deleting an
@@ -340,25 +265,16 @@ def delete_by_document_id(document_id: str) -> None:
 
     Keyed on documentId rather than the title - the id is the content's own
     id and never changes, while two documents can share a title."""
+    _ensure_schema()
     last_error: Exception | None = None
     for attempt in range(DELETE_MAX_RETRIES + 1):
         try:
-            response = _delete_session.post(
-                f"{PINECONE_SERVICE_URL}/vectors/delete",
-                headers=_HEADERS,
-                json={"filter": {"documentId": {"$eq": document_id}}},
-                timeout=30,
-            )
-            response.raise_for_status()
+            with _pool.connection() as conn:
+                conn.execute(queries.DELETE_BY_DOCUMENT_ID, (document_id,))
             return
-        except requests.exceptions.HTTPError as error:
-            last_error = error
-            status = error.response.status_code if error.response is not None else None
-            if status is not None and status != 429 and status < 500:
-                break
-        except requests.exceptions.RequestException as error:
+        except psycopg.Error as error:
             last_error = error
 
         if attempt < DELETE_MAX_RETRIES:
             time.sleep(DELETE_RETRY_DELAY_SECONDS)
-    raise RuntimeError(f"Failed to delete document {document_id} from Pinecone: {last_error}") from last_error
+    raise RuntimeError(f"Failed to delete document {document_id} from PostgreSQL: {last_error}") from last_error
