@@ -861,7 +861,8 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
                     JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.eventId')), 
                     CAST(l.id AS CHAR)
                 ) as dedupeEventId,
-                CASE WHEN MAX(IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0)) = 1 THEN MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) ELSE SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) END as totalDuration
+                CASE WHEN MAX(IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0)) = 1 THEN MAX(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) ELSE SUM(GREATEST(CAST(COALESCE(JSON_EXTRACT(l.metadata, '$.durationSeconds'), 0) AS SIGNED), 0)) END as totalDuration,
+                MAX(IF(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isRunningTotal')), 'false') = 'true', 1, 0)) as isRunningTotal
             FROM user_activity_logs l
             LEFT JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
@@ -878,11 +879,20 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
     query = sql:queryConcat(query, `
             GROUP BY eventDate, l.user_email, dedupeEventId
         ),
+        DailyEventTimes AS (
+            SELECT 
+                eventDate,
+                CASE WHEN isRunningTotal = 1
+                    THEN GREATEST(totalDuration - COALESCE(LAG(totalDuration) OVER (PARTITION BY user_email, dedupeEventId ORDER BY eventDate), 0), 0)
+                    ELSE totalDuration
+                END as totalDuration
+            FROM DeduplicatedSessionTimes
+        ),
         DailySessionDurationSummary AS (
             SELECT 
                 eventDate,
                 SUM(totalDuration) as dailyTimeSpent
-            FROM DeduplicatedSessionTimes
+            FROM DailyEventTimes
             GROUP BY eventDate
         ),
         PlatformDailyLogs AS (
