@@ -30,6 +30,9 @@ count =
 interval =
 maxWaitInterval =
 
+[sample_app.smartsearch]
+smartSearchEnabled =
+
 [sample_app.smartsearch.smartSearchServiceConfig]
 apiEndpoint =
 [sample_app.smartsearch.smartSearchServiceConfig.oauthConfig]
