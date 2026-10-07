@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -91,8 +92,22 @@ class SearchResult:
     native_link: Optional[str] = None
 
 
+def _use_db_named_schema(conn: psycopg.Connection) -> None:
+    """Keeps this service in its own schema, named after its database, on a server shared with other apps."""
+    schema = conn.info.dbname
+    try:
+        conn.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(schema)))
+        conn.commit()
+    except psycopg.errors.UniqueViolation:
+        # Another connection created it first, at the same moment - fine, it exists now.
+        conn.rollback()
+    # public stays in the path too, so an extension already installed there is still visible.
+    conn.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+    conn.commit()
+
+
 # Shared pool - a new connection per call doesn't scale under concurrent search and indexing.
-_pool = ConnectionPool(POSTGRES_DSN, min_size=1, max_size=10, open=True)
+_pool = ConnectionPool(POSTGRES_DSN, min_size=1, max_size=10, open=True, configure=_use_db_named_schema)
 
 _schema_ready = False
 _schema_lock = threading.Lock()
