@@ -156,10 +156,10 @@ def upsert_chunks(
             zip(vectors, texts, pages, native_links, chunk_moments)
         )
     ]
-    _ensure_schema()
     last_error: Exception | None = None
     for attempt in range(UPSERT_MAX_RETRIES + 1):
         try:
+            _ensure_schema()
             with _pool.connection() as conn:
                 with conn.cursor() as cur:
                     cur.executemany(queries.UPSERT_CHUNK, rows)
@@ -265,10 +265,10 @@ def delete_by_document_id(document_id: str) -> None:
 
     Keyed on documentId rather than the title - the id is the content's own
     id and never changes, while two documents can share a title."""
-    _ensure_schema()
     last_error: Exception | None = None
     for attempt in range(DELETE_MAX_RETRIES + 1):
         try:
+            _ensure_schema()
             with _pool.connection() as conn:
                 conn.execute(queries.DELETE_BY_DOCUMENT_ID, (document_id,))
             return
