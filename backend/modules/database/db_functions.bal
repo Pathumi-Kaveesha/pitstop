@@ -196,6 +196,21 @@ public isolated function getIndexingInfo(int contentId) returns IndexingInfo?|er
     return result is sql:NoRowsError ? () : result;
 }
 
+# Candidate content for a Smart Search backfill batch - not already flagged as failed.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + afterContentId - Only rows with a higher id than this - 0 to start from the beginning
+# + candidateLimit - How many rows to fetch
+# + return - Matching content, or an error
+public isolated function getSmartSearchBackfillCandidates(string? contentType, string? contentSubtype,
+        int afterContentId, int candidateLimit) returns IndexingInfo[]|error {
+    stream<IndexingInfo, sql:Error?> resultStream = dbClient->query(
+            getSmartSearchBackfillCandidatesQuery(contentType, contentSubtype, afterContentId, candidateLimit));
+    return from IndexingInfo result in resultStream
+        select result;
+}
+
 # Get content that failed to index.
 #
 # + return - The list, or an error
@@ -211,6 +226,22 @@ public isolated function getSmartSearchIndexFailures() returns SmartSearchIndexF
 # + return - Error, if any
 public isolated function clearSmartSearchIndexFailure(int contentId) returns error? {
     _ = check dbClient->execute(deleteSmartSearchIndexFailureQuery(contentId));
+}
+
+# Record that content is now confirmed indexed.
+#
+# + contentId - The content's id
+# + return - Error, if any
+public isolated function setSmartSearchIndexedAt(int contentId) returns error? {
+    _ = check dbClient->execute(setSmartSearchIndexedAtQuery(contentId));
+}
+
+# Clear a content's confirmed-indexed marker, so a changed link gets re-checked.
+#
+# + contentId - The content's id
+# + return - Error, if any
+public isolated function clearSmartSearchIndexedAt(int contentId) returns error? {
+    _ = check dbClient->execute(clearSmartSearchIndexedAtQuery(contentId));
 }
 
 # Log a user activity event.

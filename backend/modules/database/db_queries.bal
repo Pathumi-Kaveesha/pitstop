@@ -1118,6 +1118,40 @@ isolated function getIndexingInfoQuery(int contentId) returns sql:ParameterizedQ
         AND is_deleted = false
 `;
 
+# Query for candidate content to backfill into Smart Search - not already flagged as failed.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + afterContentId - Only rows with a higher id than this - 0 to start from the beginning
+# + candidateLimit - How many rows to fetch, wider than what the caller will actually use
+# + return - SQL parameterized query
+isolated function getSmartSearchBackfillCandidatesQuery(string? contentType, string? contentSubtype,
+        int afterContentId, int candidateLimit) returns sql:ParameterizedQuery {
+    sql:ParameterizedQuery query = `
+        SELECT
+            content_id,
+            description,
+            content_type,
+            content_sub_type,
+            content_link,
+            transcript_link
+        FROM
+            content
+        WHERE
+            is_deleted = false
+            AND content_id > ${afterContentId}
+            AND smart_search_indexed_at IS NULL
+            AND content_id NOT IN (SELECT content_id FROM smart_search_index_failure)
+    `;
+    if contentType is string {
+        query = sql:queryConcat(query, ` AND content_type = ${contentType}`);
+    }
+    if contentSubtype is string {
+        query = sql:queryConcat(query, ` AND content_sub_type = ${contentSubtype}`);
+    }
+    return sql:queryConcat(query, ` ORDER BY content_id LIMIT ${candidateLimit}`);
+}
+
 # Query to get content that failed to index.
 #
 # + return - SQL parameterized query
@@ -1151,6 +1185,23 @@ isolated function getSmartSearchIndexFailuresQuery() returns sql:ParameterizedQu
 # + return - SQL parameterized query
 isolated function deleteSmartSearchIndexFailureQuery(int contentId) returns sql:ParameterizedQuery => `
     DELETE FROM smart_search_index_failure WHERE content_id = ${contentId}
+`;
+
+# Query to record that content is now confirmed indexed.
+#
+# + contentId - The content's id
+# + return - SQL parameterized query
+isolated function setSmartSearchIndexedAtQuery(int contentId) returns sql:ParameterizedQuery => `
+    UPDATE content SET smart_search_indexed_at = CURRENT_TIMESTAMP WHERE content_id = ${contentId}
+`;
+
+# Query to clear a content's confirmed-indexed marker, so a changed link gets re-checked rather
+# than being mistaken for the old link's already-confirmed success.
+#
+# + contentId - The content's id
+# + return - SQL parameterized query
+isolated function clearSmartSearchIndexedAtQuery(int contentId) returns sql:ParameterizedQuery => `
+    UPDATE content SET smart_search_indexed_at = NULL WHERE content_id = ${contentId}
 `;
 
 # Query to get contents by section ID or route ID using a unified query.

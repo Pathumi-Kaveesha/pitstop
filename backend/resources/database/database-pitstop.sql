@@ -292,6 +292,9 @@ ALTER TABLE content
 ADD COLUMN `transcript_link` varchar(300) DEFAULT NULL COMMENT 'Google Doc transcript or info link, video/LMS/Salesforce content only - read for Smart Search indexing, never returned to a normal user'
 AFTER content_link;
 
+ALTER TABLE content
+ADD COLUMN `smart_search_indexed_at` timestamp NULL DEFAULT NULL COMMENT 'When Smart Search last confirmed this content is indexed - NULL until then, and cleared again whenever its indexed link changes';
+
 CREATE TABLE `custom_buttons` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `content_id` INT NOT NULL,

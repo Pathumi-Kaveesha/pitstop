@@ -395,6 +395,11 @@ public isolated function deleteContentFromSmartSearch(int contentId, string dele
         log:printWarn("Smart Search: could not clear a deleted content's index failure", clearError,
                 contentId = contentId);
     }
+    error? clearIndexedAtError = database:clearSmartSearchIndexedAt(contentId);
+    if clearIndexedAtError is error {
+        log:printWarn("Smart Search: could not clear a deleted content's confirmed-indexed marker",
+                clearIndexedAtError, contentId = contentId);
+    }
 
     _ = clearIndexedEntries(contentId, deletedBy);
 }
@@ -515,11 +520,16 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
             return;
         }
 
-        // An old failure belongs to the old link
+        // An old failure, or a confirmed index, both belong to the old link
         error? clearError = database:clearSmartSearchIndexFailure(contentId);
         if clearError is error {
             log:printWarn("Smart Search: could not clear index failure after a link change", clearError,
                     contentId = contentId);
+        }
+        error? clearIndexedAtError = database:clearSmartSearchIndexedAt(contentId);
+        if clearIndexedAtError is error {
+            log:printWarn("Smart Search: could not clear confirmed-indexed marker after a link change",
+                    clearIndexedAtError, contentId = contentId);
         }
 
         // Clear the old version first, so a failed re-index never leaves stale results
@@ -568,6 +578,11 @@ public isolated function retryIndexContent(int contentId, string? requestedBy = 
         if clearError is error {
             log:printWarn("Smart Search: could not clear index failure before a retry", clearError, contentId = contentId);
         }
+        error? clearIndexedAtError = database:clearSmartSearchIndexedAt(contentId);
+        if clearIndexedAtError is error {
+            log:printWarn("Smart Search: could not clear confirmed-indexed marker before a retry",
+                    clearIndexedAtError, contentId = contentId);
+        }
         indexContentForSmartSearch(contentId, link, info.description,
                 displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy);
         return;
@@ -588,29 +603,161 @@ type IndexStatusResponse record {|
 # + contentId - The content to check
 # + return - False if the Smart Search service could not be reached
 isolated function reconcileIndexStatus(int contentId) returns boolean {
-    http:Client|error serviceClient = getSearchClient();
-    if serviceClient is error {
-        return false;
-    }
-    IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
-    if status is http:ClientError {
-        return false;
-    }
+    // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent, so a status read from
+    // before an edit can never be written after that edit's own clear-and-reindex has finished.
+    lock {
+        reindexRuns += 1;
 
-    string? errorMessage = status.errorMessage;
-    if errorMessage is string {
-        error? updateError = database:setSmartSearchIndexFailure(contentId, errorMessage);
-        if updateError is error {
-            log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+        http:Client|error serviceClient = getSearchClient();
+        if serviceClient is error {
+            return false;
         }
-    } else if status.indexed {
-        error? clearError = database:clearSmartSearchIndexFailure(contentId);
-        if clearError is error {
-            log:printWarn("Smart Search: could not clear a resolved index failure", clearError,
-                    contentId = contentId);
+        IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
+        if status is http:ClientError {
+            return false;
+        }
+
+        string? errorMessage = status.errorMessage;
+        if errorMessage is string {
+            error? updateError = database:setSmartSearchIndexFailure(contentId, errorMessage);
+            if updateError is error {
+                log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+            }
+        } else if status.indexed {
+            error? clearError = database:clearSmartSearchIndexFailure(contentId);
+            if clearError is error {
+                log:printWarn("Smart Search: could not clear a resolved index failure", clearError,
+                        contentId = contentId);
+            }
+            error? updateError = database:setSmartSearchIndexedAt(contentId);
+            if updateError is error {
+                log:printWarn("Smart Search: could not record a confirmed index", updateError, contentId = contentId);
+            }
+        }
+        return true;
+    }
+}
+
+# Whether a content item has never been indexed and never failed - a genuine backfill candidate.
+#
+# + contentId - The content to check
+# + return - True only when nothing has been attempted for it yet, or an error if Smart Search couldn't be reached
+isolated function isPendingSmartSearchIndex(int contentId) returns boolean|error {
+    // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent - see reconcileIndexStatus.
+    lock {
+        reindexRuns += 1;
+
+        http:Client serviceClient = check getSearchClient();
+        IndexStatusResponse status = check serviceClient->get(string `/documents/${contentId}/status`);
+        if status.indexed {
+            // Learned just now - remembered from here on, so future searches skip the live check.
+            error? updateError = database:setSmartSearchIndexedAt(contentId);
+            if updateError is error {
+                log:printWarn("Smart Search: could not record a confirmed index", updateError, contentId = contentId);
+            }
+            return false;
+        }
+        string? errorMessage = status.errorMessage;
+        if errorMessage is string {
+            // Known to Smart Search but not yet to Pitstop's own failure list - sync it now.
+            error? updateError = database:setSmartSearchIndexFailure(contentId, errorMessage);
+            if updateError is error {
+                log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+            }
+            return false;
+        }
+        return true;
+    }
+}
+
+# Finds content that hasn't been indexed or flagged as failed yet, for an admin-run backfill.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + count - How many pending items to return
+# + return - Up to `count` pending content items, or an error
+public isolated function findBackfillCandidates(string? contentType, string? contentSubtype, int count)
+        returns database:IndexingInfo[]|error {
+    int effectiveCount = count;
+    if effectiveCount < 1 {
+        effectiveCount = 1;
+    } else if effectiveCount > MAX_BACKFILL_BATCH_SIZE {
+        effectiveCount = MAX_BACKFILL_BATCH_SIZE;
+    }
+    database:IndexingInfo[] pending = [];
+    int afterContentId = 0;
+    int pageSize = effectiveCount * 5;
+    int statusChecks = 0;
+    // Pages forward instead of stopping at the first window, or a long already-indexed run could hide real candidates.
+    foreach int _ in 0 ..< MAX_BACKFILL_SCAN_PAGES {
+        database:IndexingInfo[] candidates =
+            check database:getSmartSearchBackfillCandidates(contentType, contentSubtype, afterContentId, pageSize);
+        if candidates.length() == 0 {
+            break;
+        }
+
+        foreach database:IndexingInfo candidate in candidates {
+            afterContentId = candidate.contentId;
+            if pending.length() >= effectiveCount || statusChecks >= MAX_BACKFILL_STATUS_CHECKS {
+                break;
+            }
+            string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
+                    candidate.transcriptLink);
+            if link is () || link == "" {
+                continue;
+            }
+            statusChecks += 1;
+            if check isPendingSmartSearchIndex(candidate.contentId) {
+                pending.push(candidate);
+            }
+        }
+
+        if pending.length() >= effectiveCount || statusChecks >= MAX_BACKFILL_STATUS_CHECKS
+                || candidates.length() < pageSize {
+            break;
         }
     }
-    return true;
+    return pending;
+}
+
+# Indexes a chosen batch of content for an admin-run backfill.
+#
+# + ctx - Request context, for the caller's save limit
+# + contentIds - The content items to index
+# + requestedBy - Email of the admin who triggered this, for the logs
+# + return - A summary of what happened to each item
+public isolated function runBackfillBatch(http:RequestContext ctx, int[] contentIds, string? requestedBy)
+        returns BackfillResult {
+    int[] boundedIds = contentIds.length() > MAX_BACKFILL_BATCH_SIZE
+        ? contentIds.slice(0, MAX_BACKFILL_BATCH_SIZE)
+        : contentIds;
+    int submitted = 0;
+    int deferred = 0;
+    int notIndexableCount = 0;
+    foreach int contentId in boundedIds {
+        database:IndexingInfo?|error info = database:getIndexingInfo(contentId);
+        if info is error || info is () {
+            continue;
+        }
+        string? link = indexingLinkFor(info.contentType, info.contentSubtype, info.contentLink, info.transcriptLink);
+        if link is () || link == "" {
+            continue;
+        }
+        if !isContentLinkIndexable(info.contentType, info.contentSubtype, link) {
+            recordUnindexableLink(contentId, info.contentType, info.contentSubtype);
+            notIndexableCount += 1;
+            continue;
+        }
+        if !isIngestAllowed(ctx) {
+            deferReindex(contentId);
+            deferred += 1;
+            continue;
+        }
+        _ = start indexContentForSmartSearch(contentId, link, info.description,
+                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy);
+        submitted += 1;
+    }
+    return {submitted, deferred, notIndexable: notIndexableCount};
 }
 
 # Re-checks known and recent failures and returns the content that failed to index.

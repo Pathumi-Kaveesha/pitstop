@@ -2019,6 +2019,57 @@ service http:InterceptableService / on new http:Listener(9090) {
         return http:ACCEPTED;
     }
 
+    # Finds content not yet indexed or flagged as failed, for an admin-run backfill.
+    #
+    # + ctx - Request context
+    # + contentType - Filter by content type, when set
+    # + contentSubtype - Filter by content subtype, when set
+    # + count - How many pending items to return, capped at 20
+    # + return - The pending content, 403 Forbidden, 404 Not Found, or 500 Internal Server Error
+    resource function get smart\-search/backfill\-candidates(http:RequestContext ctx, string? contentType = (),
+            string? contentSubtype = (), int count = 10)
+        returns database:IndexingInfo[]|http:Forbidden|http:NotFound|http:InternalServerError {
+
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        database:IndexingInfo[]|error result =
+            smartsearch:findBackfillCandidates(contentType, contentSubtype, count);
+        if result is error {
+            log:printError(constants:SMART_SEARCH_ERROR, result);
+            return <http:InternalServerError>{
+                body: {message: constants:SMART_SEARCH_ERROR}
+            };
+        }
+        return result;
+    }
+
+    # Indexes a chosen batch of content for an admin-run backfill.
+    #
+    # + ctx - Request context
+    # + payload - The content items to index
+    # + return - A summary of what happened, 403 Forbidden, 404 Not Found, or 500 Internal Server Error
+    resource function post smart\-search/backfill\-index(http:RequestContext ctx,
+            smartsearch:BackfillIndexRequest payload)
+        returns smartsearch:BackfillResult|http:Forbidden|http:NotFound|http:InternalServerError {
+
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        string|error requestedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+        return smartsearch:runBackfillBatch(ctx, payload.contentIds, requestedBy is string ? requestedBy : ());
+    }
+
     # Search contents basic info.
     #
     # + return - Success or error responses

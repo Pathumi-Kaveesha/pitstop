@@ -62,6 +62,7 @@ import {
   ROUTE_ID_QUIZ_ADMIN,
   ROUTE_ID_ANALYTICS_DASHBOARD,
   ROUTE_ID_SMART_SEARCH_UNINDEXED,
+  ROUTE_ID_SMART_SEARCH_BACKFILL,
   IS_SMART_SEARCH_ENABLED,
 } from "@config/constant";
 import { useAppAuthContext } from "@context/AuthContext";
@@ -236,6 +237,14 @@ const Header = (props: HeaderProps) => {
                   path: "/smart-search-unindexed",
                   routeId: ROUTE_ID_SMART_SEARCH_UNINDEXED,
                   routeOrder: 5,
+                  children: [],
+                  isRouteVisible: true,
+                },
+                {
+                  menuItem: "Smart Search Index Existing Content",
+                  path: "/smart-search-backfill",
+                  routeId: ROUTE_ID_SMART_SEARCH_BACKFILL,
+                  routeOrder: 6,
                   children: [],
                   isRouteVisible: true,
                 },
