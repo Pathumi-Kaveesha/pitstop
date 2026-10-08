@@ -641,20 +641,14 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
 # Whether a content item has never been indexed and never failed - a genuine backfill candidate.
 #
 # + contentId - The content to check
-# + return - True only when nothing has been attempted for it yet
-isolated function isPendingSmartSearchIndex(int contentId) returns boolean {
+# + return - True only when nothing has been attempted for it yet, or an error if Smart Search couldn't be reached
+isolated function isPendingSmartSearchIndex(int contentId) returns boolean|error {
     // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent - see reconcileIndexStatus.
     lock {
         reindexRuns += 1;
 
-        http:Client|error serviceClient = getSearchClient();
-        if serviceClient is error {
-            return false;
-        }
-        IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
-        if status is http:ClientError {
-            return false;
-        }
+        http:Client serviceClient = check getSearchClient();
+        IndexStatusResponse status = check serviceClient->get(string `/documents/${contentId}/status`);
         if status.indexed {
             // Learned just now - remembered from here on, so future searches skip the live check.
             error? updateError = database:setSmartSearchIndexedAt(contentId);
@@ -711,7 +705,7 @@ public isolated function findBackfillCandidates(string? contentType, string? con
             if link is () || link == "" {
                 continue;
             }
-            if isPendingSmartSearchIndex(candidate.contentId) {
+            if check isPendingSmartSearchIndex(candidate.contentId) {
                 pending.push(candidate);
             }
         }
