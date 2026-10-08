@@ -1688,15 +1688,16 @@ service http:InterceptableService / on new http:Listener(9090) {
                 // Title is part of what gets embedded and stored, so a rename re-indexes too
                 boolean titleChanged = freshInfo.description != previousInfo.description && newLink is string
                         && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
+                boolean newNeedsIndexing = newLink is string
+                        && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
                 if newLink != previousLink || newDisplayLink != previousDisplayLink || titleChanged {
-                    // Only a new version that needs indexing uses the limit; clearing old entries never does
-                    boolean newNeedsIndexing = newLink is string
-                            && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
                     if !newNeedsIndexing || smartsearch:isIngestAllowed(ctx) {
                         _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, userEmail);
                     } else {
                         smartsearch:deferReindex(contentId);
                     }
+                } else if !newNeedsIndexing && newLink is string && newLink != "" {
+                    smartsearch:recordUnindexableLink(contentId, freshInfo.contentType, freshInfo.contentSubtype);
                 }
             }
         }
