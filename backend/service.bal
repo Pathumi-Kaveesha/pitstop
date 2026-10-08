@@ -2053,7 +2053,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     #
     # + ctx - Request context
     # + payload - The content items to index
-    # + return - A summary of what happened, 403 Forbidden, or 404 Not Found
+    # + return - A summary of what happened, 403 Forbidden, 404 Not Found, or 500 Internal Server Error
     resource function post smart\-search/backfill\-index(http:RequestContext ctx,
             smartsearch:BackfillIndexRequest payload)
         returns smartsearch:BackfillResult|http:Forbidden|http:NotFound|http:InternalServerError {
