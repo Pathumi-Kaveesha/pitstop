@@ -432,7 +432,7 @@ def delete_document_endpoint(
             existed = document_exists(document_id)
         except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
             logger.exception("Failed to check document %s before deleting", document_id)
-            raise HTTPException(status_code=500, detail=f"Error while deleting document: {error}") from error
+            raise HTTPException(status_code=500, detail="Error while deleting document.") from error
 
         if not existed:
             raise HTTPException(status_code=404, detail=f"No indexed chunks found for document {document_id}.")
@@ -441,7 +441,7 @@ def delete_document_endpoint(
             delete_by_document_id(document_id)
         except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
             logger.exception("Failed to delete document %s", document_id)
-            raise HTTPException(status_code=500, detail=f"Error while deleting document: {error}") from error
+            raise HTTPException(status_code=500, detail="Error while deleting document.") from error
 
     _clear_search_cache()
     logger.info("Removed indexed chunks for document %s", document_id)
@@ -520,7 +520,7 @@ def search_endpoint(
         results = _find_results(userQuery, limit)
     except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
         logger.exception("Search failed")
-        raise HTTPException(status_code=500, detail=f"Error while searching: {error}") from error
+        raise HTTPException(status_code=500, detail="Error while searching.") from error
 
     sources = [
         {
