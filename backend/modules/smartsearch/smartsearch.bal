@@ -687,6 +687,7 @@ public isolated function findBackfillCandidates(string? contentType, string? con
     database:IndexingInfo[] pending = [];
     int afterContentId = 0;
     int pageSize = effectiveCount * 5;
+    int statusChecks = 0;
     // Pages forward instead of stopping at the first window, or a long already-indexed run could hide real candidates.
     foreach int _ in 0 ..< MAX_BACKFILL_SCAN_PAGES {
         database:IndexingInfo[] candidates =
@@ -697,7 +698,7 @@ public isolated function findBackfillCandidates(string? contentType, string? con
 
         foreach database:IndexingInfo candidate in candidates {
             afterContentId = candidate.contentId;
-            if pending.length() >= effectiveCount {
+            if pending.length() >= effectiveCount || statusChecks >= MAX_BACKFILL_STATUS_CHECKS {
                 break;
             }
             string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
@@ -705,12 +706,14 @@ public isolated function findBackfillCandidates(string? contentType, string? con
             if link is () || link == "" {
                 continue;
             }
+            statusChecks += 1;
             if check isPendingSmartSearchIndex(candidate.contentId) {
                 pending.push(candidate);
             }
         }
 
-        if pending.length() >= effectiveCount || candidates.length() < pageSize {
+        if pending.length() >= effectiveCount || statusChecks >= MAX_BACKFILL_STATUS_CHECKS
+                || candidates.length() < pageSize {
             break;
         }
     }
