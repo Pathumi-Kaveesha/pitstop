@@ -603,33 +603,39 @@ type IndexStatusResponse record {|
 # + contentId - The content to check
 # + return - False if the Smart Search service could not be reached
 isolated function reconcileIndexStatus(int contentId) returns boolean {
-    http:Client|error serviceClient = getSearchClient();
-    if serviceClient is error {
-        return false;
-    }
-    IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
-    if status is http:ClientError {
-        return false;
-    }
+    // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent, so a status read from
+    // before an edit can never be written after that edit's own clear-and-reindex has finished.
+    lock {
+        reindexRuns += 1;
 
-    string? errorMessage = status.errorMessage;
-    if errorMessage is string {
-        error? updateError = database:setSmartSearchIndexFailure(contentId, errorMessage);
-        if updateError is error {
-            log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+        http:Client|error serviceClient = getSearchClient();
+        if serviceClient is error {
+            return false;
         }
-    } else if status.indexed {
-        error? clearError = database:clearSmartSearchIndexFailure(contentId);
-        if clearError is error {
-            log:printWarn("Smart Search: could not clear a resolved index failure", clearError,
-                    contentId = contentId);
+        IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
+        if status is http:ClientError {
+            return false;
         }
-        error? updateError = database:setSmartSearchIndexedAt(contentId);
-        if updateError is error {
-            log:printWarn("Smart Search: could not record a confirmed index", updateError, contentId = contentId);
+
+        string? errorMessage = status.errorMessage;
+        if errorMessage is string {
+            error? updateError = database:setSmartSearchIndexFailure(contentId, errorMessage);
+            if updateError is error {
+                log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+            }
+        } else if status.indexed {
+            error? clearError = database:clearSmartSearchIndexFailure(contentId);
+            if clearError is error {
+                log:printWarn("Smart Search: could not clear a resolved index failure", clearError,
+                        contentId = contentId);
+            }
+            error? updateError = database:setSmartSearchIndexedAt(contentId);
+            if updateError is error {
+                log:printWarn("Smart Search: could not record a confirmed index", updateError, contentId = contentId);
+            }
         }
+        return true;
     }
-    return true;
 }
 
 # Whether a content item has never been indexed and never failed - a genuine backfill candidate.
@@ -637,32 +643,37 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
 # + contentId - The content to check
 # + return - True only when nothing has been attempted for it yet
 isolated function isPendingSmartSearchIndex(int contentId) returns boolean {
-    http:Client|error serviceClient = getSearchClient();
-    if serviceClient is error {
-        return false;
-    }
-    IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
-    if status is http:ClientError {
-        return false;
-    }
-    if status.indexed {
-        // Learned just now - remembered from here on, so future searches skip the live check.
-        error? updateError = database:setSmartSearchIndexedAt(contentId);
-        if updateError is error {
-            log:printWarn("Smart Search: could not record a confirmed index", updateError, contentId = contentId);
+    // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent - see reconcileIndexStatus.
+    lock {
+        reindexRuns += 1;
+
+        http:Client|error serviceClient = getSearchClient();
+        if serviceClient is error {
+            return false;
         }
-        return false;
-    }
-    string? errorMessage = status.errorMessage;
-    if errorMessage is string {
-        // Known to Smart Search but not yet to Pitstop's own failure list - sync it now.
-        error? updateError = database:setSmartSearchIndexFailure(contentId, errorMessage);
-        if updateError is error {
-            log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+        IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
+        if status is http:ClientError {
+            return false;
         }
-        return false;
+        if status.indexed {
+            // Learned just now - remembered from here on, so future searches skip the live check.
+            error? updateError = database:setSmartSearchIndexedAt(contentId);
+            if updateError is error {
+                log:printWarn("Smart Search: could not record a confirmed index", updateError, contentId = contentId);
+            }
+            return false;
+        }
+        string? errorMessage = status.errorMessage;
+        if errorMessage is string {
+            // Known to Smart Search but not yet to Pitstop's own failure list - sync it now.
+            error? updateError = database:setSmartSearchIndexFailure(contentId, errorMessage);
+            if updateError is error {
+                log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
+            }
+            return false;
+        }
+        return true;
     }
-    return true;
 }
 
 # Finds content that hasn't been indexed or flagged as failed yet, for an admin-run backfill.
