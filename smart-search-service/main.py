@@ -191,6 +191,7 @@ def health() -> dict:
 
 
 _index_slots = threading.BoundedSemaphore(MAX_CONCURRENT_INDEX_JOBS)
+_exclusive_acquire_lock = threading.Lock()
 
 
 def _run_in_index_slot(job, *args) -> None:
@@ -200,8 +201,9 @@ def _run_in_index_slot(job, *args) -> None:
 
 def _run_in_index_slot_exclusive(job, *args) -> None:
     """Claims every slot, so a large file's memory use is never multiplied by concurrent jobs."""
-    for _ in range(MAX_CONCURRENT_INDEX_JOBS):
-        _index_slots.acquire()
+    with _exclusive_acquire_lock:
+        for _ in range(MAX_CONCURRENT_INDEX_JOBS):
+            _index_slots.acquire()
     try:
         job(*args)
     finally:
