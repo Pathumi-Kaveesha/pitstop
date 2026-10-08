@@ -37,8 +37,11 @@ GOOGLE_DRIVE_RETRY_DELAY_SECONDS = 2
 # Connection string for the PostgreSQL database that stores the chunk vectors.
 POSTGRES_DSN = os.environ["POSTGRES_DSN"]
 
-# Reject a Drive file before downloading it if it's bigger than this.
-MAX_DRIVE_FILE_SIZE_BYTES = 100 * 1024 * 1024
+# Above this, a file gets every concurrency slot to itself instead of sharing MAX_CONCURRENT_INDEX_JOBS.
+LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES = 100 * 1024 * 1024
+
+# Reject a Drive file before downloading it if it's bigger than this - confirm against the service's actual memory before raising it.
+MAX_DRIVE_FILE_SIZE_BYTES = 300 * 1024 * 1024
 
 # Largest PDF served for opening at a page - each click holds it in memory.
 MAX_PDF_VIEW_BYTES = 30 * 1024 * 1024

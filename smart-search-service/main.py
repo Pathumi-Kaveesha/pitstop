@@ -36,6 +36,7 @@ from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     DELETE_TOMBSTONE_TTL_SECONDS,
     INDEX_ERROR_TTL_SECONDS,
+    LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES,
     MAX_CONCURRENT_INDEX_JOBS,
     MAX_PDF_VIEW_BYTES,
     RAW_MATCH_POOL_MULTIPLIER,
@@ -190,11 +191,24 @@ def health() -> dict:
 
 
 _index_slots = threading.BoundedSemaphore(MAX_CONCURRENT_INDEX_JOBS)
+_exclusive_acquire_lock = threading.Lock()
 
 
 def _run_in_index_slot(job, *args) -> None:
     with _index_slots:
         job(*args)
+
+
+def _run_in_index_slot_exclusive(job, *args) -> None:
+    """Claims every slot, so a large file's memory use is never multiplied by concurrent jobs."""
+    with _exclusive_acquire_lock:
+        for _ in range(MAX_CONCURRENT_INDEX_JOBS):
+            _index_slots.acquire()
+    try:
+        job(*args)
+    finally:
+        for _ in range(MAX_CONCURRENT_INDEX_JOBS):
+            _index_slots.release()
 
 
 def _index_drive_file_in_background(
@@ -212,7 +226,11 @@ def _index_drive_file_in_background(
     _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
 
     try:
-        file_bytes = download_drive_file(info)
+        file_bytes = (
+            download_drive_file(info, max_bytes=LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES)
+            if info.size_bytes is None
+            else download_drive_file(info)
+        )
         logger.info("Downloaded '%s' (%.1f MB), chunking", title, len(file_bytes) / 1_048_576)
 
         # A stand-in doc is read for timestamps instead of headings - only docx actually has them
@@ -398,8 +416,14 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     # Claimed now, not once the background task actually starts - see the note above.
     job_started_at = time.time()
     generation = _bump_generation(document_id)
+    # A large file runs alone, so its memory use is never multiplied by concurrent jobs.
+    runner = (
+        _run_in_index_slot_exclusive
+        if info.size_bytes is not None and info.size_bytes > LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES
+        else _run_in_index_slot
+    )
     background_tasks.add_task(
-        _run_in_index_slot, _index_drive_file_in_background, info, title, document_id, body.driveLink,
+        runner, _index_drive_file_in_background, info, title, document_id, body.driveLink,
         job_started_at, generation, body.displayLink,
     )
 
