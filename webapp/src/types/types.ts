@@ -829,6 +829,21 @@ export interface SmartSearchIndexFailure {
   updatedOn: string;
 }
 
+export interface SmartSearchBackfillCandidate {
+  contentId: number;
+  description: string;
+  contentType: string;
+  contentSubtype: string | null;
+  contentLink: string;
+  transcriptLink: string | null;
+}
+
+export interface SmartSearchBackfillResult {
+  submitted: number;
+  deferred: number;
+  notIndexable: number;
+}
+
 export interface SourceExcerpt {
   source: SmartSearchResult;
   originalIndex: number;

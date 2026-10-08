@@ -28,6 +28,7 @@ import SmartSearchPoc from "@view/smartSearchPoc/index";
 import { IS_SMART_SEARCH_ENABLED } from "@config/constant";
 import LibrarySearchButton from "@view/smartSearchPoc/LibrarySearchButton";
 import UnindexedContent from "@view/smartSearchPoc/UnindexedContent";
+import BackfillContent from "@view/smartSearchPoc/BackfillContent";
 import { Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
 import { useMemo, useEffect } from "react";
 import Summary from "@view/summary/index";
@@ -126,6 +127,16 @@ const AppHandler = () => {
                 element:
                   IS_SMART_SEARCH_ENABLED && authorizedRoles.includes(Role.SALES_ADMIN) ? (
                     <UnindexedContent />
+                  ) : (
+                    <Error />
+                  ),
+                errorElement: <Error />,
+              },
+              {
+                path: "/smart-search-backfill",
+                element:
+                  IS_SMART_SEARCH_ENABLED && authorizedRoles.includes(Role.SALES_ADMIN) ? (
+                    <BackfillContent />
                   ) : (
                     <Error />
                   ),

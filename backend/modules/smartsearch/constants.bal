@@ -27,4 +27,10 @@ const int MAX_TRACKED_RETRIES = 1000;
 
 const int RECHECK_WINDOW_HOURS = 24;
 
+// Matches MAX_INGESTS_PER_USER - a full batch shouldn't be able to exceed the admin's own save limit in one click.
+const int MAX_BACKFILL_BATCH_SIZE = 20;
+
+// Caps one search from turning into an unbounded scan of an already-mostly-indexed corpus.
+const int MAX_BACKFILL_SCAN_PAGES = 10;
+
 const decimal RECONCILE_INTERVAL_SECONDS = 6 * 60 * 60;

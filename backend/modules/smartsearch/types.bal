@@ -52,6 +52,24 @@ public type SmartSearchResponse record {|
     types:ContentResponse[] contents = [];
 |};
 
+# Body for triggering a backfill batch.
+#
+# + contentIds - The content items to index
+public type BackfillIndexRequest record {|
+    int[] contentIds;
+|};
+
+# Result of triggering a backfill batch.
+#
+# + submitted - How many were sent for indexing
+# + deferred - How many were skipped because the caller's save limit was reached
+# + notIndexable - How many weren't something Smart Search can read, recorded with a reason instead
+public type BackfillResult record {|
+    int submitted;
+    int deferred;
+    int notIndexable;
+|};
+
 # Body for the Python service's /ingest-drive-link.
 #
 # + driveLink - The link to read text from
