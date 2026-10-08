@@ -419,6 +419,21 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:CREATED;
         }
 
+        if smartsearch:isSmartSearchEnabled() && indexLink is string && indexLink != "" {
+            // There's a link, but it isn't something Smart Search can read - record why, so the admin can fix it
+            int|error newContentId = database:addContentAndReturnId(contentPayload, createdBy,
+                    smartsearch:isSmartSearchEnabled());
+            if newContentId is error {
+                string customError = "Error while adding a content";
+                log:printError(customError, newContentId);
+                return <http:InternalServerError>{
+                    body: customError
+                };
+            }
+            smartsearch:recordUnindexableLink(newContentId, contentPayload.contentType, contentPayload.contentSubtype);
+            return http:CREATED;
+        }
+
         error? result = database:addContent(contentPayload, createdBy, smartsearch:isSmartSearchEnabled());
         if result is error {
             string customError = "Error while adding a content";
@@ -1673,15 +1688,16 @@ service http:InterceptableService / on new http:Listener(9090) {
                 // Title is part of what gets embedded and stored, so a rename re-indexes too
                 boolean titleChanged = freshInfo.description != previousInfo.description && newLink is string
                         && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
+                boolean newNeedsIndexing = newLink is string
+                        && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
                 if newLink != previousLink || newDisplayLink != previousDisplayLink || titleChanged {
-                    // Only a new version that needs indexing uses the limit; clearing old entries never does
-                    boolean newNeedsIndexing = newLink is string
-                            && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
                     if !newNeedsIndexing || smartsearch:isIngestAllowed(ctx) {
-                        _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, previousLink, userEmail);
+                        _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, userEmail);
                     } else {
                         smartsearch:deferReindex(contentId);
                     }
+                } else if !newNeedsIndexing && newLink is string && newLink != "" {
+                    smartsearch:recordUnindexableLink(contentId, freshInfo.contentType, freshInfo.contentSubtype);
                 }
             }
         }

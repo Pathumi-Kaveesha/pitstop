@@ -327,6 +327,15 @@ public isolated function deferReindex(int contentId) {
     recordIndexFailure(contentId, constants:SMART_SEARCH_DEFERRED_REINDEX);
 }
 
+# Records why a content item's link can't be indexed, so an admin sees a reason instead of silence.
+#
+# + contentId - The content whose link isn't indexable
+# + contentType - Its content type
+# + contentSubtype - Its content subtype, when set
+public isolated function recordUnindexableLink(int contentId, string contentType, string? contentSubtype) {
+    recordIndexFailure(contentId, unindexableLinkReason(contentType, contentSubtype));
+}
+
 # Indexes a content item. Launched with `start` so the caller never waits on it.
 #
 # + contentId - The content's own id, reused as Smart Search's documentId
@@ -485,10 +494,8 @@ isolated int reindexRuns = 0;
 #
 # + contentId - The content that was edited
 # + newLink - What should be indexed after the edit, when known at the time
-# + previousLink - What was indexed before the edit, when known
 # + requestedBy - Email of the admin who made the edit, for the logs
-public isolated function reindexAfterLinkChange(int contentId, string? newLink, string? previousLink,
-        string? requestedBy = ()) {
+public isolated function reindexAfterLinkChange(int contentId, string? newLink, string? requestedBy = ()) {
     lock {
         reindexRuns += 1;
 
@@ -524,8 +531,8 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
         if newLink is string && isContentLinkIndexable(current.contentType, current.contentSubtype, newLink) {
             indexContentForSmartSearch(contentId, newLink, current.description,
                     displayLinkFor(current.contentType, current.contentSubtype, current.contentLink), requestedBy);
-        } else if newLink is string && newLink != "" && previousLink is string
-                && isContentLinkIndexable(current.contentType, current.contentSubtype, previousLink) {
+        } else if newLink is string && newLink != "" {
+            // Whether or not the previous link was indexable - the admin should see a reason either way.
             recordIndexFailure(contentId, unindexableLinkReason(current.contentType, current.contentSubtype));
         }
     }
