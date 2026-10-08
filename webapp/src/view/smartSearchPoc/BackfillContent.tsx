@@ -111,6 +111,7 @@ export default function BackfillContent() {
       // Every item in this batch is now either submitted, deferred or recorded as a failure -
       // none of them will match the "not yet attempted" filter again, so the list is stale.
       setCandidates([]);
+      setSearched(false);
     } catch {
       setError("Couldn't index this batch. Check the console/backend logs for details.");
     } finally {
