@@ -226,7 +226,11 @@ def _index_drive_file_in_background(
     _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
 
     try:
-        file_bytes = download_drive_file(info)
+        file_bytes = (
+            download_drive_file(info, max_bytes=LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES)
+            if info.size_bytes is None
+            else download_drive_file(info)
+        )
         logger.info("Downloaded '%s' (%.1f MB), chunking", title, len(file_bytes) / 1_048_576)
 
         # A stand-in doc is read for timestamps instead of headings - only docx actually has them
@@ -414,9 +418,9 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     generation = _bump_generation(document_id)
     # A large file runs alone, so its memory use is never multiplied by concurrent jobs.
     runner = (
-        _run_in_index_slot
-        if info.size_bytes is not None and info.size_bytes <= LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES
-        else _run_in_index_slot_exclusive
+        _run_in_index_slot_exclusive
+        if info.size_bytes is not None and info.size_bytes > LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES
+        else _run_in_index_slot
     )
     background_tasks.add_task(
         runner, _index_drive_file_in_background, info, title, document_id, body.driveLink,
