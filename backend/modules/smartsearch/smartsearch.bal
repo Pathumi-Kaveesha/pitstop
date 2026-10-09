@@ -384,6 +384,7 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
     log:printWarn(string `Smart Search: skipped indexing content ${contentId}`,
             link = driveLink, status = response.statusCode, reason = reason);
     recordIndexFailure(contentId, reason);
+    releaseBackfillReservation(contentId);
 }
 
 # Clears a deleted content's entries from the search index. Content that
