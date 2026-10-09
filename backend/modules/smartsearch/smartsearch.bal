@@ -773,6 +773,7 @@ public isolated function findBackfillCandidates(string? contentType, string? con
             string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
                     candidate.transcriptLink);
             if link is () || link == "" {
+                recordIndexFailure(candidate.contentId, "A Google Doc link is required for this content type");
                 continue;
             }
             // Still being indexed from an earlier batch - don't offer it again.
@@ -834,6 +835,7 @@ isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, 
         }
         string? link = indexingLinkFor(info.contentType, info.contentSubtype, info.contentLink, info.transcriptLink);
         if link is () || link == "" {
+            recordIndexFailure(contentId, "A Google Doc link is required for this content type");
             releaseBackfillReservation(contentId);
             continue;
         }
@@ -1044,6 +1046,7 @@ public isolated function getBackfillStatusList(string? contentType, string? cont
 isolated function runBulkIndexInBackground(string? contentType, string? contentSubtype, int? maxCount,
         string? requestedBy) {
     int totalSubmitted = 0;
+    int emptyIncompleteScans = 0;
     foreach int _ in 0 ..< MAX_BULK_INDEX_ITERATIONS {
         int batchSize = MAX_BACKFILL_BATCH_SIZE;
         if maxCount is int {
@@ -1061,12 +1064,19 @@ isolated function runBulkIndexInBackground(string? contentType, string? contentS
         }
         database:IndexingInfo[] candidates = candidatesResult.candidates;
         if candidates.length() > 0 {
+            emptyIncompleteScans = 0;
             int[] contentIds = from database:IndexingInfo candidate in candidates select candidate.contentId;
             BackfillResult batchResult = runBackfillBatchForEmail(requestedBy, contentIds, requestedBy);
             totalSubmitted += batchResult.submitted;
         } else if !candidatesResult.scanIncomplete {
             // A genuinely empty scan - nothing left matching these filters.
             break;
+        } else {
+            emptyIncompleteScans += 1;
+            if emptyIncompleteScans >= 3 {
+                log:printWarn("Smart Search: bulk index scan made no progress for 3 scans in a row, stopping this run");
+                break;
+            }
         }
         runtime:sleep(BULK_INDEX_BATCH_INTERVAL_SECONDS);
     }
