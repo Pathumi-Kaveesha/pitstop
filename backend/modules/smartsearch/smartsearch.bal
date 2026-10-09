@@ -1087,8 +1087,8 @@ isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, 
             break;
         } else {
             emptyIncompleteScans += 1;
-            if emptyIncompleteScans >= 3 {
-                log:printWarn("Smart Search: bulk index scan made no progress for 3 scans in a row, stopping this run");
+            if emptyIncompleteScans >= MAX_EMPTY_INCOMPLETE_SCANS {
+                log:printWarn(string `Smart Search: bulk index scan made no progress for ${MAX_EMPTY_INCOMPLETE_SCANS} scans in a row, stopping this run`);
                 break;
             }
         }

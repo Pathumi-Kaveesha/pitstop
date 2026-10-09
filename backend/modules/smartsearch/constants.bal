@@ -51,4 +51,7 @@ const decimal BULK_INDEX_BATCH_INTERVAL_SECONDS = 65;
 // Safety net - bounds how many batches one "index everything" run can submit before giving up.
 const int MAX_BULK_INDEX_ITERATIONS = 500;
 
+// Stops a run that keeps scanning without ever finding anything to submit.
+const int MAX_EMPTY_INCOMPLETE_SCANS = 3;
+
 const int MAX_STATUS_LIST_COUNT = 100;
