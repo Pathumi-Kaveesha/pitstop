@@ -754,6 +754,8 @@ public isolated function findBackfillCandidates(string? contentType, string? con
     int statusChecks = 0;
     // True only once a page proves there's nothing left to check - a safety cap exiting early leaves this false.
     boolean exhausted = false;
+    // True once the scan has changed anything, even if nothing ended up in `pending` this time.
+    boolean progressed = false;
     // Pages forward instead of stopping at the first window, or a long already-indexed run could hide real candidates.
     foreach int _ in 0 ..< MAX_BACKFILL_SCAN_PAGES {
         database:IndexingInfo[] candidates =
@@ -774,6 +776,7 @@ public isolated function findBackfillCandidates(string? contentType, string? con
                     candidate.transcriptLink);
             if link is () || link == "" {
                 recordIndexFailure(candidate.contentId, "A Google Doc link is required for this content type");
+                progressed = true;
                 continue;
             }
             // Still being indexed from an earlier batch - don't offer it again.
@@ -781,6 +784,8 @@ public isolated function findBackfillCandidates(string? contentType, string? con
                 continue;
             }
             statusChecks += 1;
+            // Either branch here changes something - adds a candidate, or reconciles a stale record.
+            progressed = true;
             if check isPendingSmartSearchIndex(candidate.contentId) {
                 pending.push(candidate);
             }
@@ -794,7 +799,7 @@ public isolated function findBackfillCandidates(string? contentType, string? con
             break;
         }
     }
-    return {candidates: pending, scanIncomplete: !exhausted};
+    return {candidates: pending, scanIncomplete: !exhausted, progressed};
 }
 
 # Indexes a chosen batch of content for an admin-run backfill.
@@ -1085,6 +1090,8 @@ isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, 
         } else if !candidatesResult.scanIncomplete {
             // A genuinely empty scan - nothing left matching these filters.
             break;
+        } else if candidatesResult.progressed {
+            emptyIncompleteScans = 0;
         } else {
             emptyIncompleteScans += 1;
             if emptyIncompleteScans >= MAX_EMPTY_INCOMPLETE_SCANS {

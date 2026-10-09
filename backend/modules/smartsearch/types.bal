@@ -57,9 +57,12 @@ public type SmartSearchResponse record {|
 #
 # + candidates - Up to the requested count of pending content items
 # + scanIncomplete - True if a safety cap stopped the scan before it checked everything
+# + progressed - True if the scan changed anything (reconciled a stale record, recorded a failure,
+#                or found a candidate) - a background run shouldn't treat this as stuck
 public type BackfillCandidatesResult record {|
     database:IndexingInfo[] candidates;
     boolean scanIncomplete;
+    boolean progressed;
 |};
 
 # Where one content item stands in an admin bulk-index run.
