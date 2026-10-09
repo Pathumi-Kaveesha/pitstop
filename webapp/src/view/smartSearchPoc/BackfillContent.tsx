@@ -198,8 +198,13 @@ export default function BackfillContent() {
       );
       // Switch from previewing what's about to be indexed to watching what's actually happening -
       // otherwise the list stays locked to "not started" and the items just submitted disappear from it.
+      const alreadyShowingInProgress = indexLimit === "" && statusFilter === "in_progress";
       setIndexLimit("");
       setStatusFilter("in_progress");
+      setRunning(true);
+      if (alreadyShowingInProgress) {
+        await fetchPage(1);
+      }
     } catch {
       setError("Couldn't start indexing right now. Please try again in a moment.");
     } finally {
