@@ -849,6 +849,31 @@ export interface SmartSearchBackfillResult {
   notIndexable: number;
 }
 
+export type SmartSearchBackfillStatus = "not_started" | "in_progress" | "indexed" | "failed";
+
+export interface SmartSearchBackfillStatusItem {
+  contentId: number;
+  description: string;
+  contentType: string;
+  contentSubtype: string | null;
+  contentLink: string;
+  status: SmartSearchBackfillStatus;
+  failureReason: string | null;
+}
+
+export interface SmartSearchBackfillStatusResponse {
+  items: SmartSearchBackfillStatusItem[];
+  page: number;
+  totalPages: number;
+  totalCount: number;
+  countIsApproximate: boolean;
+  running: boolean;
+}
+
+export interface SmartSearchBulkIndexStartResponse {
+  started: boolean;
+}
+
 export interface SourceExcerpt {
   source: SmartSearchResult;
   originalIndex: number;

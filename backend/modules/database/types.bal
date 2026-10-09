@@ -248,6 +248,31 @@ public type IndexingInfo record {|
     string? transcriptLink;
 |};
 
+# One content item's raw indexing status, for the admin bulk-index status list.
+#
+# + contentId - Id of the content
+# + description - The content's title, for display
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + contentLink - The content's link
+# + indexedFlag - Non-nil when confirmed indexed - a flag, not the timestamp itself
+# + failureReason - Why it failed, when it has
+public type ContentIndexStatus record {|
+    @sql:Column {name: "content_id"}
+    int contentId;
+    string description;
+    @sql:Column {name: "content_type"}
+    string contentType;
+    @sql:Column {name: "content_sub_type"}
+    string? contentSubtype;
+    @sql:Column {name: "content_link"}
+    string contentLink;
+    @sql:Column {name: "indexed_flag"}
+    string? indexedFlag;
+    @sql:Column {name: "failure_reason"}
+    string? failureReason;
+|};
+
 # Content that failed to index.
 #
 # + contentId - Id of the content

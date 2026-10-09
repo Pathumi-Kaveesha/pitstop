@@ -211,6 +211,33 @@ public isolated function getSmartSearchBackfillCandidates(string? contentType, s
         select result;
 }
 
+# Get one page of content with its raw indexing status, for the admin bulk-index status list.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + bucket - Which status bucket to narrow down to - see smartSearchStatusBucketCondition
+# + offsetRows - How many matching rows to skip
+# + pageSize - How many rows to fetch
+# + return - Matching content, or an error
+public isolated function getSmartSearchContentStatus(string? contentType, string? contentSubtype, string bucket,
+        int offsetRows, int pageSize) returns ContentIndexStatus[]|error {
+    stream<ContentIndexStatus, sql:Error?> resultStream = dbClient->query(
+            getSmartSearchContentStatusQuery(contentType, contentSubtype, bucket, offsetRows, pageSize));
+    return from ContentIndexStatus result in resultStream
+        select result;
+}
+
+# Get how many content items fall in one status bucket, for the admin bulk-index status list.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + bucket - Which status bucket to narrow down to - see smartSearchStatusBucketCondition
+# + return - The count, or an error
+public isolated function getSmartSearchContentStatusCount(string? contentType, string? contentSubtype, string bucket)
+        returns int|error {
+    return dbClient->queryRow(getSmartSearchContentStatusCountQuery(contentType, contentSubtype, bucket));
+}
+
 # Get content that failed to index.
 #
 # + return - The list, or an error

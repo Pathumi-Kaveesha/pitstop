@@ -1152,6 +1152,82 @@ isolated function getSmartSearchBackfillCandidatesQuery(string? contentType, str
     return sql:queryConcat(query, ` ORDER BY content_id LIMIT ${candidateLimit}`);
 }
 
+# The extra WHERE condition for one status bucket - "indexed", "failed", "pending" (neither), or anything else for no filter.
+#
+# + bucket - Which status bucket to narrow down to
+# + return - SQL parameterized query fragment
+isolated function smartSearchStatusBucketCondition(string bucket) returns sql:ParameterizedQuery {
+    if bucket == "indexed" {
+        return ` AND c.smart_search_indexed_at IS NOT NULL`;
+    }
+    if bucket == "failed" {
+        return ` AND f.content_id IS NOT NULL`;
+    }
+    if bucket == "pending" {
+        return ` AND c.smart_search_indexed_at IS NULL AND f.content_id IS NULL`;
+    }
+    return ``;
+}
+
+# Query for one page of content with its raw indexing status, for the admin bulk-index status list.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + bucket - Which status bucket to narrow down to - see smartSearchStatusBucketCondition
+# + offsetRows - How many matching rows to skip
+# + pageSize - How many rows to fetch
+# + return - SQL parameterized query
+isolated function getSmartSearchContentStatusQuery(string? contentType, string? contentSubtype, string bucket,
+        int offsetRows, int pageSize) returns sql:ParameterizedQuery {
+    sql:ParameterizedQuery query = `
+        SELECT
+            c.content_id,
+            c.description,
+            c.content_type,
+            c.content_sub_type,
+            c.content_link,
+            CASE WHEN c.smart_search_indexed_at IS NOT NULL THEN 'yes' ELSE NULL END AS indexed_flag,
+            f.error_message AS failure_reason
+        FROM
+            content c
+        LEFT JOIN
+            smart_search_index_failure f ON f.content_id = c.content_id
+        WHERE
+            c.is_deleted = false
+    `;
+    if contentType is string {
+        query = sql:queryConcat(query, ` AND c.content_type = ${contentType}`);
+    }
+    if contentSubtype is string {
+        query = sql:queryConcat(query, ` AND c.content_sub_type = ${contentSubtype}`);
+    }
+    query = sql:queryConcat(query, smartSearchStatusBucketCondition(bucket));
+    return sql:queryConcat(query, ` ORDER BY c.content_id LIMIT ${pageSize} OFFSET ${offsetRows}`);
+}
+
+# Query for how many content items fall in one status bucket, for the admin bulk-index status list.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + bucket - Which status bucket to narrow down to - see smartSearchStatusBucketCondition
+# + return - SQL parameterized query
+isolated function getSmartSearchContentStatusCountQuery(string? contentType, string? contentSubtype, string bucket)
+        returns sql:ParameterizedQuery {
+    sql:ParameterizedQuery query = `
+        SELECT COUNT(*)
+        FROM content c
+        LEFT JOIN smart_search_index_failure f ON f.content_id = c.content_id
+        WHERE c.is_deleted = false
+    `;
+    if contentType is string {
+        query = sql:queryConcat(query, ` AND c.content_type = ${contentType}`);
+    }
+    if contentSubtype is string {
+        query = sql:queryConcat(query, ` AND c.content_sub_type = ${contentSubtype}`);
+    }
+    return sql:queryConcat(query, smartSearchStatusBucketCondition(bucket));
+}
+
 # Query to get content that failed to index.
 #
 # + return - SQL parameterized query

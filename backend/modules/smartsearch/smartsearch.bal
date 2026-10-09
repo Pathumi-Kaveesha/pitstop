@@ -20,6 +20,7 @@ import pitstop.database;
 import pitstop.types;
 
 import ballerina/http;
+import ballerina/lang.runtime;
 import ballerina/log;
 import ballerina/task;
 import ballerina/time;
@@ -111,6 +112,14 @@ public isolated function isIngestAllowed(http:RequestContext ctx) returns boolea
     if userEmail is error {
         return false;
     }
+    return isIngestAllowedForEmail(userEmail);
+}
+
+# Same as isIngestAllowed, but for a background job that has no live request context.
+#
+# + userEmail - The admin whose quota to count against
+# + return - False once the caller has used up this minute's indexing requests
+isolated function isIngestAllowedForEmail(string userEmail) returns boolean {
     int now = time:utcNow()[0];
 
     lock {
@@ -795,6 +804,18 @@ public isolated function findBackfillCandidates(string? contentType, string? con
 # + return - A summary of what happened to each item
 public isolated function runBackfillBatch(http:RequestContext ctx, int[] contentIds, string? requestedBy)
         returns BackfillResult {
+    string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+    return runBackfillBatchForEmail(userEmail is string ? userEmail : (), contentIds, requestedBy);
+}
+
+# Same as runBackfillBatch, but for a background job that has no live request context.
+#
+# + userEmail - The admin whose save-limit quota to count against, when known
+# + contentIds - The content items to index
+# + requestedBy - Email of the admin who triggered this, for the logs
+# + return - A summary of what happened to each item
+isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, string? requestedBy)
+        returns BackfillResult {
     int[] boundedIds = contentIds.length() > MAX_BACKFILL_BATCH_SIZE
         ? contentIds.slice(0, MAX_BACKFILL_BATCH_SIZE)
         : contentIds;
@@ -822,7 +843,7 @@ public isolated function runBackfillBatch(http:RequestContext ctx, int[] content
             releaseBackfillReservation(contentId);
             continue;
         }
-        if !isIngestAllowed(ctx) {
+        if userEmail is () || !isIngestAllowedForEmail(userEmail) {
             deferReindex(contentId);
             deferred += 1;
             releaseBackfillReservation(contentId);
@@ -833,6 +854,240 @@ public isolated function runBackfillBatch(http:RequestContext ctx, int[] content
         submitted += 1;
     }
     return {submitted, deferred, notIndexable: notIndexableCount};
+}
+
+// True while one "index everything" run is active - only one at a time, admin tool, kept simple.
+isolated boolean bulkIndexRunning = false;
+
+# Whether an "index everything" run is currently active.
+#
+# + return - True if one is running
+public isolated function isBulkIndexRunning() returns boolean {
+    lock {
+        return bulkIndexRunning;
+    }
+}
+
+# Claims the bulk-index run, unless one is already active.
+#
+# + return - False if one was already running - nothing changed
+isolated function tryStartBulkIndexRun() returns boolean {
+    lock {
+        if bulkIndexRunning {
+            return false;
+        }
+        bulkIndexRunning = true;
+        return true;
+    }
+}
+
+isolated function clearBulkIndexRun() {
+    lock {
+        bulkIndexRunning = false;
+    }
+}
+
+# Where one content item stands, combining its DB record with any live backfill reservation.
+#
+# + row - The content's raw status from the database
+# + return - Its current backfill status
+isolated function classifyBackfillStatus(database:ContentIndexStatus row) returns BackfillStatus {
+    if row.indexedFlag is string {
+        return "indexed";
+    }
+    if row.failureReason is string {
+        return "failed";
+    }
+    if isReservedForBackfill(row.contentId) {
+        return "in_progress";
+    }
+    return "not_started";
+}
+
+# Content ids currently reserved for an in-flight backfill submission, expired ones excluded.
+#
+# + return - The reserved content ids, in no particular order
+isolated function backfillReservationContentIds() returns int[] {
+    lock {
+        int now = time:utcNow()[0];
+        int[] ids = [];
+        foreach string key in backfillReservations.keys() {
+            if now - backfillReservations.get(key) < BACKFILL_RESERVATION_TTL_SECONDS {
+                int|error contentId = int:fromString(key);
+                if contentId is int {
+                    ids.push(contentId);
+                }
+            }
+        }
+        return ids.clone();
+    }
+}
+
+# The "in progress" status page - served straight from the live reservation set rather than the
+# database, since that's the only authoritative source for it and it's normally small.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + page - Which page to return (1-based)
+# + count - How many items per page
+# + return - A page of results, or an error
+isolated function getInProgressStatusPage(string? contentType, string? contentSubtype, int page, int count)
+        returns BackfillStatusResult|error {
+    BackfillStatusItem[] matching = [];
+    foreach int contentId in backfillReservationContentIds() {
+        database:IndexingInfo?|error info = database:getIndexingInfo(contentId);
+        if info is error || info is () {
+            continue;
+        }
+        if (contentType is string && info.contentType != contentType)
+                || (contentSubtype is string && info.contentSubtype != contentSubtype) {
+            continue;
+        }
+        matching.push({
+            contentId: info.contentId,
+            description: info.description,
+            contentType: info.contentType,
+            contentSubtype: info.contentSubtype,
+            contentLink: info.contentLink,
+            status: "in_progress",
+            failureReason: ()
+        });
+    }
+
+    int totalCount = matching.length();
+    int totalPages = totalCount == 0 ? 1 : ((totalCount - 1) / count) + 1;
+    int effectivePage = page > totalPages ? totalPages : page;
+    int startIndex = (effectivePage - 1) * count;
+    BackfillStatusItem[] pageItems = startIndex < matching.length()
+        ? matching.slice(startIndex, int:min(startIndex + count, matching.length()))
+        : [];
+    return {
+        items: pageItems,
+        page: effectivePage,
+        totalPages,
+        totalCount,
+        countIsApproximate: false,
+        running: isBulkIndexRunning()
+    };
+}
+
+# Lists content with its indexing status, for the admin bulk-index status page.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + statusFilter - Only include items in this status, when set
+# + page - Which page to return (1-based)
+# + count - How many items per page
+# + return - A page of results, or an error
+public isolated function getBackfillStatusList(string? contentType, string? contentSubtype,
+        BackfillStatus? statusFilter, int page, int count) returns BackfillStatusResult|error {
+    int effectiveCount = count;
+    if effectiveCount < 1 {
+        effectiveCount = 1;
+    } else if effectiveCount > MAX_STATUS_LIST_COUNT {
+        effectiveCount = MAX_STATUS_LIST_COUNT;
+    }
+    int requestedPage = page < 1 ? 1 : page;
+
+    // "in progress" only exists live, in memory - the database has no notion of it at all.
+    if statusFilter == "in_progress" {
+        return getInProgressStatusPage(contentType, contentSubtype, requestedPage, effectiveCount);
+    }
+
+    // "not started" is approximate - it shares its DB bucket with "in progress", which SQL can't tell apart.
+    string bucket = statusFilter == "indexed" ? "indexed"
+        : statusFilter == "failed" ? "failed"
+        : statusFilter == "not_started" ? "pending"
+        : "all";
+    int totalCount = check database:getSmartSearchContentStatusCount(contentType, contentSubtype, bucket);
+    int totalPages = totalCount == 0 ? 1 : ((totalCount - 1) / effectiveCount) + 1;
+    int effectivePage = requestedPage > totalPages ? totalPages : requestedPage;
+    int offsetRows = (effectivePage - 1) * effectiveCount;
+
+    database:ContentIndexStatus[] rows = check database:getSmartSearchContentStatus(contentType, contentSubtype,
+            bucket, offsetRows, effectiveCount);
+    BackfillStatusItem[] items = [];
+    foreach database:ContentIndexStatus row in rows {
+        BackfillStatus status = classifyBackfillStatus(row);
+        // The "pending" bucket mixes in whatever's reserved - filter those back out here.
+        if statusFilter == "not_started" && status != "not_started" {
+            continue;
+        }
+        items.push({
+            contentId: row.contentId,
+            description: row.description,
+            contentType: row.contentType,
+            contentSubtype: row.contentSubtype,
+            contentLink: row.contentLink,
+            status,
+            failureReason: row.failureReason
+        });
+    }
+
+    return {
+        items,
+        page: effectivePage,
+        totalPages,
+        totalCount,
+        countIsApproximate: statusFilter == "not_started",
+        running: isBulkIndexRunning()
+    };
+}
+
+# Works through everything matching the filters in automatic batches, pacing itself against the
+# admin's own save limit. Launched with `start`, so the triggering request never waits on it.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
+# + requestedBy - Email of the admin who started this run
+isolated function runBulkIndexInBackground(string? contentType, string? contentSubtype, int? maxCount,
+        string? requestedBy) {
+    int totalSubmitted = 0;
+    foreach int _ in 0 ..< MAX_BULK_INDEX_ITERATIONS {
+        int batchSize = MAX_BACKFILL_BATCH_SIZE;
+        if maxCount is int {
+            int remaining = maxCount - totalSubmitted;
+            if remaining <= 0 {
+                break;
+            }
+            batchSize = remaining < MAX_BACKFILL_BATCH_SIZE ? remaining : MAX_BACKFILL_BATCH_SIZE;
+        }
+        BackfillCandidatesResult|error candidatesResult = findBackfillCandidates(contentType, contentSubtype,
+                batchSize);
+        if candidatesResult is error {
+            log:printWarn("Smart Search: bulk index scan failed, stopping this run", candidatesResult);
+            break;
+        }
+        database:IndexingInfo[] candidates = candidatesResult.candidates;
+        if candidates.length() > 0 {
+            int[] contentIds = from database:IndexingInfo candidate in candidates select candidate.contentId;
+            BackfillResult batchResult = runBackfillBatchForEmail(requestedBy, contentIds, requestedBy);
+            totalSubmitted += batchResult.submitted;
+        } else if !candidatesResult.scanIncomplete {
+            // A genuinely empty scan - nothing left matching these filters.
+            break;
+        }
+        runtime:sleep(BULK_INDEX_BATCH_INTERVAL_SECONDS);
+    }
+    clearBulkIndexRun();
+}
+
+# Starts an "index everything" run for the given filters, unless one is already active.
+#
+# + ctx - Request context, for the admin's identity
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
+# + return - Whether a run actually started - false if one was already active
+public isolated function startBulkIndex(http:RequestContext ctx, string? contentType, string? contentSubtype,
+        int? maxCount) returns BulkIndexStartResult {
+    if !tryStartBulkIndexRun() {
+        return {started: false};
+    }
+    string|error requestedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+    _ = start runBulkIndexInBackground(contentType, contentSubtype, maxCount, requestedBy is string ? requestedBy : ());
+    return {started: true};
 }
 
 # Re-checks known and recent failures and returns the content that failed to index.
@@ -879,6 +1134,25 @@ class IndexReconciliationJob {
     }
 }
 
+# Actively re-checks every currently-reserved content item, so one that's actually finished gets
+# recognized (and its reservation released) promptly, rather than only once its TTL expires.
+isolated function reconcileReservedContent() {
+    foreach int contentId in backfillReservationContentIds() {
+        if !reconcileIndexStatus(contentId) {
+            // Service unreachable right now - the rest would fail the same way, try again next run.
+            break;
+        }
+    }
+}
+
+class ReservationReconciliationJob {
+    *task:Job;
+
+    public function execute() {
+        reconcileReservedContent();
+    }
+}
+
 function init() {
     if !smartSearchEnabled {
         return;
@@ -888,5 +1162,10 @@ function init() {
         task:scheduleJobRecurByFrequency(new IndexReconciliationJob(), RECONCILE_INTERVAL_SECONDS);
     if scheduled is task:Error {
         log:printError("Smart Search: could not schedule the periodic index reconciliation job", scheduled);
+    }
+    task:JobId|task:Error reservationScheduled = task:scheduleJobRecurByFrequency(
+            new ReservationReconciliationJob(), RESERVATION_RECONCILE_INTERVAL_SECONDS);
+    if reservationScheduled is task:Error {
+        log:printError("Smart Search: could not schedule the reservation reconciliation job", reservationScheduled);
     }
 }

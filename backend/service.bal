@@ -2070,6 +2070,60 @@ service http:InterceptableService / on new http:Listener(9090) {
         return smartsearch:runBackfillBatch(ctx, payload.contentIds, requestedBy is string ? requestedBy : ());
     }
 
+    # Starts indexing everything matching the filters, in automatic batches in the background.
+    #
+    # + ctx - Request context
+    # + contentType - Filter by content type, when set
+    # + contentSubtype - Filter by content subtype, when set
+    # + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
+    # + return - Whether a run actually started, 403 Forbidden, 404 Not Found, or 500 Internal Server Error
+    resource function post smart\-search/backfill\-index\-all(http:RequestContext ctx,
+            string? contentType = (), string? contentSubtype = (), int? maxCount = ())
+        returns smartsearch:BulkIndexStartResult|http:Forbidden|http:NotFound|http:InternalServerError {
+
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        return smartsearch:startBulkIndex(ctx, contentType, contentSubtype, maxCount);
+    }
+
+    # Lists content with its indexing status, for the admin bulk-index status page.
+    #
+    # + ctx - Request context
+    # + contentType - Filter by content type, when set
+    # + contentSubtype - Filter by content subtype, when set
+    # + status - Only include items in this status, when set
+    # + page - Which page to return (1-based)
+    # + count - How many items per page, capped at 100
+    # + return - A page of results, 403 Forbidden, 404 Not Found, or 500 Internal Server Error
+    resource function get smart\-search/backfill\-status(http:RequestContext ctx, string? contentType = (),
+            string? contentSubtype = (), smartsearch:BackfillStatus? status = (), int page = 1, int count = 20)
+        returns smartsearch:BackfillStatusResult|http:Forbidden|http:NotFound|http:InternalServerError {
+
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        if authError is http:Forbidden|http:InternalServerError {
+            return authError;
+        }
+
+        smartsearch:BackfillStatusResult|error result =
+            smartsearch:getBackfillStatusList(contentType, contentSubtype, status, page, count);
+        if result is error {
+            log:printError(constants:SMART_SEARCH_ERROR, result);
+            return <http:InternalServerError>{
+                body: {message: constants:SMART_SEARCH_ERROR}
+            };
+        }
+        return result;
+    }
+
     # Search contents basic info.
     #
     # + return - Success or error responses

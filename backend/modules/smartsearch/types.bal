@@ -62,6 +62,52 @@ public type BackfillCandidatesResult record {|
     boolean scanIncomplete;
 |};
 
+# Where one content item stands in an admin bulk-index run.
+public type BackfillStatus "not_started"|"in_progress"|"indexed"|"failed";
+
+# One content item's status, for the admin bulk-index status list.
+#
+# + contentId - Id of the content
+# + description - The content's title, for display
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + contentLink - The content's link
+# + status - Where this item stands
+# + failureReason - Why it failed, when status is "failed"
+public type BackfillStatusItem record {|
+    int contentId;
+    string description;
+    string contentType;
+    string? contentSubtype;
+    string contentLink;
+    BackfillStatus status;
+    string? failureReason;
+|};
+
+# A page of the admin bulk-index status list.
+#
+# + items - This page's content items
+# + page - The page number returned (1-based) - may differ from what was asked for, if that was out of range
+# + totalPages - How many pages exist in total
+# + totalCount - How many items match in total
+# + countIsApproximate - True if totalCount/totalPages are an upper bound, not exact - see getBackfillStatusList
+# + running - True if an "index everything" run is currently active
+public type BackfillStatusResult record {|
+    BackfillStatusItem[] items;
+    int page;
+    int totalPages;
+    int totalCount;
+    boolean countIsApproximate;
+    boolean running;
+|};
+
+# Result of trying to start an "index everything" run.
+#
+# + started - False if a run was already active - nothing changed
+public type BulkIndexStartResult record {|
+    boolean started;
+|};
+
 # Body for triggering a backfill batch.
 #
 # + contentIds - The content items to index

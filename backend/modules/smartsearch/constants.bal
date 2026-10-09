@@ -40,3 +40,15 @@ const int MAX_BACKFILL_STATUS_CHECKS = 100;
 const int BACKFILL_RESERVATION_TTL_SECONDS = 30 * 60;
 
 const decimal RECONCILE_INTERVAL_SECONDS = 6 * 60 * 60;
+
+// How often reserved (in-flight) content gets actively re-checked, so a finished item is
+// recognized promptly instead of sitting reserved until its TTL expires.
+const decimal RESERVATION_RECONCILE_INTERVAL_SECONDS = 60;
+
+// Pace between automatic batches in a one-click "index everything" run - roughly one ingest window.
+const decimal BULK_INDEX_BATCH_INTERVAL_SECONDS = 65;
+
+// Safety net - bounds how many batches one "index everything" run can submit before giving up.
+const int MAX_BULK_INDEX_ITERATIONS = 500;
+
+const int MAX_STATUS_LIST_COUNT = 100;
