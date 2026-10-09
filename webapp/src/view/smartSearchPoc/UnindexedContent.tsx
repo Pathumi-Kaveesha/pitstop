@@ -98,7 +98,7 @@ export default function UnindexedContent() {
       setEntries(fresh);
       return fresh;
     } catch {
-      setError("Couldn't load the list. Check the console/backend logs for details.");
+      setError("Couldn't load the list right now. Please try again in a moment.");
       return null;
     } finally {
       setLoading(false);
@@ -188,7 +188,7 @@ export default function UnindexedContent() {
       setError(
         axios.isAxiosError(retryError) && retryError.response?.status === 429
           ? "Too many retries. Please try again in a minute."
-          : "Couldn't retry this content. Check the console/backend logs for details."
+          : "Couldn't retry this content. Please try again in a moment."
       );
       stopRetrying(contentId);
     }

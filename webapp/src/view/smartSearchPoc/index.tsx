@@ -277,7 +277,7 @@ export default function SmartSearchPoc() {
         void fetchAnswer(searchId, searchedQuery, new Set(foundSources.map((source) => source.documentId)));
       }
     } catch (error) {
-      setSearchError("Search failed. Check the console/backend logs for details.");
+      setSearchError("Something went wrong with that search. Please try again.");
       setHasSearched(false);
       // eslint-disable-next-line no-console
       console.error(error);
