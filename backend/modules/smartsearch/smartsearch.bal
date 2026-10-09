@@ -814,9 +814,11 @@ public isolated function runBackfillBatch(http:RequestContext ctx, int[] content
 # + userEmail - The admin whose save-limit quota to count against, when known
 # + contentIds - The content items to index
 # + requestedBy - Email of the admin who triggered this, for the logs
+# + recordDeferralFailure - False to leave a rate-limited item pending instead of marking it
+#                            failed - for a background run that will just retry it itself later
 # + return - A summary of what happened to each item
-isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, string? requestedBy)
-        returns BackfillResult {
+isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, string? requestedBy,
+        boolean recordDeferralFailure = true) returns BackfillResult {
     int[] boundedIds = contentIds.length() > MAX_BACKFILL_BATCH_SIZE
         ? contentIds.slice(0, MAX_BACKFILL_BATCH_SIZE)
         : contentIds;
@@ -846,7 +848,9 @@ isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, 
             continue;
         }
         if userEmail is () || !isIngestAllowedForEmail(userEmail) {
-            deferReindex(contentId);
+            if recordDeferralFailure {
+                deferReindex(contentId);
+            }
             deferred += 1;
             releaseBackfillReservation(contentId);
             continue;
@@ -1066,7 +1070,7 @@ isolated function runBulkIndexInBackground(string? contentType, string? contentS
         if candidates.length() > 0 {
             emptyIncompleteScans = 0;
             int[] contentIds = from database:IndexingInfo candidate in candidates select candidate.contentId;
-            BackfillResult batchResult = runBackfillBatchForEmail(requestedBy, contentIds, requestedBy);
+            BackfillResult batchResult = runBackfillBatchForEmail(requestedBy, contentIds, requestedBy, false);
             totalSubmitted += batchResult.submitted;
         } else if !candidatesResult.scanIncomplete {
             // A genuinely empty scan - nothing left matching these filters.
