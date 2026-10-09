@@ -355,12 +355,15 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
 
     http:Client|error ingestClient = getIngestClient();
     if ingestClient is error {
+        // Never actually submitted - a reserved backfill slot shouldn't wait out its TTL for this.
+        releaseBackfillReservation(contentId);
         return;
     }
     http:Response|http:ClientError response = ingestClient->post("/ingest-drive-link", payload);
     if response is http:ClientError {
         log:printWarn(string `Smart Search: could not reach the indexing service for content ${contentId}`,
                 reason = response.message());
+        releaseBackfillReservation(contentId);
         return;
     }
 
