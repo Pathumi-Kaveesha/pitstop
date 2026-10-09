@@ -1042,12 +1042,22 @@ public isolated function getBackfillStatusList(string? contentType, string? cont
 
 # Works through everything matching the filters in automatic batches, pacing itself against the
 # admin's own save limit. Launched with `start`, so the triggering request never waits on it.
+# Trapped so a panic anywhere in the loop can't leave bulkIndexRunning stuck true forever.
 #
 # + contentType - Filter by content type, when set
 # + contentSubtype - Filter by content subtype, when set
 # + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
 # + requestedBy - Email of the admin who started this run
 isolated function runBulkIndexInBackground(string? contentType, string? contentSubtype, int? maxCount,
+        string? requestedBy) {
+    error? result = trap runBulkIndexLoop(contentType, contentSubtype, maxCount, requestedBy);
+    if result is error {
+        log:printError("Smart Search: bulk index run failed unexpectedly", result);
+    }
+    clearBulkIndexRun();
+}
+
+isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, int? maxCount,
         string? requestedBy) {
     int totalSubmitted = 0;
     int emptyIncompleteScans = 0;
@@ -1084,7 +1094,6 @@ isolated function runBulkIndexInBackground(string? contentType, string? contentS
         }
         runtime:sleep(BULK_INDEX_BATCH_INTERVAL_SECONDS);
     }
-    clearBulkIndexRun();
 }
 
 # Starts an "index everything" run for the given filters, unless one is already active.
