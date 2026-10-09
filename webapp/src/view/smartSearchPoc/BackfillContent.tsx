@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -111,7 +111,11 @@ export default function BackfillContent() {
   // the only thing it would actually act on - and caps the list at the chosen limit.
   const previewMode = indexLimit !== "";
 
+  // Tags each fetch so a slow, superseded response can't overwrite a newer one that arrived first.
+  const latestFetchRef = useRef(0);
+
   const fetchPage = async (targetPage: number) => {
+    const requestId = ++latestFetchRef.current;
     setLoadingList(true);
     setError(null);
     try {
@@ -128,6 +132,9 @@ export default function BackfillContent() {
           },
         }
       );
+      if (requestId !== latestFetchRef.current) {
+        return;
+      }
       const data = response.data;
       let pageItems = data?.items ?? [];
       let effectivePage = data?.page ?? 1;
@@ -152,9 +159,13 @@ export default function BackfillContent() {
       setCountIsApproximate(data?.countIsApproximate ?? false);
       setRunning(data?.running ?? false);
     } catch {
-      setError("Couldn't load the list right now. Please try again in a moment.");
+      if (requestId === latestFetchRef.current) {
+        setError("Couldn't load the list right now. Please try again in a moment.");
+      }
     } finally {
-      setLoadingList(false);
+      if (requestId === latestFetchRef.current) {
+        setLoadingList(false);
+      }
     }
   };
 
