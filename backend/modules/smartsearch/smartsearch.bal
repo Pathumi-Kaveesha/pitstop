@@ -750,9 +750,11 @@ public isolated function findBackfillCandidates(string? contentType, string? con
             break;
         }
 
+        boolean stoppedEarly = false;
         foreach database:IndexingInfo candidate in candidates {
             afterContentId = candidate.contentId;
             if pending.length() >= effectiveCount || statusChecks >= MAX_BACKFILL_STATUS_CHECKS {
+                stoppedEarly = true;
                 break;
             }
             string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
@@ -770,7 +772,7 @@ public isolated function findBackfillCandidates(string? contentType, string? con
             }
         }
 
-        if candidates.length() < pageSize {
+        if !stoppedEarly && candidates.length() < pageSize {
             exhausted = true;
             break;
         }
