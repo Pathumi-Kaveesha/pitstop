@@ -2028,7 +2028,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + return - The pending content, 403 Forbidden, 404 Not Found, or 500 Internal Server Error
     resource function get smart\-search/backfill\-candidates(http:RequestContext ctx, string? contentType = (),
             string? contentSubtype = (), int count = 10)
-        returns database:IndexingInfo[]|http:Forbidden|http:NotFound|http:InternalServerError {
+        returns smartsearch:BackfillCandidatesResult|http:Forbidden|http:NotFound|http:InternalServerError {
 
         if !smartsearch:isSmartSearchEnabled() {
             return http:NOT_FOUND;
@@ -2038,7 +2038,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             return authError;
         }
 
-        database:IndexingInfo[]|error result =
+        smartsearch:BackfillCandidatesResult|error result =
             smartsearch:findBackfillCandidates(contentType, contentSubtype, count);
         if result is error {
             log:printError(constants:SMART_SEARCH_ERROR, result);

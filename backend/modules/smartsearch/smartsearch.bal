@@ -355,12 +355,15 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
 
     http:Client|error ingestClient = getIngestClient();
     if ingestClient is error {
+        // Never actually submitted - a reserved backfill slot shouldn't wait out its TTL for this.
+        releaseBackfillReservation(contentId);
         return;
     }
     http:Response|http:ClientError response = ingestClient->post("/ingest-drive-link", payload);
     if response is http:ClientError {
         log:printWarn(string `Smart Search: could not reach the indexing service for content ${contentId}`,
                 reason = response.message());
+        releaseBackfillReservation(contentId);
         return;
     }
 
@@ -381,6 +384,7 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
     log:printWarn(string `Smart Search: skipped indexing content ${contentId}`,
             link = driveLink, status = response.statusCode, reason = reason);
     recordIndexFailure(contentId, reason);
+    releaseBackfillReservation(contentId);
 }
 
 # Clears a deleted content's entries from the search index. Content that
@@ -402,6 +406,7 @@ public isolated function deleteContentFromSmartSearch(int contentId, string dele
     }
 
     _ = clearIndexedEntries(contentId, deletedBy);
+    releaseBackfillReservation(contentId);
 }
 
 # Removes a content's entries from the search index.
@@ -598,6 +603,52 @@ type IndexStatusResponse record {|
     string? errorMessage;
 |};
 
+// content_id -> when it was reserved for an in-flight backfill submission, released once indexed or failed.
+isolated map<int> backfillReservations = {};
+
+# Whether content is currently reserved by an in-flight backfill submission.
+#
+# + contentId - The content to check
+# + return - True if still reserved and the reservation hasn't expired
+isolated function isReservedForBackfill(int contentId) returns boolean {
+    lock {
+        int? reservedAt = backfillReservations[contentId.toString()];
+        if reservedAt is () {
+            return false;
+        }
+        if time:utcNow()[0] - reservedAt >= BACKFILL_RESERVATION_TTL_SECONDS {
+            // Expired - a crashed job shouldn't block this content from being offered again forever.
+            _ = backfillReservations.remove(contentId.toString());
+            return false;
+        }
+        return true;
+    }
+}
+
+# Reserves content for an in-flight backfill submission, unless already reserved.
+#
+# + contentId - The content to reserve
+# + return - False if it was already reserved (and not expired) - nothing changed
+isolated function reserveForBackfill(int contentId) returns boolean {
+    lock {
+        int? reservedAt = backfillReservations[contentId.toString()];
+        if reservedAt is int && time:utcNow()[0] - reservedAt < BACKFILL_RESERVATION_TTL_SECONDS {
+            return false;
+        }
+        backfillReservations[contentId.toString()] = time:utcNow()[0];
+        return true;
+    }
+}
+
+# Releases a content's backfill reservation. A no-op if it was never reserved.
+#
+# + contentId - The content whose reservation to release
+isolated function releaseBackfillReservation(int contentId) {
+    lock {
+        _ = backfillReservations.removeIfHasKey(contentId.toString());
+    }
+}
+
 # Records or clears a content item's indexing failure based on its status.
 #
 # + contentId - The content to check
@@ -623,6 +674,7 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
             if updateError is error {
                 log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
             }
+            releaseBackfillReservation(contentId);
         } else if status.indexed {
             error? clearError = database:clearSmartSearchIndexFailure(contentId);
             if clearError is error {
@@ -633,6 +685,7 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
             if updateError is error {
                 log:printWarn("Smart Search: could not record a confirmed index", updateError, contentId = contentId);
             }
+            releaseBackfillReservation(contentId);
         }
         return true;
     }
@@ -655,6 +708,7 @@ isolated function isPendingSmartSearchIndex(int contentId) returns boolean|error
             if updateError is error {
                 log:printWarn("Smart Search: could not record a confirmed index", updateError, contentId = contentId);
             }
+            releaseBackfillReservation(contentId);
             return false;
         }
         string? errorMessage = status.errorMessage;
@@ -664,6 +718,7 @@ isolated function isPendingSmartSearchIndex(int contentId) returns boolean|error
             if updateError is error {
                 log:printWarn("Smart Search: could not record an index failure", updateError, contentId = contentId);
             }
+            releaseBackfillReservation(contentId);
             return false;
         }
         return true;
@@ -675,9 +730,9 @@ isolated function isPendingSmartSearchIndex(int contentId) returns boolean|error
 # + contentType - Filter by content type, when set
 # + contentSubtype - Filter by content subtype, when set
 # + count - How many pending items to return
-# + return - Up to `count` pending content items, or an error
+# + return - Up to `count` pending content items plus whether the scan was incomplete, or an error
 public isolated function findBackfillCandidates(string? contentType, string? contentSubtype, int count)
-        returns database:IndexingInfo[]|error {
+        returns BackfillCandidatesResult|error {
     int effectiveCount = count;
     if effectiveCount < 1 {
         effectiveCount = 1;
@@ -688,22 +743,31 @@ public isolated function findBackfillCandidates(string? contentType, string? con
     int afterContentId = 0;
     int pageSize = effectiveCount * 5;
     int statusChecks = 0;
+    // True only once a page proves there's nothing left to check - a safety cap exiting early leaves this false.
+    boolean exhausted = false;
     // Pages forward instead of stopping at the first window, or a long already-indexed run could hide real candidates.
     foreach int _ in 0 ..< MAX_BACKFILL_SCAN_PAGES {
         database:IndexingInfo[] candidates =
             check database:getSmartSearchBackfillCandidates(contentType, contentSubtype, afterContentId, pageSize);
         if candidates.length() == 0 {
+            exhausted = true;
             break;
         }
 
+        boolean stoppedEarly = false;
         foreach database:IndexingInfo candidate in candidates {
             afterContentId = candidate.contentId;
             if pending.length() >= effectiveCount || statusChecks >= MAX_BACKFILL_STATUS_CHECKS {
+                stoppedEarly = true;
                 break;
             }
             string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
                     candidate.transcriptLink);
             if link is () || link == "" {
+                continue;
+            }
+            // Still being indexed from an earlier batch - don't offer it again.
+            if isReservedForBackfill(candidate.contentId) {
                 continue;
             }
             statusChecks += 1;
@@ -712,12 +776,15 @@ public isolated function findBackfillCandidates(string? contentType, string? con
             }
         }
 
-        if pending.length() >= effectiveCount || statusChecks >= MAX_BACKFILL_STATUS_CHECKS
-                || candidates.length() < pageSize {
+        if !stoppedEarly && candidates.length() < pageSize {
+            exhausted = true;
+            break;
+        }
+        if pending.length() >= effectiveCount || statusChecks >= MAX_BACKFILL_STATUS_CHECKS {
             break;
         }
     }
-    return pending;
+    return {candidates: pending, scanIncomplete: !exhausted};
 }
 
 # Indexes a chosen batch of content for an admin-run backfill.
@@ -735,22 +802,30 @@ public isolated function runBackfillBatch(http:RequestContext ctx, int[] content
     int deferred = 0;
     int notIndexableCount = 0;
     foreach int contentId in boundedIds {
+        if !reserveForBackfill(contentId) {
+            // Already in flight from an earlier submission - skip, don't start a duplicate job.
+            continue;
+        }
         database:IndexingInfo?|error info = database:getIndexingInfo(contentId);
         if info is error || info is () {
+            releaseBackfillReservation(contentId);
             continue;
         }
         string? link = indexingLinkFor(info.contentType, info.contentSubtype, info.contentLink, info.transcriptLink);
         if link is () || link == "" {
+            releaseBackfillReservation(contentId);
             continue;
         }
         if !isContentLinkIndexable(info.contentType, info.contentSubtype, link) {
             recordUnindexableLink(contentId, info.contentType, info.contentSubtype);
             notIndexableCount += 1;
+            releaseBackfillReservation(contentId);
             continue;
         }
         if !isIngestAllowed(ctx) {
             deferReindex(contentId);
             deferred += 1;
+            releaseBackfillReservation(contentId);
             continue;
         }
         _ = start indexContentForSmartSearch(contentId, link, info.description,

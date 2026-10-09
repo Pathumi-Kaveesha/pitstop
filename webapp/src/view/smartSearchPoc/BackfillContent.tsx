@@ -32,6 +32,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import UploadRoundedIcon from "@mui/icons-material/UploadRounded";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
+import InfoRoundedIcon from "@mui/icons-material/InfoRounded";
 import SlideshowRoundedIcon from "@mui/icons-material/SlideshowRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
@@ -41,7 +42,11 @@ import TableChartRoundedIcon from "@mui/icons-material/TableChartRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import { AppConfig } from "@config/config";
 import { ApiService } from "@utils/apiService";
-import { SmartSearchBackfillCandidate, SmartSearchBackfillResult } from "@/types/types";
+import {
+  SmartSearchBackfillCandidate,
+  SmartSearchBackfillCandidatesResponse,
+  SmartSearchBackfillResult,
+} from "@/types/types";
 import { FILETYPE, CONTENT_SUBTYPE } from "@utils/types";
 
 // Matches MAX_BACKFILL_BATCH_SIZE on the backend
@@ -74,13 +79,14 @@ export default function BackfillContent() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SmartSearchBackfillResult | null>(null);
   const [searched, setSearched] = useState(false);
+  const [scanIncomplete, setScanIncomplete] = useState(false);
 
   const handleFind = async () => {
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const response = await ApiService.getInstance().get<SmartSearchBackfillCandidate[]>(
+      const response = await ApiService.getInstance().get<SmartSearchBackfillCandidatesResponse>(
         `${AppConfig.serviceUrls.smartSearch}/backfill-candidates`,
         {
           params: {
@@ -90,7 +96,8 @@ export default function BackfillContent() {
           },
         }
       );
-      setCandidates(response.data ?? []);
+      setCandidates(response.data?.candidates ?? []);
+      setScanIncomplete(response.data?.scanIncomplete ?? false);
     } catch {
       setError("Couldn't load content. Check the console/backend logs for details.");
     } finally {
@@ -112,6 +119,7 @@ export default function BackfillContent() {
       // none of them will match the "not yet attempted" filter again, so the list is stale.
       setCandidates([]);
       setSearched(false);
+      setScanIncomplete(false);
     } catch {
       setError("Couldn't index this batch. Check the console/backend logs for details.");
     } finally {
@@ -272,20 +280,29 @@ export default function BackfillContent() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: alpha(theme.palette.success.main, 0.12),
+              backgroundColor: alpha(
+                scanIncomplete ? theme.palette.warning.main : theme.palette.success.main,
+                0.12
+              ),
             }}
           >
-            <TaskAltRoundedIcon sx={{ color: theme.palette.success.main, fontSize: 30 }} />
+            {scanIncomplete ? (
+              <InfoRoundedIcon sx={{ color: theme.palette.warning.main, fontSize: 30 }} />
+            ) : (
+              <TaskAltRoundedIcon sx={{ color: theme.palette.success.main, fontSize: 30 }} />
+            )}
           </Box>
           <Typography variant="h6" fontWeight={600}>
-            Nothing left to index
+            {scanIncomplete ? "Nothing found in this pass" : "Nothing left to index"}
           </Typography>
           <Typography
             variant="body2"
             color="text.secondary"
             sx={{ maxWidth: 380, textAlign: "center", fontSize: "0.9rem" }}
           >
-            No content matching these filters is waiting to be indexed.
+            {scanIncomplete
+              ? "Checked as much as one search safely allows without finding a match. More may still be waiting - try Find content again, or narrow the filters."
+              : "No content matching these filters is waiting to be indexed."}
           </Typography>
         </Card>
       )}
