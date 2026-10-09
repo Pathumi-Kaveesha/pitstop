@@ -14,6 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import pitstop.database;
 import pitstop.types;
 
 # One matching document chunk found by search.
@@ -50,6 +51,15 @@ public type SmartSearchResponse record {|
     string? answer;
     SmartSearchResult[] sources;
     types:ContentResponse[] contents = [];
+|};
+
+# Result of an admin-run backfill scan.
+#
+# + candidates - Up to the requested count of pending content items
+# + scanIncomplete - True if a safety cap stopped the scan before it checked everything
+public type BackfillCandidatesResult record {|
+    database:IndexingInfo[] candidates;
+    boolean scanIncomplete;
 |};
 
 # Body for triggering a backfill batch.

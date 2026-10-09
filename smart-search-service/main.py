@@ -191,7 +191,7 @@ def health() -> dict:
 
 
 _index_slots = threading.BoundedSemaphore(MAX_CONCURRENT_INDEX_JOBS)
-_exclusive_acquire_lock = threading.Lock()
+_exclusive_acquire_lock = threading.Lock()  # stops two exclusive acquires from deadlocking each other
 
 
 def _run_in_index_slot(job, *args) -> None:
@@ -226,6 +226,7 @@ def _index_drive_file_in_background(
     _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
 
     try:
+        # Unknown size (native Google files) shares the normal slot pool, so cap its download too.
         file_bytes = (
             download_drive_file(info, max_bytes=LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES)
             if info.size_bytes is None

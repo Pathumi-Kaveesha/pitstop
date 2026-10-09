@@ -838,6 +838,11 @@ export interface SmartSearchBackfillCandidate {
   transcriptLink: string | null;
 }
 
+export interface SmartSearchBackfillCandidatesResponse {
+  candidates: SmartSearchBackfillCandidate[];
+  scanIncomplete: boolean;
+}
+
 export interface SmartSearchBackfillResult {
   submitted: number;
   deferred: number;
