@@ -139,8 +139,8 @@ def _friendly_index_error(error: Exception) -> str:
     message = str(error)
     lowered = message.lower()
     if "429" in message or "too many requests" in lowered or "rate limit" in lowered:
-        return ("Hit Google's usage limit while indexing. This is retried automatically - "
-                "try again in a few minutes if it keeps failing.")
+        return ("Hit Google's usage limit while indexing. Use the Retry action to try "
+                "this content again once the limit clears.")
     if "timed out" in lowered or "timeout" in lowered:
         return "Indexing timed out partway through. Try again in a moment."
     if "connection" in lowered or "network" in lowered:
