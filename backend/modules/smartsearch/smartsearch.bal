@@ -1120,10 +1120,17 @@ public isolated function startBulkIndex(http:RequestContext ctx, string? content
     return {started: true};
 }
 
-# Re-checks known and recent failures and returns the content that failed to index.
+# Returns the content that failed to index - reads the saved list, doesn't re-check it live.
 #
 # + return - The list, or an error
 public isolated function listUnindexedContent() returns database:SmartSearchIndexFailure[]|error {
+    return database:getSmartSearchIndexFailures();
+}
+
+# Live-checks every known failure against the Smart Search service, so the saved list stays current.
+#
+# + return - An error if a database read failed, () otherwise
+isolated function reconcileAllUnindexedContent() returns error? {
     database:SmartSearchIndexFailure[] knownFailures = check database:getSmartSearchIndexFailures();
     boolean reachable = true;
     foreach database:SmartSearchIndexFailure failure in knownFailures {
@@ -1149,15 +1156,13 @@ public isolated function listUnindexedContent() returns database:SmartSearchInde
             }
         }
     }
-
-    return database:getSmartSearchIndexFailures();
 }
 
 class IndexReconciliationJob {
     *task:Job;
 
     public function execute() {
-        database:SmartSearchIndexFailure[]|error result = listUnindexedContent();
+        error? result = reconcileAllUnindexedContent();
         if result is error {
             log:printWarn("Smart Search: periodic index reconciliation failed", result);
         }

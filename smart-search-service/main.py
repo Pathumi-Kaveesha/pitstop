@@ -131,6 +131,24 @@ _index_errors: dict[str, tuple[float, str]] = {}
 _index_errors_lock = threading.Lock()
 
 
+def _friendly_index_error(error: Exception) -> str:
+    """Turns a raised error into something a non-technical admin can read."""
+    if isinstance(error, ValueError):
+        return str(error) or "This content can't be indexed."
+
+    message = str(error)
+    lowered = message.lower()
+    if "429" in message or "too many requests" in lowered or "rate limit" in lowered:
+        return ("Hit Google's usage limit while indexing. Use the Retry action to try "
+                "this content again once the limit clears.")
+    if "timed out" in lowered or "timeout" in lowered:
+        return "Indexing timed out partway through. Try again in a moment."
+    if "connection" in lowered or "network" in lowered:
+        return "A network problem interrupted indexing. Try again in a moment."
+
+    return "Something went wrong while indexing this. Try again, and let the team know if it keeps happening."
+
+
 def _set_index_error(document_id: str, message: str) -> None:
     now = time.time()
     with _index_errors_lock:
@@ -265,7 +283,7 @@ def _index_drive_file_in_background(
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to return an error to
         logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
-        _set_index_error(document_id, str(error) or type(error).__name__)
+        _set_index_error(document_id, _friendly_index_error(error))
 
 
 def _embed_and_store(
@@ -340,7 +358,7 @@ def _index_webpage_in_background(
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to report an error to
         logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
-        _set_index_error(document_id, str(error) or type(error).__name__)
+        _set_index_error(document_id, _friendly_index_error(error))
 
 
 def _safe_actor(value: Optional[str]) -> str:
