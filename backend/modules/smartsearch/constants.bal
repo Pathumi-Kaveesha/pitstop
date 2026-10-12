@@ -45,6 +45,9 @@ const decimal RECONCILE_INTERVAL_SECONDS = 6 * 60 * 60;
 // recognized promptly instead of sitting reserved until its TTL expires.
 const decimal RESERVATION_RECONCILE_INTERVAL_SECONDS = 60;
 
+// How long after a single retry to confirm its outcome - long enough for a typical indexing job to finish.
+const decimal RETRY_CONFIRMATION_DELAY_SECONDS = 65;
+
 // Pace between automatic batches in a one-click "index everything" run - roughly one ingest window.
 const decimal BULK_INDEX_BATCH_INTERVAL_SECONDS = 65;
 
