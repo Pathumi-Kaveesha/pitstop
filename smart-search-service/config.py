@@ -76,11 +76,6 @@ EMBED_REQUEST_SPACING_SECONDS = 1
 # Each running job holds its whole file in memory, so this bounds peak memory use.
 MAX_CONCURRENT_INDEX_JOBS = 3
 
-# Purely a memory-cleanup safety margin for the tombstone dict, not a
-# correctness deadline - a job always checks against its own start time,
-# never against elapsed time, so this can be generous.
-DELETE_TOMBSTONE_TTL_SECONDS = 6 * 60 * 60
-
 # How long an indexing failure reason is remembered
 INDEX_ERROR_TTL_SECONDS = 24 * 60 * 60
 

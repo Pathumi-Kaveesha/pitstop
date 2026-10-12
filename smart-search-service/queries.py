@@ -37,7 +37,24 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 CREATE INDEX IF NOT EXISTS chunks_document_id_idx ON chunks (document_id);
 CREATE INDEX IF NOT EXISTS chunks_embedding_idx ON chunks USING hnsw (embedding vector_cosine_ops);
+
+-- One row per document: a counter bumped whenever an index job starts or the document is deleted.
+CREATE TABLE IF NOT EXISTS document_state (
+    document_id TEXT PRIMARY KEY,
+    generation BIGINT NOT NULL
+);
 """
+
+CLAIM_GENERATION = """
+INSERT INTO document_state (document_id, generation) VALUES (%s, 1)
+ON CONFLICT (document_id) DO UPDATE SET generation = document_state.generation + 1
+RETURNING generation
+"""
+
+GET_GENERATION = "SELECT generation FROM document_state WHERE document_id = %s"
+
+# Holds the row until the surrounding transaction ends, so a delete or newer index can't slip in mid-write.
+LOCK_GENERATION = "SELECT generation FROM document_state WHERE document_id = %s FOR UPDATE"
 
 UPSERT_CHUNK = """
 INSERT INTO chunks (id, document_id, embedding, content, title, page, unit_label,
@@ -69,6 +86,8 @@ LIMIT %s
 """
 
 DOCUMENT_EXISTS = "SELECT 1 FROM chunks WHERE document_id = %s LIMIT 1"
+
+LIST_DOCUMENT_IDS = "SELECT DISTINCT document_id FROM chunks"
 
 FIND_DOCUMENT_SOURCE = "SELECT drive_link, file_extension FROM chunks WHERE document_id = %s LIMIT 1"
 

@@ -70,6 +70,15 @@ public isolated function addContentAndReturnId(types:ContentPayload content, str
     return result.lastInsertId.ensureType(int);
 }
 
+# Get the id of every content item that hasn't been deleted.
+#
+# + return - The ids, or an error
+public isolated function getLiveContentIds() returns int[]|error {
+    stream<record {|int content_id;|}, sql:Error?> resultStream = dbClient->query(getLiveContentIdsQuery());
+    return from record {|int content_id;|} row in resultStream
+        select row.content_id;
+}
+
 # Verify the presence of content.
 #
 # + contentLink - Link to navigate to the content
