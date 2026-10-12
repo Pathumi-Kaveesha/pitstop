@@ -568,6 +568,24 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
 # + requestedBy - Email of the admin who retried it, for the logs
 # + return - Not-found when there's no such content, an error, or nil on success
 public isolated function retryIndexContent(int contentId, string? requestedBy = ()) returns http:NotFound|error? {
+    boolean|http:NotFound submitted = check retryIndexContentLocked(contentId, requestedBy);
+    if submitted is boolean && submitted {
+        // Confirm the outcome directly, rather than relying on updated_on being bumped above.
+        _ = start confirmRetryOutcome(contentId);
+        return;
+    }
+    if submitted is http:NotFound {
+        return submitted;
+    }
+    return;
+}
+
+# The lock-protected part of retryIndexContent - split out since `start` can't run inside a lock.
+#
+# + contentId - The content to retry
+# + requestedBy - Email of the admin who retried it, for the logs
+# + return - True if indexing was actually submitted, not-found when there's no such content, or an error
+isolated function retryIndexContentLocked(int contentId, string? requestedBy) returns boolean|http:NotFound|error {
     lock {
         reindexRuns += 1;
 
@@ -579,11 +597,11 @@ public isolated function retryIndexContent(int contentId, string? requestedBy = 
         // A retry only runs on content that's already flagged as failing, so the problem is real - record why
         if link is () {
             recordIndexFailure(contentId, "A Google Doc link is required for this content type");
-            return;
+            return false;
         }
         if !isContentLinkIndexable(info.contentType, info.contentSubtype, link) {
             recordIndexFailure(contentId, unindexableLinkReason(info.contentType, info.contentSubtype));
-            return;
+            return false;
         }
         if !clearIndexedEntries(contentId) {
             return error("Could not clear the previous version of this content");
@@ -599,7 +617,7 @@ public isolated function retryIndexContent(int contentId, string? requestedBy = 
         }
         indexContentForSmartSearch(contentId, link, info.description,
                 displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy);
-        return;
+        return true;
     }
 }
 
@@ -698,6 +716,14 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
         }
         return true;
     }
+}
+
+# Waits for a retry to realistically finish, then confirms its outcome.
+#
+# + contentId - The content that was just retried
+isolated function confirmRetryOutcome(int contentId) {
+    runtime:sleep(RETRY_CONFIRMATION_DELAY_SECONDS);
+    _ = reconcileIndexStatus(contentId);
 }
 
 # Whether a content item has never been indexed and never failed - a genuine backfill candidate.
@@ -1099,6 +1125,10 @@ isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, 
                 break;
             }
         }
+        // Stop as soon as the target's reached, instead of sleeping out one more pacing interval first.
+        if maxCount is int && totalSubmitted >= maxCount {
+            break;
+        }
         runtime:sleep(BULK_INDEX_BATCH_INTERVAL_SECONDS);
     }
 }
@@ -1120,10 +1150,31 @@ public isolated function startBulkIndex(http:RequestContext ctx, string? content
     return {started: true};
 }
 
-# Returns the content that failed to index - reads the saved list, doesn't re-check it live.
+# Live-checks content added or edited within the recheck window and not already a known failure.
+#
+# + return - False if the Smart Search service was unreachable partway through
+isolated function reconcileUncheckedCandidates() returns boolean {
+    database:UncheckedIndexCandidate[]|error candidates = database:getUncheckedIndexCandidates(RECHECK_WINDOW_HOURS);
+    if candidates is error {
+        log:printWarn("Smart Search: could not list unchecked index candidates", candidates);
+        return true;
+    }
+    foreach database:UncheckedIndexCandidate candidate in candidates {
+        string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
+                candidate.transcriptLink);
+        if link is string && isContentLinkIndexable(candidate.contentType, candidate.contentSubtype, link)
+                && !reconcileIndexStatus(candidate.contentId) {
+            return false;
+        }
+    }
+    return true;
+}
+
+# Returns the content that failed to index, after reconciling recently touched content.
 #
 # + return - The list, or an error
 public isolated function listUnindexedContent() returns database:SmartSearchIndexFailure[]|error {
+    _ = reconcileUncheckedCandidates();
     return database:getSmartSearchIndexFailures();
 }
 
@@ -1145,16 +1196,7 @@ isolated function reconcileAllUnindexedContent() returns error? {
     }
 
     if reachable {
-        database:UncheckedIndexCandidate[] candidates =
-            check database:getUncheckedIndexCandidates(RECHECK_WINDOW_HOURS);
-        foreach database:UncheckedIndexCandidate candidate in candidates {
-            string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
-                    candidate.transcriptLink);
-            if link is string && isContentLinkIndexable(candidate.contentType, candidate.contentSubtype, link)
-                    && !reconcileIndexStatus(candidate.contentId) {
-                break;
-            }
-        }
+        _ = reconcileUncheckedCandidates();
     }
 }
 
