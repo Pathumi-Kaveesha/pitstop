@@ -1298,10 +1298,24 @@ isolated function findOrphanIds(string[] indexedIds, int[] liveIds) returns int[
     return orphans;
 }
 
+# How many of the indexed ids are numeric - the only ones findOrphanIds can judge.
+#
+# + indexedIds - Every id the search service has indexed
+# + return - The number of numeric ids
+isolated function countNumericIds(string[] indexedIds) returns int {
+    int count = 0;
+    foreach string indexedId in indexedIds {
+        if int:fromString(indexedId) is int {
+            count += 1;
+        }
+    }
+    return count;
+}
+
 # Whether the orphan count is small enough to trust - a large share means a mismatched database, not leftovers.
 #
 # + orphanCount - How many indexed ids have no live content
-# + indexedCount - How many ids are indexed in all
+# + indexedCount - How many of the indexed ids can be judged (the numeric ones)
 # + return - True if it's safe to remove them
 isolated function isOrphanShareSafe(int orphanCount, int indexedCount) returns boolean {
     return <float>orphanCount <= <float>indexedCount * MAX_ORPHAN_SHARE;
@@ -1321,8 +1335,10 @@ isolated function sweepOrphanedIndexEntries() returns error? {
     if orphans.length() == 0 {
         return;
     }
-    if !isOrphanShareSafe(orphans.length(), indexed.documentIds.length()) {
-        log:printWarn(string `Smart Search: orphan sweep removed nothing - ${orphans.length()} of ${indexed.documentIds.length()} indexed documents have no Pitstop content, which looks like a database mismatch`);
+    // Only numeric ids are judged, so the share is measured against those, not the whole index.
+    int judgeableCount = countNumericIds(indexed.documentIds);
+    if !isOrphanShareSafe(orphans.length(), judgeableCount) {
+        log:printWarn(string `Smart Search: orphan sweep removed nothing - ${orphans.length()} of ${judgeableCount} indexed documents have no Pitstop content, which looks like a database mismatch`);
         return;
     }
 
