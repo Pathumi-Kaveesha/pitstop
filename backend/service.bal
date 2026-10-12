@@ -430,7 +430,8 @@ service http:InterceptableService / on new http:Listener(9090) {
                     body: customError
                 };
             }
-            smartsearch:recordUnindexableLink(newContentId, contentPayload.contentType, contentPayload.contentSubtype);
+            smartsearch:recordUnindexableLink(newContentId, contentPayload.contentType, contentPayload.contentSubtype,
+                    indexLink);
             return http:CREATED;
         }
 
@@ -1690,14 +1691,20 @@ service http:InterceptableService / on new http:Listener(9090) {
                         && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
                 boolean newNeedsIndexing = newLink is string
                         && smartsearch:isContentLinkIndexable(freshInfo.contentType, freshInfo.contentSubtype, newLink);
-                if newLink != previousLink || newDisplayLink != previousDisplayLink || titleChanged {
+                // A subtype-only change (e.g. Generic -> Google Doc) can flip this with the link text unchanged
+                boolean previousNeedsIndexing = previousLink is string
+                        && smartsearch:isContentLinkIndexable(previousInfo.contentType, previousInfo.contentSubtype,
+                                previousLink);
+                if newLink != previousLink || newDisplayLink != previousDisplayLink || titleChanged
+                        || newNeedsIndexing != previousNeedsIndexing {
                     if !newNeedsIndexing || smartsearch:isIngestAllowed(ctx) {
                         _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, userEmail);
                     } else {
                         smartsearch:deferReindex(contentId);
                     }
                 } else if !newNeedsIndexing && newLink is string && newLink != "" {
-                    smartsearch:recordUnindexableLink(contentId, freshInfo.contentType, freshInfo.contentSubtype);
+                    smartsearch:recordUnindexableLink(contentId, freshInfo.contentType, freshInfo.contentSubtype,
+                            newLink);
                 }
             }
         }

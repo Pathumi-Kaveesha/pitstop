@@ -341,8 +341,10 @@ public isolated function deferReindex(int contentId) {
 # + contentId - The content whose link isn't indexable
 # + contentType - Its content type
 # + contentSubtype - Its content subtype, when set
-public isolated function recordUnindexableLink(int contentId, string contentType, string? contentSubtype) {
-    recordIndexFailure(contentId, unindexableLinkReason(contentType, contentSubtype));
+# + link - The link that was rejected
+public isolated function recordUnindexableLink(int contentId, string contentType, string? contentSubtype,
+        string link) {
+    recordIndexFailure(contentId, unindexableLinkReason(contentType, contentSubtype, link));
 }
 
 # Indexes a content item. Launched with `start` so the caller never waits on it.
@@ -498,9 +500,15 @@ public isolated function displayLinkFor(string contentType, string? contentSubty
 #
 # + contentType - Type of the content
 # + contentSubtype - Subtype of the content, when set
+# + link - The link that was rejected
 # + return - A user-facing reason
-isolated function unindexableLinkReason(string contentType, string? contentSubtype) returns string {
+isolated function unindexableLinkReason(string contentType, string? contentSubtype, string link) returns string {
     if contentType == "external" && contentSubtype == "generic" {
+        // A Drive link here was never fetched - generic external links are only ever read as webpages.
+        if isIndexableLink(link) {
+            return "This looks like a Google Drive link, but this content is set to \"Generic\" - "
+                + "change its subtype to Google Doc to index it.";
+        }
         return "This link can't be indexed. Smart Search couldn't read that page.";
     }
     return "This link can't be indexed. Smart Search only reads Google Drive links.";
@@ -515,6 +523,19 @@ isolated int reindexRuns = 0;
 # + newLink - What should be indexed after the edit, when known at the time
 # + requestedBy - Email of the admin who made the edit, for the logs
 public isolated function reindexAfterLinkChange(int contentId, string? newLink, string? requestedBy = ()) {
+    if reindexAfterLinkChangeLocked(contentId, newLink, requestedBy) {
+        // Confirm the outcome directly, same as a retry - `start` can't run inside the lock below.
+        _ = start confirmIndexOutcome(contentId);
+    }
+}
+
+# The lock-protected part of reindexAfterLinkChange - split out since `start` can't run inside a lock.
+#
+# + contentId - The content that was edited
+# + newLink - What should be indexed after the edit, when known at the time
+# + requestedBy - Email of the admin who made the edit, for the logs
+# + return - True if indexing was actually submitted
+isolated function reindexAfterLinkChangeLocked(int contentId, string? newLink, string? requestedBy) returns boolean {
     lock {
         reindexRuns += 1;
 
@@ -523,15 +544,15 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
             log:printWarn("Smart Search: could not look up content after a link change", current, contentId = contentId);
             _ = clearIndexedEntries(contentId);
             recordIndexFailure(contentId, "Could not check this content after its link changed. Please retry.");
-            return;
+            return false;
         }
         if current is () {
-            return;
+            return false;
         }
         // A newer edit has its own job
         if indexingLinkFor(current.contentType, current.contentSubtype, current.contentLink,
                 current.transcriptLink) != newLink {
-            return;
+            return false;
         }
 
         // An old failure, or a confirmed index, both belong to the old link
@@ -549,16 +570,19 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
         // Clear the old version first, so a failed re-index never leaves stale results
         if !clearIndexedEntries(contentId) {
             recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
-            return;
+            return false;
         }
 
         if newLink is string && isContentLinkIndexable(current.contentType, current.contentSubtype, newLink) {
             indexContentForSmartSearch(contentId, newLink, current.description,
                     displayLinkFor(current.contentType, current.contentSubtype, current.contentLink), requestedBy);
+            return true;
         } else if newLink is string && newLink != "" {
             // Whether or not the previous link was indexable - the admin should see a reason either way.
-            recordIndexFailure(contentId, unindexableLinkReason(current.contentType, current.contentSubtype));
+            recordIndexFailure(contentId, unindexableLinkReason(current.contentType, current.contentSubtype, newLink));
+            return false;
         }
+        return false;
     }
 }
 
@@ -571,7 +595,7 @@ public isolated function retryIndexContent(int contentId, string? requestedBy = 
     boolean|http:NotFound submitted = check retryIndexContentLocked(contentId, requestedBy);
     if submitted is boolean && submitted {
         // Confirm the outcome directly, rather than relying on updated_on being bumped above.
-        _ = start confirmRetryOutcome(contentId);
+        _ = start confirmIndexOutcome(contentId);
         return;
     }
     if submitted is http:NotFound {
@@ -600,7 +624,7 @@ isolated function retryIndexContentLocked(int contentId, string? requestedBy) re
             return false;
         }
         if !isContentLinkIndexable(info.contentType, info.contentSubtype, link) {
-            recordIndexFailure(contentId, unindexableLinkReason(info.contentType, info.contentSubtype));
+            recordIndexFailure(contentId, unindexableLinkReason(info.contentType, info.contentSubtype, link));
             return false;
         }
         if !clearIndexedEntries(contentId) {
@@ -718,11 +742,11 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
     }
 }
 
-# Waits for a retry to realistically finish, then confirms its outcome.
+# Waits for a retry or edit to realistically finish indexing, then confirms its outcome.
 #
-# + contentId - The content that was just retried
-isolated function confirmRetryOutcome(int contentId) {
-    runtime:sleep(RETRY_CONFIRMATION_DELAY_SECONDS);
+# + contentId - The content that was just retried or edited
+isolated function confirmIndexOutcome(int contentId) {
+    runtime:sleep(INDEX_CONFIRMATION_DELAY_SECONDS);
     _ = reconcileIndexStatus(contentId);
 }
 
@@ -873,7 +897,7 @@ isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, 
             continue;
         }
         if !isContentLinkIndexable(info.contentType, info.contentSubtype, link) {
-            recordUnindexableLink(contentId, info.contentType, info.contentSubtype);
+            recordUnindexableLink(contentId, info.contentType, info.contentSubtype, link);
             notIndexableCount += 1;
             releaseBackfillReservation(contentId);
             continue;
@@ -1170,11 +1194,10 @@ isolated function reconcileUncheckedCandidates() returns boolean {
     return true;
 }
 
-# Returns the content that failed to index, after reconciling recently touched content.
+# Returns the content that failed to index - reads the saved list, doesn't re-check it live.
 #
 # + return - The list, or an error
 public isolated function listUnindexedContent() returns database:SmartSearchIndexFailure[]|error {
-    _ = reconcileUncheckedCandidates();
     return database:getSmartSearchIndexFailures();
 }
 
