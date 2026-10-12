@@ -54,6 +54,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /documents:
+    get:
+      summary: List Documents Endpoint
+      description: The id of every indexed document, so the backend can remove chunks
+        whose Pitstop content is gone.
+      operationId: list_documents_endpoint_documents_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response List Documents Endpoint Documents Get
   /documents/{document_id}:
     delete:
       summary: Delete Document Endpoint

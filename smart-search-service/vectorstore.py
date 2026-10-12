@@ -131,20 +131,40 @@ def _vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(str(float(value)) for value in vector) + "]"
 
 
-def upsert_chunks(
+def claim_generation(document_id: str) -> int:
+    """Claims the next generation for a document. The counter lives in the database, so every copy of
+    the service sees it - a job holding an older number knows it was superseded, wherever that happened."""
+    _ensure_schema()
+    with _pool.connection() as conn:
+        return conn.execute(queries.CLAIM_GENERATION, (document_id,)).fetchone()[0]
+
+
+def is_current_generation(document_id: str, generation: int) -> bool:
+    """Whether no newer job or delete has claimed this document since the caller claimed its generation."""
+    _ensure_schema()
+    with _pool.connection() as conn:
+        row = conn.execute(queries.GET_GENERATION, (document_id,)).fetchone()
+    return row is not None and row[0] == generation
+
+
+def store_chunks_if_current(
     vectors: list[list[float]],
     texts: list[str],
     title: str,
     pages: list[int],
     document_id: str,
+    generation: int,
     unit_label: str,
     file_extension: str,
     source: str,
     drive_link: str,
     native_links: list[Optional[str]],
     moments: Optional[list[Optional[list[tuple[str, str]]]]] = None,
-) -> None:
-    """Stores each (vector, text, metadata) triple in PostgreSQL."""
+) -> bool:
+    """Stores each (vector, text, metadata) triple in PostgreSQL, and clears leftover chunks from an
+    earlier, longer version - but only if no newer job or delete has claimed this document meanwhile.
+    The check and the write share one transaction holding the document's row lock, so they can't be
+    interleaved by another copy of the service. Returns False when it was superseded and wrote nothing."""
     if len({len(vectors), len(texts), len(pages), len(native_links)}) > 1:
         raise ValueError(
             f"Vector/text/page/native_link length mismatch: vectors={len(vectors)}, "
@@ -177,8 +197,16 @@ def upsert_chunks(
             _ensure_schema()
             with _pool.connection() as conn:
                 with conn.cursor() as cur:
+                    cur.execute(queries.LOCK_GENERATION, (document_id,))
+                    row = cur.fetchone()
+                    if row is None or row[0] != generation:
+                        return False
+                    # Chunk ids are derived from the document id, so this overwrites a previous version in
+                    # place - the old copy stays searchable if the write fails.
                     cur.executemany(queries.UPSERT_CHUNK, rows)
-            return
+                    expected = [f"{document_id}#{index}" for index in range(len(rows))]
+                    cur.execute(queries.DELETE_STALE_CHUNKS, (document_id, expected))
+            return True
         except psycopg.Error as error:
             last_error = error
 
@@ -254,6 +282,14 @@ def document_exists(document_id: str) -> bool:
         return cur.fetchone() is not None
 
 
+def list_document_ids() -> list[str]:
+    """The id of every document with at least one indexed chunk - lets the backend find
+    chunks whose Pitstop content no longer exists."""
+    _ensure_schema()
+    with _pool.connection() as conn:
+        return [row[0] for row in conn.execute(queries.LIST_DOCUMENT_IDS).fetchall()]
+
+
 def find_document_source(document_id: str) -> Optional[tuple[str, str]]:
     """The Drive link and file type recorded for an indexed document, or
     None when nothing is indexed under that id."""
@@ -266,18 +302,11 @@ def find_document_source(document_id: str) -> Optional[tuple[str, str]]:
     return row[0], row[1]
 
 
-def delete_stale_chunks(document_id: str, keep_count: int) -> None:
-    """Removes chunks left over from an earlier version of this document -
-    the extras from a longer version. Runs after a successful upsert, never before."""
-    expected = [f"{document_id}#{index}" for index in range(keep_count)]
-    _ensure_schema()
-    with _pool.connection() as conn:
-        conn.execute(queries.DELETE_STALE_CHUNKS, (document_id, expected))
-
-
-def delete_by_document_id(document_id: str) -> None:
-    """Removes every chunk belonging to one Pitstop content item. Deleting an
-    already-deleted or never-indexed id is a safe no-op, so this retries just like upsert_chunks.
+def delete_document(document_id: str) -> bool:
+    """Removes every chunk belonging to one Pitstop content item, and claims a new generation in the same
+    transaction - so an index job that started earlier, on any copy of the service, discards its work
+    instead of writing the document back. Returns False when nothing was indexed under this id.
+    Safe to repeat, so this retries just like store_chunks_if_current.
 
     Keyed on documentId rather than the title - the id is the content's own
     id and never changes, while two documents can share a title."""
@@ -286,8 +315,8 @@ def delete_by_document_id(document_id: str) -> None:
         try:
             _ensure_schema()
             with _pool.connection() as conn:
-                conn.execute(queries.DELETE_BY_DOCUMENT_ID, (document_id,))
-            return
+                conn.execute(queries.CLAIM_GENERATION, (document_id,))
+                return conn.execute(queries.DELETE_BY_DOCUMENT_ID, (document_id,)).rowcount > 0
         except psycopg.Error as error:
             last_error = error
 

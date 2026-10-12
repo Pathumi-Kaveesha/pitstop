@@ -100,6 +100,42 @@ public isolated function isWithinDownloadLimit(http:RequestContext ctx) returns 
     }
 }
 
+// User email -> [window start in seconds, search calls in that window]
+isolated map<[int, int]> searchWindows = {};
+
+# Counts one search call for the caller and says whether they are still within the limit.
+#
+# + ctx - Request object
+# + return - False once the caller has used up this minute's searches
+public isolated function isSearchAllowed(http:RequestContext ctx) returns boolean {
+    string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+    if userEmail is error {
+        return false;
+    }
+    int now = time:utcNow()[0];
+
+    lock {
+        if searchWindows.length() > MAX_TRACKED_SEARCH_USERS {
+            foreach string email in searchWindows.keys() {
+                if now - searchWindows.get(email)[0] >= SEARCH_WINDOW_SECONDS {
+                    _ = searchWindows.remove(email);
+                }
+            }
+        }
+
+        [int, int]? window = searchWindows[userEmail];
+        if window is () || now - window[0] >= SEARCH_WINDOW_SECONDS {
+            searchWindows[userEmail] = [now, 1];
+            return true;
+        }
+        if window[1] >= MAX_SEARCHES_PER_MINUTE {
+            return false;
+        }
+        searchWindows[userEmail] = [window[0], window[1] + 1];
+        return true;
+    }
+}
+
 // User email -> [window start in seconds, indexing requests in that window]
 isolated map<[int, int]> ingestWindows = {};
 
@@ -416,7 +452,17 @@ public isolated function deleteContentFromSmartSearch(int contentId, string dele
                 clearIndexedAtError, contentId = contentId);
     }
 
-    _ = clearIndexedEntries(contentId, deletedBy);
+    foreach int attempt in 1 ... DELETE_INDEX_MAX_ATTEMPTS {
+        if clearIndexedEntries(contentId, deletedBy) {
+            break;
+        }
+        if attempt == DELETE_INDEX_MAX_ATTEMPTS {
+            log:printWarn("Smart Search: gave up removing a deleted content from the index - the next orphan sweep will",
+                    contentId = contentId, deletedBy = deletedBy);
+        } else {
+            runtime:sleep(DELETE_INDEX_RETRY_DELAY_SECONDS);
+        }
+    }
     releaseBackfillReservation(contentId);
 }
 
@@ -639,6 +685,8 @@ isolated function retryIndexContentLocked(int contentId, string? requestedBy) re
             log:printWarn("Smart Search: could not clear confirmed-indexed marker before a retry",
                     clearIndexedAtError, contentId = contentId);
         }
+        // Reserved so the status page lists it as in progress; released once indexed, failed, or not submitted.
+        _ = reserveForBackfill(contentId);
         indexContentForSmartSearch(contentId, link, info.description,
                 displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy);
         return true;
@@ -1223,6 +1271,81 @@ isolated function reconcileAllUnindexedContent() returns error? {
     }
 }
 
+# The ids the search service has indexed.
+#
+# + documentIds - The ids
+type IndexedDocumentsResponse record {|
+    string[] documentIds;
+|};
+
+# Which indexed document ids have no live Pitstop content. Only numeric ids are content ids - others aren't judged.
+#
+# + indexedIds - Every id the search service has indexed
+# + liveIds - Every content id that hasn't been deleted
+# + return - The orphaned content ids
+isolated function findOrphanIds(string[] indexedIds, int[] liveIds) returns int[] {
+    map<boolean> live = {};
+    foreach int liveId in liveIds {
+        live[liveId.toString()] = true;
+    }
+    int[] orphans = [];
+    foreach string indexedId in indexedIds {
+        int|error contentId = int:fromString(indexedId);
+        if contentId is int && !live.hasKey(contentId.toString()) {
+            orphans.push(contentId);
+        }
+    }
+    return orphans;
+}
+
+# Whether the orphan count is small enough to trust - a large share means a mismatched database, not leftovers.
+#
+# + orphanCount - How many indexed ids have no live content
+# + indexedCount - How many ids are indexed in all
+# + return - True if it's safe to remove them
+isolated function isOrphanShareSafe(int orphanCount, int indexedCount) returns boolean {
+    return <float>orphanCount <= <float>indexedCount * MAX_ORPHAN_SHARE;
+}
+
+# Removes indexed chunks whose Pitstop content no longer exists - a delete that never arrived or failed,
+# or content deleted along with a whole section or route.
+#
+# + return - An error if the index or the database couldn't be read, () otherwise
+isolated function sweepOrphanedIndexEntries() returns error? {
+    http:Client serviceClient = check getSearchClient();
+    IndexedDocumentsResponse indexed = check serviceClient->get("/documents");
+    // Read after the index list: content is added to Pitstop before it's indexed, so nothing indexed since is missing here.
+    int[] liveIds = check database:getLiveContentIds();
+
+    int[] orphans = findOrphanIds(indexed.documentIds, liveIds);
+    if orphans.length() == 0 {
+        return;
+    }
+    if !isOrphanShareSafe(orphans.length(), indexed.documentIds.length()) {
+        log:printWarn(string `Smart Search: orphan sweep removed nothing - ${orphans.length()} of ${indexed.documentIds.length()} indexed documents have no Pitstop content, which looks like a database mismatch`);
+        return;
+    }
+
+    int removed = 0;
+    foreach int orphanId in orphans.slice(0, int:min(orphans.length(), MAX_ORPHANS_PER_SWEEP)) {
+        if clearIndexedEntries(orphanId, "orphan-sweep") {
+            removed += 1;
+        }
+    }
+    log:printInfo(string `Smart Search: orphan sweep removed ${removed} of ${orphans.length()} orphaned documents from the index`);
+}
+
+class OrphanSweepJob {
+    *task:Job;
+
+    public function execute() {
+        error? result = sweepOrphanedIndexEntries();
+        if result is error {
+            log:printWarn("Smart Search: periodic orphan sweep failed", result);
+        }
+    }
+}
+
 class IndexReconciliationJob {
     *task:Job;
 
@@ -1267,5 +1390,10 @@ function init() {
             new ReservationReconciliationJob(), RESERVATION_RECONCILE_INTERVAL_SECONDS);
     if reservationScheduled is task:Error {
         log:printError("Smart Search: could not schedule the reservation reconciliation job", reservationScheduled);
+    }
+    task:JobId|task:Error sweepScheduled =
+        task:scheduleJobRecurByFrequency(new OrphanSweepJob(), ORPHAN_SWEEP_INTERVAL_SECONDS);
+    if sweepScheduled is task:Error {
+        log:printError("Smart Search: could not schedule the orphan sweep job", sweepScheduled);
     }
 }

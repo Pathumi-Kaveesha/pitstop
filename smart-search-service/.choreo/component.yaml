@@ -1,10 +1,8 @@
 schemaVersion: 1.2
 
 endpoints:
-  # Organization visibility so the API can be published to the internal
-  # developer portal and subscribed to by the Pitstop application - the
-  # backend then reaches it through Choreo's gateway with a token. Not
-  # Public: nothing outside the organization needs to call this.
+  # Project visibility - only components in the same project (the Pitstop
+  # backend) can reach this service.
   - name: smart-search
     displayName: Smart Search Service
     service:
@@ -12,5 +10,5 @@ endpoints:
       port: 8001
     type: REST
     networkVisibilities:
-      - Organization
+      - Project
     schemaFilePath: openapi.yaml

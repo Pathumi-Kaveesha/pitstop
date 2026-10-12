@@ -1289,9 +1289,11 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:NOT_FOUND;
         }
 
+        string|error deletedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
+        log:printInfo(string `Content ${contentId} deleted`, deletedBy = deletedBy is string ? deletedBy : "unknown");
+
         // Clears the content's Smart Search entries if it had any
         if smartsearch:isSmartSearchEnabled() {
-            string|error deletedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
             _ = start smartsearch:deleteContentFromSmartSearch(contentId, deletedBy is string ? deletedBy : "unknown");
         }
 
@@ -1911,10 +1913,13 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + includeAnswer - False returns just the sources, without waiting for the generated answer
     # + return - A generated answer plus its sources, or an error
     resource function get smart\-search(http:RequestContext ctx, string userQuery, boolean includeAnswer = true)
-        returns smartsearch:SmartSearchResponse|http:NotFound|http:InternalServerError {
+        returns smartsearch:SmartSearchResponse|http:NotFound|http:TooManyRequests|http:InternalServerError {
 
         if !smartsearch:isSmartSearchEnabled() {
             return http:NOT_FOUND;
+        }
+        if !smartsearch:isSearchAllowed(ctx) {
+            return http:TOO_MANY_REQUESTS;
         }
         smartsearch:SmartSearchResponse|error result = smartsearch:searchDocuments(userQuery, includeAnswer);
         if result is error {

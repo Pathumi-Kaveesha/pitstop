@@ -1091,6 +1091,13 @@ isolated function getUncheckedIndexCandidatesQuery(int recheckWindowHours) retur
         )
 `;
 
+# Query for the id of every content item not deleted - a missing flag counts as live, so a sweep never removes on doubt.
+#
+# + return - SQL parameterized query
+isolated function getLiveContentIdsQuery() returns sql:ParameterizedQuery => `
+    SELECT content_id FROM content WHERE is_deleted IS NULL OR is_deleted = false
+`;
+
 # Query to get one content item's transcript link, for editing - admin only.
 #
 # + contentId - The content's id

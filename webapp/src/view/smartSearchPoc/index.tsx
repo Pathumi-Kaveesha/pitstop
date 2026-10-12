@@ -277,7 +277,11 @@ export default function SmartSearchPoc() {
         void fetchAnswer(searchId, searchedQuery, new Set(foundSources.map((source) => source.documentId)));
       }
     } catch (error) {
-      setSearchError("Something went wrong with that search. Please try again.");
+      setSearchError(
+        axios.isAxiosError(error) && error.response?.status === 429
+          ? "You're searching too fast. Please wait a minute and try again."
+          : "Something went wrong with that search. Please try again."
+      );
       setHasSearched(false);
       // eslint-disable-next-line no-console
       console.error(error);

@@ -34,7 +34,6 @@ from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
 from web_page import fetch_web_page_text, is_web_page_link
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
-    DELETE_TOMBSTONE_TTL_SECONDS,
     INDEX_ERROR_TTL_SECONDS,
     LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES,
     MAX_CONCURRENT_INDEX_JOBS,
@@ -48,12 +47,14 @@ from embeddings import embed_chunks, embed_text, format_query_text
 from generation import generate_answer
 from vectorstore import (
     SearchResult,
-    delete_by_document_id,
-    delete_stale_chunks,
+    claim_generation,
+    delete_document,
     document_exists,
     find_document_source,
+    is_current_generation,
+    list_document_ids,
     search,
-    upsert_chunks,
+    store_chunks_if_current,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -65,65 +66,6 @@ app = FastAPI(title="Pitstop Smart Search (POC)")
 
 class ErrorResponse(BaseModel):
     detail: str
-
-
-# document_id -> when it was deleted
-_deleted_content_ids: dict[str, float] = {}
-_deleted_ids_lock = threading.Lock()
-
-
-def _tombstone(document_id: str) -> None:
-    """Marks an id deleted, and opportunistically forgets expired ones."""
-    now = time.time()
-    with _deleted_ids_lock:
-        _deleted_content_ids[document_id] = now
-        expired = [doc_id for doc_id, at in _deleted_content_ids.items()
-                   if now - at > DELETE_TOMBSTONE_TTL_SECONDS]
-        for doc_id in expired:
-            del _deleted_content_ids[doc_id]
-
-
-def _is_tombstoned(document_id: str, since: float) -> bool:
-    """Whether an id was deleted at or after `since` - a job's own start
-    time, not "now", so a delete still counts no matter how long the job
-    that started before it has been running."""
-    with _deleted_ids_lock:
-        deleted_at = _deleted_content_ids.get(document_id)
-    return deleted_at is not None and deleted_at >= since
-
-
-# document_id -> generation number, bumped when an index or delete job starts, so an older job can tell it's been superseded
-_document_generations: dict[str, int] = {}
-_document_generations_lock = threading.Lock()
-
-
-def _bump_generation(document_id: str) -> int:
-    """Claims the next generation for a document - call once, right when a job for it starts."""
-    with _document_generations_lock:
-        next_generation = _document_generations.get(document_id, 0) + 1
-        _document_generations[document_id] = next_generation
-        return next_generation
-
-
-def _is_current_generation(document_id: str, generation: int) -> bool:
-    """Whether no newer job has started for this document since the caller claimed its generation."""
-    with _document_generations_lock:
-        return _document_generations.get(document_id, 0) == generation
-
-
-# document_id -> lock serializing its actual writes/deletes, so two jobs for the same document can never have their remote mutations interleave
-_document_mutation_locks: dict[str, threading.Lock] = {}
-_document_mutation_locks_meta_lock = threading.Lock()
-
-
-def _document_mutation_lock(document_id: str) -> threading.Lock:
-    """The lock a document's writes/deletes must hold - created once per id, reused after that."""
-    with _document_mutation_locks_meta_lock:
-        lock = _document_mutation_locks.get(document_id)
-        if lock is None:
-            lock = threading.Lock()
-            _document_mutation_locks[document_id] = lock
-        return lock
 
 
 # document_id -> (when it failed, reason)
@@ -230,14 +172,14 @@ def _run_in_index_slot_exclusive(job, *args) -> None:
 
 
 def _index_drive_file_in_background(
-    info: DriveFileInfo, title: str, document_id: str, drive_link: str, job_started_at: float, generation: int,
+    info: DriveFileInfo, title: str, document_id: str, drive_link: str, generation: int,
     display_link: Optional[str] = None
 ) -> None:
     """Downloads, chunks, embeds and stores one Drive document, run after
     the response has already gone back. Never raises - failures go to the
     log, since there's no caller left to report them to.
 
-    job_started_at/generation are claimed by the caller at accept time, not in here, so a queued task can't miss a delete that lands before it actually starts.
+    generation is claimed by the caller at accept time, not in here, so a queued task can't miss a delete that lands before it actually starts.
 
     display_link is set when drive_link is only a stand-in document, read for its text but never itself shown."""
     logger.info("Started indexing '%s' (id %s, %s) - downloading", title, document_id, info.extension)
@@ -262,8 +204,8 @@ def _index_drive_file_in_background(
             _set_index_error(document_id, "Nothing worth indexing was found in this file.")
             return
 
-        if _is_tombstoned(document_id, since=job_started_at):
-            logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
+        if not is_current_generation(document_id, generation):
+            logger.info("Content %s was deleted or re-indexed before indexing finished - discarding.", document_id)
             return
 
         if display_link:
@@ -277,7 +219,7 @@ def _index_drive_file_in_background(
         ]
 
         _embed_and_store(
-            chunks, title, document_id, job_started_at, generation,
+            chunks, title, document_id, generation,
             UNIT_LABELS[extraction_extension], "reference" if display_link else info.extension,
             "drive", display_link or drive_link, chunk_native_links,
         )
@@ -287,57 +229,42 @@ def _index_drive_file_in_background(
 
 
 def _embed_and_store(
-    chunks: list[Chunk], title: str, document_id: str, job_started_at: float, generation: int,
+    chunks: list[Chunk], title: str, document_id: str, generation: int,
     unit_label: str, file_extension: str, source: str, link: str, native_links: list[Optional[str]],
 ) -> None:
-    """Shared tail of every background indexing job: embed, store, and clean up if the content
-    was deleted, or re-indexed again by a newer job, while this was running."""
+    """Shared tail of every background indexing job: embed, then store - unless the content was
+    deleted, or re-indexed again by a newer job, while this was running."""
     # Skip the billed embedding calls entirely if a newer job already superseded this one
-    if not _is_current_generation(document_id, generation):
-        logger.info("Content %s was re-indexed again before this job started embedding - discarding this attempt.", document_id)
+    if not is_current_generation(document_id, generation):
+        logger.info("Content %s was deleted or re-indexed before this job started embedding - discarding this attempt.", document_id)
         return
 
     logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
     vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
 
-    # Everything below actually touches Pinecone - held for one document at a time, so two jobs'
-    # writes/deletes for it can never interleave, only the generation checks they gate on could
-    with _document_mutation_lock(document_id):
-        # Embedding is slow - a newer job could easily have already finished and written fresher chunks
-        if not _is_current_generation(document_id, generation):
-            logger.info("Content %s was re-indexed again while this job was embedding - discarding this attempt.", document_id)
-            return
+    # Embedding is slow - a delete or newer job could easily have landed meanwhile, on any copy of the
+    # service. The check and the write happen together in the database, so none can slip in between.
+    stored = store_chunks_if_current(
+        vectors, [c.text for c in chunks], title, [c.page for c in chunks],
+        document_id, generation, unit_label, file_extension, source, link, native_links,
+        [c.moments for c in chunks],
+    )
+    if not stored:
+        logger.info("Content %s was deleted or re-indexed while this job was embedding - discarding this attempt.", document_id)
+        return
 
-        # Chunk ids are derived from the document id, so this overwrites a
-        # previous version in place - the old copy stays searchable if the
-        # write fails, instead of being deleted up front.
-        upsert_chunks(
-            vectors, [c.text for c in chunks], title, [c.page for c in chunks],
-            document_id, unit_label, file_extension, source, link, native_links,
-            [c.moments for c in chunks],
-        )
-
-        # Delete may have landed mid-upsert - undo the write if so.
-        if _is_tombstoned(document_id, since=job_started_at):
-            logger.info("Content %s was deleted while indexing was writing - cleaning up.", document_id)
-            delete_by_document_id(document_id)
-            _clear_search_cache()
-            return
-
-        # Only once the new version is safely stored.
-        delete_stale_chunks(document_id, len(chunks))
-        _clear_search_cache()
-        logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
+    _clear_search_cache()
+    logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
 
 
 def _index_webpage_in_background(
-    title: str, document_id: str, url: str, text: str, job_started_at: float, generation: int
+    title: str, document_id: str, url: str, text: str, generation: int
 ) -> None:
     """Chunks, embeds and stores one webpage's already-extracted text, run after the response
     has already gone back. Never raises - failures go to the log, since there's no caller left
     to report them to.
 
-    job_started_at/generation are claimed by the caller at accept time - see the same note on _index_drive_file_in_background."""
+    generation is claimed by the caller at accept time - see the same note on _index_drive_file_in_background."""
     logger.info("Started indexing '%s' (id %s, webpage) - chunking", title, document_id)
     _clear_index_error(document_id)
 
@@ -348,12 +275,12 @@ def _index_webpage_in_background(
             _set_index_error(document_id, "Nothing worth indexing was found on this page.")
             return
 
-        if _is_tombstoned(document_id, since=job_started_at):
-            logger.info("Content %s was deleted before indexing finished - discarding.", document_id)
+        if not is_current_generation(document_id, generation):
+            logger.info("Content %s was deleted or re-indexed before indexing finished - discarding.", document_id)
             return
 
         _embed_and_store(
-            chunks, title, document_id, job_started_at, generation,
+            chunks, title, document_id, generation,
             UNIT_LABELS["webpage"], "webpage", "web", url, [None] * len(chunks),
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to report an error to
@@ -365,6 +292,15 @@ def _safe_actor(value: Optional[str]) -> str:
     """Strips control characters and caps length, so a caller-supplied value can't forge log lines."""
     cleaned = "".join(ch for ch in (value or "") if ch.isprintable())[:254]
     return cleaned or "unknown"
+
+
+async def _claim_generation(document_id: str) -> int:
+    """Claims the document's next generation off the event loop, as a clean 503 the admin can retry if the database is down."""
+    try:
+        return await run_in_threadpool(claim_generation, document_id)
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 503
+        logger.exception("Failed to claim a generation for document %s", document_id)
+        raise HTTPException(status_code=503, detail="Could not start indexing. Please try again.") from error
 
 
 class IngestDriveLinkRequest(BaseModel):
@@ -406,11 +342,10 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
         document_id = body.contentId or hashlib.sha256(body.driveLink.encode()).hexdigest()[:16]
 
         # Claimed now, not once the task actually starts, or a delete queued behind it would go unnoticed
-        job_started_at = time.time()
-        generation = _bump_generation(document_id)
+        generation = await _claim_generation(document_id)
         background_tasks.add_task(
             _run_in_index_slot, _index_webpage_in_background, title, document_id, body.driveLink, page.text,
-            job_started_at, generation,
+            generation,
         )
 
         return {"status": "indexing", "title": title, "documentId": document_id, "fileType": "webpage"}
@@ -433,8 +368,7 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
 
     _clear_index_error(document_id)
     # Claimed now, not once the background task actually starts - see the note above.
-    job_started_at = time.time()
-    generation = _bump_generation(document_id)
+    generation = await _claim_generation(document_id)
     # A large file runs alone, so its memory use is never multiplied by concurrent jobs.
     runner = (
         _run_in_index_slot_exclusive
@@ -443,7 +377,7 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     )
     background_tasks.add_task(
         runner, _index_drive_file_in_background, info, title, document_id, body.driveLink,
-        job_started_at, generation, body.displayLink,
+        generation, body.displayLink,
     )
 
     return {
@@ -454,6 +388,17 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     }
 
 
+@app.get("/documents")
+def list_documents_endpoint() -> dict:
+    """The id of every indexed document, so the backend can remove chunks whose Pitstop content is gone."""
+    try:
+        document_ids = list_document_ids()
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+        logger.exception("Failed to list indexed documents")
+        raise HTTPException(status_code=500, detail="Could not list indexed documents.") from error
+    return {"documentIds": sorted(document_ids)}
+
+
 @app.delete(
     "/documents/{document_id}",
     responses={404: {"model": ErrorResponse, "description": "No indexed chunks found for this document id."}},
@@ -461,30 +406,19 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
 def delete_document_endpoint(
     document_id: str, x_admin_email: Optional[str] = Header(default=None),
 ) -> dict:
-    """Removes a document's chunks. Marks the id deleted first, so a
-    background index for the same id discards its work instead of
+    """Removes a document's chunks. In the same database transaction it claims a new generation, so a
+    background index for the same id - on any copy of the service - discards its work instead of
     recreating what was just deleted. A never-indexed id gets a 404."""
     logger.info("Delete requested for document %s by %s", document_id, _safe_actor(x_admin_email))
-    _tombstone(document_id)
-    _bump_generation(document_id)
 
-    # Waits for any in-flight indexing job's own write to finish first, so this can never
-    # delete chunks that job is still in the middle of writing.
-    with _document_mutation_lock(document_id):
-        try:
-            existed = document_exists(document_id)
-        except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
-            logger.exception("Failed to check document %s before deleting", document_id)
-            raise HTTPException(status_code=500, detail="Error while deleting document.") from error
+    try:
+        existed = delete_document(document_id)
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+        logger.exception("Failed to delete document %s", document_id)
+        raise HTTPException(status_code=500, detail="Error while deleting document.") from error
 
-        if not existed:
-            raise HTTPException(status_code=404, detail=f"No indexed chunks found for document {document_id}.")
-
-        try:
-            delete_by_document_id(document_id)
-        except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
-            logger.exception("Failed to delete document %s", document_id)
-            raise HTTPException(status_code=500, detail="Error while deleting document.") from error
+    if not existed:
+        raise HTTPException(status_code=404, detail=f"No indexed chunks found for document {document_id}.")
 
     _clear_search_cache()
     logger.info("Removed indexed chunks for document %s", document_id)
