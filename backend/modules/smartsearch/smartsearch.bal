@@ -109,7 +109,7 @@ isolated map<[int, int]> searchWindows = {};
 # + return - False once the caller has used up this minute's searches
 public isolated function isSearchAllowed(http:RequestContext ctx) returns boolean {
     string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-    if userEmail is error {
+    if userEmail is error || userEmail.trim() == "" {
         return false;
     }
     int now = time:utcNow()[0];
