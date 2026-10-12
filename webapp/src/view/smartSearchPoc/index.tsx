@@ -53,6 +53,8 @@ const EXAMPLE_PROMPTS = [
   "Onboarding steps for a new hire",
 ];
 
+const RATE_LIMIT_MESSAGE = "You're searching too fast. Please wait a minute and try again.";
+
 // A small icon per result type, so it reads at a glance
 const resultTypeIcon = (source: SmartSearchResult): typeof DescriptionRoundedIcon => {
   if (source.unitLabel === "Moment") return OndemandVideoRoundedIcon;
@@ -156,6 +158,9 @@ export default function SmartSearchPoc() {
     [contents]
   );
 
+  const showNoSummaryNote =
+    hasSearched && !searching && !answerLoading && !answer && !searchError && sources.length > 0;
+
   // Drive's PDF viewer ignores "#page=N", so the PDF is fetched from our backend instead.
   const openPdfAtPage = async (source: SmartSearchResult) => {
     const fragment = source.page ? `#page=${source.page}` : "";
@@ -243,8 +248,15 @@ export default function SmartSearchPoc() {
       if (latestSearchRef.current === searchId) {
         setAnswer(sameDocuments ? (response.data?.answer ?? null) : null);
       }
-    } catch {
-      // No answer is fine - the sources are already shown, with a note.
+    } catch (error) {
+      // No answer is fine - the sources are already shown, with a note. A rate limit says so instead.
+      if (
+        axios.isAxiosError(error) &&
+        error.response?.status === 429 &&
+        latestSearchRef.current === searchId
+      ) {
+        setSearchError(RATE_LIMIT_MESSAGE);
+      }
     } finally {
       if (latestSearchRef.current === searchId) {
         setAnswerLoading(false);
@@ -279,7 +291,7 @@ export default function SmartSearchPoc() {
     } catch (error) {
       setSearchError(
         axios.isAxiosError(error) && error.response?.status === 429
-          ? "You're searching too fast. Please wait a minute and try again."
+          ? RATE_LIMIT_MESSAGE
           : "Something went wrong with that search. Please try again."
       );
       setHasSearched(false);
@@ -394,7 +406,7 @@ export default function SmartSearchPoc() {
       )}
 
       {/* Search can succeed even when answer generation fails. */}
-      {hasSearched && !searching && !answerLoading && !answer && sources.length > 0 && (
+      {showNoSummaryNote && (
         <Alert severity="info" sx={{ mt: 3, borderRadius: 2 }}>
           Couldn't generate an AI summary right now - showing the matching documents below instead.
         </Alert>
