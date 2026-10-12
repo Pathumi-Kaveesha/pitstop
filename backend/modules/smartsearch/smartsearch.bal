@@ -1176,12 +1176,12 @@ public isolated function startBulkIndex(http:RequestContext ctx, string? content
 
 # Live-checks content added or edited within the recheck window and not already a known failure.
 #
-# + return - False if the Smart Search service was unreachable partway through
-isolated function reconcileUncheckedCandidates() returns boolean {
+# + return - False if unreachable partway through, or an error if the candidates couldn't be listed
+isolated function reconcileUncheckedCandidates() returns boolean|error {
     database:UncheckedIndexCandidate[]|error candidates = database:getUncheckedIndexCandidates(RECHECK_WINDOW_HOURS);
     if candidates is error {
         log:printWarn("Smart Search: could not list unchecked index candidates", candidates);
-        return true;
+        return candidates;
     }
     foreach database:UncheckedIndexCandidate candidate in candidates {
         string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
@@ -1219,7 +1219,7 @@ isolated function reconcileAllUnindexedContent() returns error? {
     }
 
     if reachable {
-        _ = reconcileUncheckedCandidates();
+        boolean _ = check reconcileUncheckedCandidates();
     }
 }
 
