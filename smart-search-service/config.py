@@ -16,12 +16,33 @@
 
 """Tunable settings for the smart search service."""
 
+import logging
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+
+def _positive_int_env(name: str, default: int) -> int:
+    """A whole number above zero from the environment, or the default when it's unset or not usable."""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        logging.getLogger("smart-search-service").warning("Ignoring %s=%r - it must be a whole number above 0", name, raw)
+        return default
+    return value
+
+
+VERTEX_PROJECT_ID = os.environ["VERTEX_PROJECT_ID"]
+# "global" is where Vertex serves gemini-embedding-2 from.
+VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION") or "global"
+# The service account key's JSON - the environment's default credentials are used if unset.
+VERTEX_SERVICE_ACCOUNT_JSON = os.environ.get("VERTEX_SERVICE_ACCOUNT_JSON") or None
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL") or None
 if ANTHROPIC_BASE_URL and not ANTHROPIC_BASE_URL.startswith("https://"):
@@ -40,11 +61,8 @@ POSTGRES_DSN = os.environ["POSTGRES_DSN"]
 # Above this, a file gets every concurrency slot to itself instead of sharing MAX_CONCURRENT_INDEX_JOBS.
 LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES = 100 * 1024 * 1024
 
-# Reject a Drive file before downloading it if it's bigger than this - confirm against the service's actual memory before raising it.
-MAX_DRIVE_FILE_SIZE_BYTES = 300 * 1024 * 1024
-
-# Largest PDF served for opening at a page - each click holds it in memory.
-MAX_PDF_VIEW_BYTES = 30 * 1024 * 1024
+# Reject a Drive file before downloading it if it's bigger than this - set MAX_DRIVE_FILE_SIZE_MB per environment, roughly (memory - 250 MB) / 3.5.
+MAX_DRIVE_FILE_SIZE_BYTES = _positive_int_env("MAX_DRIVE_FILE_SIZE_MB", 150) * 1024 * 1024
 
 # Office files are zip archives - a small one can expand to something huge.
 # Checked against the entries' declared sizes before any parsing.
@@ -57,9 +75,8 @@ WEB_PAGE_FETCH_TIMEOUT_SECONDS = 20
 
 # Changing this means re-embedding and re-indexing everything already stored.
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-2"
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
-# Must match the Pinecone index's own configured dimension.
+# Must match the vector column's dimension in the chunks table.
 EMBEDDING_DIMENSION = 768
 
 DEFAULT_SEARCH_RESULT_LIMIT = 10
@@ -78,6 +95,10 @@ MAX_CONCURRENT_INDEX_JOBS = 3
 
 # How long an indexing failure reason is remembered
 INDEX_ERROR_TTL_SECONDS = 24 * 60 * 60
+
+# A running index job refreshes its mark this often; without a refresh for the second period it counts as interrupted.
+INDEX_HEARTBEAT_SECONDS = 20
+INDEX_STALE_AFTER_SECONDS = 180
 
 EMBED_MAX_RETRIES = 3
 EMBED_RETRY_DELAY_SECONDS = 5

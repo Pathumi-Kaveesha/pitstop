@@ -24,7 +24,7 @@ import time
 
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Response
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 
@@ -35,9 +35,10 @@ from web_page import fetch_web_page_text, is_web_page_link
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     INDEX_ERROR_TTL_SECONDS,
+    INDEX_HEARTBEAT_SECONDS,
+    INDEX_STALE_AFTER_SECONDS,
     LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES,
     MAX_CONCURRENT_INDEX_JOBS,
-    MAX_PDF_VIEW_BYTES,
     RAW_MATCH_POOL_MULTIPLIER,
     EMBED_REQUEST_SPACING_SECONDS,
     SEARCH_CACHE_MAX_ENTRIES,
@@ -50,11 +51,15 @@ from vectorstore import (
     claim_generation,
     delete_document,
     document_exists,
-    find_document_source,
+    clear_stale_index_job,
+    finish_index_job,
     is_current_generation,
+    is_index_job_stale,
     list_document_ids,
     search,
+    start_index_job,
     store_chunks_if_current,
+    touch_index_job,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -169,6 +174,59 @@ def _run_in_index_slot_exclusive(job, *args) -> None:
     finally:
         for _ in range(MAX_CONCURRENT_INDEX_JOBS):
             _index_slots.release()
+
+
+INTERRUPTED_INDEX_MESSAGE = (
+    "Indexing was interrupted before it finished - the service restarted or ran out of memory. "
+    "Use Retry, and if it keeps happening the file may be too large."
+)
+
+
+def _best_effort(action, *args, quiet: bool = False) -> None:
+    """Runs a bookkeeping step that must never stop an index job - a failure is only logged."""
+    try:
+        action(*args)
+    except Exception:  # noqa: BLE001 - the job itself matters more than this record of it
+        if quiet:
+            logger.debug("Index job bookkeeping step %s failed", action.__name__, exc_info=True)
+        else:
+            logger.warning("Index job bookkeeping step %s failed", action.__name__, exc_info=True)
+
+
+async def _record_ingest_rejection(content_id: Optional[str], message: str) -> None:
+    """Remembers why a request was turned away before indexing, and drops any older dead job's mark so it can't override this."""
+    if not content_id:
+        return
+    _set_index_error(content_id, message)
+    try:
+        await run_in_threadpool(clear_stale_index_job, content_id, INDEX_STALE_AFTER_SECONDS)
+    except Exception:  # noqa: BLE001 - the rejection itself still has to reach the caller
+        logger.warning("Could not clear an old index job mark for document %s", content_id, exc_info=True)
+
+
+def _keep_job_marked_alive(document_id: str, generation: int, stop: threading.Event) -> None:
+    while not stop.wait(INDEX_HEARTBEAT_SECONDS):
+        _best_effort(touch_index_job, document_id, generation, quiet=True)
+
+
+def _run_tracked(runner, job, document_id: str, generation: int, *args) -> None:
+    """Runs an index job while it keeps a mark in the database fresh, so a crash can be told from a slow job."""
+    stop = threading.Event()
+    _best_effort(start_index_job, document_id, generation)
+    threading.Thread(target=_keep_job_marked_alive, args=(document_id, generation, stop), daemon=True).start()
+    try:
+        runner(job, *args)
+    finally:
+        stop.set()
+        _best_effort(finish_index_job, document_id, generation)
+
+
+def _index_job_interrupted(document_id: str) -> bool:
+    try:
+        return is_index_job_stale(document_id, INDEX_STALE_AFTER_SECONDS)
+    except Exception:  # noqa: BLE001 - a failed check must not break the status call
+        logger.warning("Could not check whether indexing for document %s was interrupted", document_id, exc_info=True)
+        return False
 
 
 def _index_drive_file_in_background(
@@ -329,13 +387,11 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
         try:
             page = await run_in_threadpool(fetch_web_page_text, body.driveLink)
         except ValueError as error:
-            if body.contentId:
-                _set_index_error(body.contentId, str(error))
+            await _record_ingest_rejection(body.contentId, str(error))
             raise HTTPException(status_code=400, detail=str(error)) from error
         except RuntimeError as error:
             logger.exception("Could not read webpage for indexing")
-            if body.contentId:
-                _set_index_error(body.contentId, "Could not read that page.")
+            await _record_ingest_rejection(body.contentId, "Could not read that page.")
             raise HTTPException(status_code=502, detail="Could not read that page.") from error
 
         title = body.title.strip() if body.title and body.title.strip() else page.title
@@ -344,8 +400,8 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
         # Claimed now, not once the task actually starts, or a delete queued behind it would go unnoticed
         generation = await _claim_generation(document_id)
         background_tasks.add_task(
-            _run_in_index_slot, _index_webpage_in_background, title, document_id, body.driveLink, page.text,
-            generation,
+            _run_tracked, _run_in_index_slot, _index_webpage_in_background, document_id, generation,
+            title, document_id, body.driveLink, page.text, generation,
         )
 
         return {"status": "indexing", "title": title, "documentId": document_id, "fileType": "webpage"}
@@ -354,13 +410,11 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
         info = await run_in_threadpool(resolve_drive_file, body.driveLink)
     except ValueError as error:
         # Rejected before indexing started, so record it now
-        if body.contentId:
-            _set_index_error(body.contentId, str(error))
+        await _record_ingest_rejection(body.contentId, str(error))
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
         logger.exception("Could not read Drive link for indexing")
-        if body.contentId:
-            _set_index_error(body.contentId, "Could not read that file from Google Drive.")
+        await _record_ingest_rejection(body.contentId, "Could not read that file from Google Drive.")
         raise HTTPException(status_code=502, detail="Could not read that file from Google Drive.") from error
 
     title = body.title.strip() if body.title and body.title.strip() else info.drive_title
@@ -376,8 +430,8 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
         else _run_in_index_slot
     )
     background_tasks.add_task(
-        runner, _index_drive_file_in_background, info, title, document_id, body.driveLink,
-        generation, body.displayLink,
+        _run_tracked, runner, _index_drive_file_in_background, document_id, generation,
+        info, title, document_id, body.driveLink, generation, body.displayLink,
     )
 
     return {
@@ -425,48 +479,6 @@ def delete_document_endpoint(
     return {"status": "deleted", "documentId": document_id}
 
 
-@app.get(
-    "/documents/{document_id}/file",
-    response_class=Response,
-    responses={
-        200: {"content": {"application/pdf": {}}, "description": "The document's original PDF."},
-        404: {"model": ErrorResponse, "description": "No indexed PDF found for this document id."},
-        413: {"model": ErrorResponse, "description": "The PDF is too large to open at a page."},
-    },
-)
-def get_document_file(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> Response:
-    """Returns an indexed PDF's original file. Drive's own viewer ignores a
-    page number in the link, but a browser opening the file from us honours
-    "#page=N". PDF only."""
-    try:
-        source = find_document_source(document_id)
-    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
-        logger.exception("Failed to look up document %s", document_id)
-        raise HTTPException(status_code=500, detail="Could not look up the document.") from error
-
-    if source is None or source[1] != "pdf":
-        raise HTTPException(status_code=404, detail=f"No indexed PDF found for document {document_id}.")
-
-    try:
-        info = resolve_drive_file(source[0])
-        if info.size_bytes is not None and info.size_bytes > MAX_PDF_VIEW_BYTES:
-            raise HTTPException(status_code=413, detail="This PDF is too large to open at a page.")
-        file_bytes = download_drive_file(info, max_bytes=MAX_PDF_VIEW_BYTES)
-    except (ValueError, RuntimeError) as error:
-        logger.exception("Failed to fetch the PDF for document %s", document_id)
-        raise HTTPException(status_code=502, detail="Could not retrieve the document.") from error
-
-    return Response(
-        content=file_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": 'inline; filename="document.pdf"',
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
-
-
 @app.get("/documents/{document_id}/status")
 def get_document_status(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> dict:
     """Whether a document has indexed pieces, and why its latest attempt failed, if it did."""
@@ -479,6 +491,8 @@ def get_document_status(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> di
     with _index_errors_lock:
         entry = _index_errors.get(document_id)
     error_message = entry[1] if entry else None
+    if not indexed and error_message is None and _index_job_interrupted(document_id):
+        error_message = INTERRUPTED_INDEX_MESSAGE
 
     return {"indexed": indexed, "errorMessage": error_message}
 

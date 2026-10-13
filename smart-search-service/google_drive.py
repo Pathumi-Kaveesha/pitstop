@@ -204,11 +204,6 @@ def resolve_drive_file(drive_link: str) -> DriveFileInfo:
 
     # Native Google files report no size.
     size_bytes = int(metadata["size"]) if metadata.get("size") else None
-    if size_bytes is not None and size_bytes > MAX_DRIVE_FILE_SIZE_BYTES:
-        raise ValueError(
-            f"'{drive_title}' is {size_bytes / 1_048_576:.0f} MB, over the "
-            f"{MAX_DRIVE_FILE_SIZE_BYTES / 1_048_576:.0f} MB limit Smart Search can index."
-        )
 
     if mime_type in EXPORT_FORMATS:
         extension, _ = EXPORT_FORMATS[mime_type]
@@ -216,11 +211,22 @@ def resolve_drive_file(drive_link: str) -> DriveFileInfo:
         extension = MIME_TYPE_EXTENSIONS.get(mime_type)
         if extension is None and "." in drive_title:
             extension = drive_title.rsplit(".", 1)[-1].lower()
+        if mime_type.startswith("video/"):
+            raise ValueError(
+                f"'{drive_title}' is a video file, which Smart Search can't read - "
+                "set this content's subtype to Video and add a Google Doc transcript link instead."
+            )
         if extension not in ("pdf", "docx", "pptx", "xlsx"):
             raise ValueError(
                 f"'{drive_title}' isn't a file type Smart Search can read "
                 "(supported: PDF, Word, PowerPoint, Excel, and native Google Docs/Sheets/Slides)."
             )
+
+    if size_bytes is not None and size_bytes > MAX_DRIVE_FILE_SIZE_BYTES:
+        raise ValueError(
+            f"'{drive_title}' is {size_bytes / 1_048_576:.0f} MB, over the "
+            f"{MAX_DRIVE_FILE_SIZE_BYTES / 1_048_576:.0f} MB limit Smart Search can index."
+        )
 
     return DriveFileInfo(
         file_id=file_id, mime_type=mime_type, drive_title=drive_title, extension=extension,

@@ -110,6 +110,7 @@ def _use_db_named_schema(conn: psycopg.Connection) -> None:
 _pool = ConnectionPool(POSTGRES_DSN, min_size=1, max_size=10, open=True, configure=_use_db_named_schema)
 
 _schema_ready = False
+_SCHEMA_LOCK_KEY = 7341902518
 _schema_lock = threading.Lock()
 
 
@@ -122,6 +123,8 @@ def _ensure_schema() -> None:
         if _schema_ready:
             return
         with _pool.connection() as conn:
+            # Copies of the service starting together on an empty database would otherwise collide creating the tables.
+            conn.execute("SELECT pg_advisory_xact_lock(%s)", (_SCHEMA_LOCK_KEY,))
             conn.execute(queries.SCHEMA)
         _schema_ready = True
 
@@ -137,6 +140,39 @@ def claim_generation(document_id: str) -> int:
     _ensure_schema()
     with _pool.connection() as conn:
         return conn.execute(queries.CLAIM_GENERATION, (document_id,)).fetchone()[0]
+
+
+def start_index_job(document_id: str, generation: int) -> None:
+    """Marks an index job as running, so a service that dies mid-job leaves a mark that stops being refreshed."""
+    _ensure_schema()
+    with _pool.connection() as conn:
+        conn.execute(queries.START_INDEX_JOB, (document_id, generation))
+
+
+def touch_index_job(document_id: str, generation: int) -> None:
+    """Proves the job is still alive."""
+    with _pool.connection() as conn:
+        conn.execute(queries.TOUCH_INDEX_JOB, (document_id, generation))
+
+
+def finish_index_job(document_id: str, generation: int) -> None:
+    """Removes the job's mark once it has ended, however it ended."""
+    with _pool.connection() as conn:
+        conn.execute(queries.FINISH_INDEX_JOB, (document_id, generation))
+
+
+def clear_stale_index_job(document_id: str, stale_after_seconds: float) -> None:
+    """Drops the mark of a job that died, once a newer request has already been answered some other way."""
+    _ensure_schema()
+    with _pool.connection() as conn:
+        conn.execute(queries.CLEAR_STALE_INDEX_JOB, (document_id, stale_after_seconds))
+
+
+def is_index_job_stale(document_id: str, stale_after_seconds: float) -> bool:
+    """Whether a job was marked running but hasn't refreshed its mark recently - the service died mid-job."""
+    _ensure_schema()
+    with _pool.connection() as conn:
+        return conn.execute(queries.STALE_INDEX_JOB, (document_id, stale_after_seconds)).fetchone() is not None
 
 
 def is_current_generation(document_id: str, generation: int) -> bool:
@@ -290,18 +326,6 @@ def list_document_ids() -> list[str]:
         return [row[0] for row in conn.execute(queries.LIST_DOCUMENT_IDS).fetchall()]
 
 
-def find_document_source(document_id: str) -> Optional[tuple[str, str]]:
-    """The Drive link and file type recorded for an indexed document, or
-    None when nothing is indexed under that id."""
-    _ensure_schema()
-    with _pool.connection() as conn, conn.cursor() as cur:
-        cur.execute(queries.FIND_DOCUMENT_SOURCE, (document_id,))
-        row = cur.fetchone()
-    if row is None:
-        return None
-    return row[0], row[1]
-
-
 def delete_document(document_id: str) -> bool:
     """Removes every chunk belonging to one Pitstop content item, and claims a new generation in the same
     transaction - so an index job that started earlier, on any copy of the service, discards its work
@@ -316,6 +340,7 @@ def delete_document(document_id: str) -> bool:
             _ensure_schema()
             with _pool.connection() as conn:
                 conn.execute(queries.CLAIM_GENERATION, (document_id,))
+                conn.execute(queries.CLEAR_INDEX_JOB, (document_id,))
                 return conn.execute(queries.DELETE_BY_DOCUMENT_ID, (document_id,)).rowcount > 0
         except psycopg.Error as error:
             last_error = error
