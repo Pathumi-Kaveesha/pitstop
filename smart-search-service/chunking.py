@@ -254,6 +254,9 @@ def _extract_xlsx(file_bytes: bytes) -> list[str]:
         lines = [f"Sheet: {worksheet.title}"]
         for above in scanned[:header_at]:
             lines.extend(_filled_cells(above))
+        if header_at:
+            # It may really be data, so it stays searchable as plain text.
+            lines.append(", ".join(_header_name(h) for h in headers if _header_name(h)))
         for row in itertools.chain(scanned[header_at + 1:], rows):
             pairs = [
                 f"{name}: {value}"
