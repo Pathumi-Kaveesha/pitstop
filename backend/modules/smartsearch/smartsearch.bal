@@ -1075,9 +1075,12 @@ public isolated function getBackfillStatusList(string? contentType, string? cont
 # + contentSubtype - Filter by content subtype, when set
 # + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
 # + requestedBy - Email of the admin who started this run
+# + retryFailed - Retry the content currently marked failed, instead of indexing content never tried
 isolated function runBulkIndexInBackground(string? contentType, string? contentSubtype, int? maxCount,
-        string? requestedBy) {
-    error? result = trap runBulkIndexLoop(contentType, contentSubtype, maxCount, requestedBy);
+        string? requestedBy, boolean retryFailed) {
+    error? result = retryFailed
+        ? trap runBulkRetryFailedLoop(contentType, contentSubtype, maxCount, requestedBy)
+        : trap runBulkIndexLoop(contentType, contentSubtype, maxCount, requestedBy);
     if result is error {
         log:printError("Smart Search: bulk index run failed unexpectedly", result);
     }
@@ -1129,20 +1132,81 @@ isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, 
     }
 }
 
+# Every content id currently marked failed that matches the filters. Read in full before any retry starts,
+# since retrying clears and re-records failures and would shift the pages of a live listing.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + return - The ids in ascending order, or an error if the list couldn't be read
+isolated function listFailedContentIds(string? contentType, string? contentSubtype) returns int[]|error {
+    int[] ids = [];
+    int offsetRows = 0;
+    while ids.length() < MAX_BULK_INDEX_ITERATIONS * MAX_BACKFILL_BATCH_SIZE {
+        database:ContentIndexStatus[] rows = check database:getSmartSearchContentStatus(contentType, contentSubtype,
+                "failed", offsetRows, MAX_STATUS_LIST_COUNT);
+        foreach database:ContentIndexStatus row in rows {
+            ids.push(row.contentId);
+        }
+        if rows.length() < MAX_STATUS_LIST_COUNT {
+            break;
+        }
+        offsetRows += rows.length();
+    }
+    return ids;
+}
+
+# Retries every failed content item matching the filters once, in paced batches - the same retry a single
+# Retry click does. Each item is tried a single time, so one that fails again doesn't loop.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + maxCount - Stop after this many items, when set - unlimited otherwise
+# + requestedBy - Email of the admin who started this run
+isolated function runBulkRetryFailedLoop(string? contentType, string? contentSubtype, int? maxCount,
+        string? requestedBy) {
+    int[]|error listed = listFailedContentIds(contentType, contentSubtype);
+    if listed is error {
+        log:printWarn("Smart Search: could not list failed content to retry, stopping this run", listed);
+        return;
+    }
+    int[] failedIds = listed;
+    if maxCount is int {
+        int cap = maxCount < 0 ? 0 : maxCount;
+        if cap < listed.length() {
+            failedIds = listed.slice(0, cap);
+        }
+    }
+    int attempted = 0;
+    foreach int contentId in failedIds {
+        // One batch, then a pause - the same pacing a normal bulk run keeps.
+        if attempted > 0 && attempted % MAX_BACKFILL_BATCH_SIZE == 0 {
+            runtime:sleep(BULK_INDEX_BATCH_INTERVAL_SECONDS);
+        }
+        attempted += 1;
+        http:NotFound|error? result = retryIndexContent(contentId, requestedBy);
+        if result is error {
+            log:printWarn("Smart Search: retrying failed content did not go through", result, contentId = contentId);
+        }
+    }
+    log:printInfo(string `Smart Search: retried ${attempted} failed content item(s)`);
+}
+
 # Starts an "index everything" run for the given filters, unless one is already active.
 #
 # + ctx - Request context, for the admin's identity
 # + contentType - Filter by content type, when set
 # + contentSubtype - Filter by content subtype, when set
 # + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
+# + retryFailed - Retry the content currently marked failed, instead of indexing content never tried
 # + return - Whether a run actually started - false if one was already active
 public isolated function startBulkIndex(http:RequestContext ctx, string? contentType, string? contentSubtype,
-        int? maxCount) returns BulkIndexStartResult {
+        int? maxCount, boolean retryFailed = false) returns BulkIndexStartResult {
     if !tryStartBulkIndexRun() {
         return {started: false};
     }
     string|error requestedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-    _ = start runBulkIndexInBackground(contentType, contentSubtype, maxCount, requestedBy is string ? requestedBy : ());
+    _ = start runBulkIndexInBackground(contentType, contentSubtype, maxCount,
+            requestedBy is string ? requestedBy : (), retryFailed);
     return {started: true};
 }
 
