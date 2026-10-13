@@ -21,7 +21,9 @@ One "piece" per format: PDF -> page, PPTX -> slide, DOCX -> heading-delimited
 section (no page numbers in .docx), XLSX -> sheet tab.
 """
 
+import datetime
 import io
+import itertools
 import re
 import zipfile
 from dataclasses import dataclass
@@ -198,8 +200,35 @@ def _extract_transcript(file_bytes: bytes) -> tuple[list[str], list[str | None]]
     return segments, timestamps
 
 
+# How far down a sheet to look for its header row - titles and notes above a table are only a few rows.
+_XLSX_HEADER_SEARCH_ROWS = 10
+
+
+def _filled_cells(row) -> list[str]:
+    return [str(value).strip() for value in row if value is not None and str(value).strip()]
+
+
+def _looks_like_header_row(row) -> bool:
+    """Two or more filled cells, made of text and month-style dates - plain numbers mean it's data, not column names."""
+    filled = [value for value in row if value is not None and str(value).strip()]
+    return (
+        len(filled) >= 2
+        and all(isinstance(value, (str, datetime.date)) for value in filled)
+        and any(isinstance(value, str) for value in filled)
+    )
+
+
+def _header_name(value) -> str:
+    """A column name. A first-of-the-month date (a "July 2026" column that Excel stored as a date) reads as the month."""
+    if isinstance(value, datetime.datetime) and value.day == 1 and value.time() == datetime.time():
+        return value.strftime("%B %Y")
+    if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime) and value.day == 1:
+        return value.strftime("%B %Y")
+    return str(value).strip() if value is not None else ""
+
+
 def _extract_xlsx(file_bytes: bytes) -> list[str]:
-    """One string per sheet, rows written as "Header: value" pairs."""
+    """One string per sheet, rows written as "Header: value" pairs. A title above the table is kept as plain text."""
     _reject_oversized_ooxml(file_bytes)
     workbook = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
 
@@ -207,14 +236,25 @@ def _extract_xlsx(file_bytes: bytes) -> list[str]:
     for worksheet in workbook.worksheets:
         rows = worksheet.iter_rows(values_only=True)
 
-        headers = next(rows, None)
-        if headers is None:
+        scanned = list(itertools.islice(rows, _XLSX_HEADER_SEARCH_ROWS))
+        if not scanned:
             sheets.append("")
             continue
-        header_names = [str(h).strip() if h is not None else "" for h in headers]
+        # Rows above the table (a title, notes) have at most one filled cell, so the first row with two or more
+        # is the header - but only when it's text (month-style dates allowed) and everything above it is text
+        # too. Anything less certain keeps the first row as the header, as it always was.
+        first_wide_row = next((i for i, row in enumerate(scanned) if len(_filled_cells(row)) >= 2), 0)
+        titles_are_text = all(
+            isinstance(value, str) for row in scanned[:first_wide_row] for value in row if _filled_cells([value])
+        )
+        header_at = first_wide_row if titles_are_text and _looks_like_header_row(scanned[first_wide_row]) else 0
+        headers = scanned[header_at]
+        header_names = [_header_name(h) for h in headers]
 
         lines = [f"Sheet: {worksheet.title}"]
-        for row in rows:
+        for above in scanned[:header_at]:
+            lines.extend(_filled_cells(above))
+        for row in itertools.chain(scanned[header_at + 1:], rows):
             pairs = [
                 f"{name}: {value}"
                 for name, value in zip(header_names, row)
