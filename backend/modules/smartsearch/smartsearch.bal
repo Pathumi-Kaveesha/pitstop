@@ -278,6 +278,8 @@ public isolated function filterToAuthorizedSources(http:RequestContext ctx, Smar
     };
 }
 
+const string SERVICE_UNREACHABLE_REASON = "Smart Search could not be reached. Please retry.";
+
 # Saves an indexing failure, logging a warning if it can't be saved.
 #
 # + contentId - The content that failed to index
@@ -314,8 +316,9 @@ public isolated function recordUnindexableLink(int contentId, string contentType
 # + title - The content's title
 # + displayLink - Set only when driveLink is a transcript, not the content's own link
 # + requestedBy - Email of the admin whose action triggered this, for the logs
+# + recordUnreachable - Save a failure when the request can't be sent, so a retry never leaves the item with no reason
 public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title,
-        string? displayLink = (), string? requestedBy = ()) {
+        string? displayLink = (), string? requestedBy = (), boolean recordUnreachable = false) {
     DriveLinkIngestRequest payload = {
         driveLink,
         title,
@@ -328,6 +331,9 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
     if ingestClient is error {
         // Never actually submitted - a reserved backfill slot shouldn't wait out its TTL for this.
         releaseBackfillReservation(contentId);
+        if recordUnreachable {
+            recordIndexFailure(contentId, SERVICE_UNREACHABLE_REASON);
+        }
         return;
     }
     http:Response|http:ClientError response = ingestClient->post("/ingest-drive-link", payload);
@@ -335,6 +341,9 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
         log:printWarn(string `Smart Search: could not reach the indexing service for content ${contentId}`,
                 reason = response.message());
         releaseBackfillReservation(contentId);
+        if recordUnreachable {
+            recordIndexFailure(contentId, SERVICE_UNREACHABLE_REASON);
+        }
         return;
     }
 
@@ -612,7 +621,7 @@ isolated function retryIndexContentLocked(int contentId, string? requestedBy) re
         // Reserved so the status page lists it as in progress; released once indexed, failed, or not submitted.
         _ = reserveForBackfill(contentId);
         indexContentForSmartSearch(contentId, link, info.description,
-                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy);
+                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy, true);
         return true;
     }
 }
@@ -1205,6 +1214,10 @@ isolated function runBulkRetryFailedLoop(string? contentType, string? contentSub
             skipped += 1;
             continue;
         }
+        if requestedBy is string && !waitForIngestQuota(requestedBy) {
+            log:printWarn("Smart Search: the indexing limit stayed full, stopping this retry run");
+            break;
+        }
         retried += 1;
         http:NotFound|error? result = retryIndexContent(contentId, requestedBy);
         if result is error {
@@ -1212,6 +1225,22 @@ isolated function runBulkRetryFailedLoop(string? contentType, string? contentSub
         }
     }
     log:printInfo(string `Smart Search: retried ${retried} failed content item(s), skipped ${skipped} that no longer needed it`);
+}
+
+# Counts one indexing request against the admin's per-minute limit, waiting briefly for room when it is full.
+#
+# + userEmail - The admin whose limit to count against
+# + return - False if there was still no room after waiting out a full window
+isolated function waitForIngestQuota(string userEmail) returns boolean {
+    int waited = 0;
+    while !isIngestAllowedForEmail(userEmail) {
+        if waited >= INGEST_WINDOW_SECONDS + 5 {
+            return false;
+        }
+        runtime:sleep(5);
+        waited += 5;
+    }
+    return true;
 }
 
 # Starts an "index everything" run for the given filters, unless one is already active.
