@@ -16,7 +16,6 @@
 
 """Tunable settings for the smart search service."""
 
-import logging
 import os
 from dotenv import load_dotenv
 
@@ -24,7 +23,7 @@ load_dotenv()
 
 
 def _positive_int_env(name: str, default: int) -> int:
-    """A whole number above zero from the environment, or the default when it's unset or not usable."""
+    """A whole number above zero from the environment - the default only when it's unset or blank, an error when it's set but unusable."""
     raw = (os.environ.get(name) or "").strip()
     if not raw:
         return default
@@ -33,8 +32,7 @@ def _positive_int_env(name: str, default: int) -> int:
     except ValueError:
         value = 0
     if value <= 0:
-        logging.getLogger("smart-search-service").warning("Ignoring %s=%r - it must be a whole number above 0", name, raw)
-        return default
+        raise ValueError(f"{name} must be a whole number above 0, got {raw!r}.")
     return value
 
 
