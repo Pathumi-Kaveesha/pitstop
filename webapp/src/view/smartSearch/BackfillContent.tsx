@@ -107,8 +107,12 @@ export default function BackfillContent() {
   const [error, setError] = useState<string | null>(null);
   const [startMessage, setStartMessage] = useState<string | null>(null);
 
-  // Previewing what "Index everything" would submit forces the status to "not started" - that's
-  // the only thing it would actually act on - and caps the list at the chosen limit.
+  // With the Failed filter on, "Index everything" retries failed content - otherwise it only acts on content
+  // that was never tried.
+  const retryingFailed = statusFilter === "failed";
+
+  // Previewing what "Index everything" would submit caps the list at the chosen limit, and shows the content it
+  // would act on: failed items when retrying them, otherwise "not started" ones.
   const previewMode = indexLimit !== "";
 
   // Tags each fetch so a slow, superseded response can't overwrite a newer one that arrived first.
@@ -126,7 +130,7 @@ export default function BackfillContent() {
           params: {
             contentType: contentType || undefined,
             contentSubtype: contentSubtype || undefined,
-            status: previewMode ? "not_started" : statusFilter || undefined,
+            status: previewMode && !retryingFailed ? "not_started" : statusFilter || undefined,
             page: targetPage,
             count: pageSize,
           },
@@ -175,6 +179,8 @@ export default function BackfillContent() {
   }, [contentType, contentSubtype, statusFilter, listPageSize, indexLimit]);
 
   const handleIndexEverything = async () => {
+    // Looking at failed items means the click should retry them - never-tried content isn't what's on screen
+    const retryFailed = retryingFailed;
     setStarting(true);
     setError(null);
     setStartMessage(null);
@@ -187,13 +193,19 @@ export default function BackfillContent() {
             contentType: contentType || undefined,
             contentSubtype: contentSubtype || undefined,
             maxCount: indexLimit ? Number(indexLimit) : undefined,
+            retryFailed: retryFailed || undefined,
           },
         }
       );
       const target = indexLimit ? `up to ${indexLimit} items` : "everything";
+      const action = retryFailed
+        ? indexLimit
+          ? `retry up to ${indexLimit} failed items`
+          : "retry every failed item"
+        : `index ${target}`;
       setStartMessage(
         response.data?.started
-          ? `Started! We'll index ${target} matching these filters. This keeps going on its own - click Refresh anytime to check progress.`
+          ? `Started! We'll ${action} matching these filters. This keeps going on its own - click Refresh anytime to check progress.`
           : "This is already in progress from before - it hasn't finished yet. Click Refresh to check how it's going."
       );
       // Switch from previewing what's about to be indexed to watching what's actually happening -
@@ -400,8 +412,16 @@ export default function BackfillContent() {
 
       {previewMode && (
         <Alert severity="info" sx={{ mb: 3, borderRadius: 2 }}>
-          Showing the next {indexLimit} items that haven't been indexed yet - this is what "Index everything" will
-          index if you click it now.
+          {retryingFailed
+            ? `Showing the first ${indexLimit} failed items - this is what "Index everything" will retry if you click it now.`
+            : `Showing the next ${indexLimit} items that haven't been indexed yet - this is what "Index everything" will index if you click it now.`}
+        </Alert>
+      )}
+
+      {statusFilter === "failed" && !previewMode && (
+        <Alert severity="info" sx={{ mb: 3, borderRadius: 2 }}>
+          "Index everything" will retry every failed item matching the type and subtype filters. Anything that still
+          can't be indexed fails again with its reason.
         </Alert>
       )}
 

@@ -278,6 +278,8 @@ public isolated function filterToAuthorizedSources(http:RequestContext ctx, Smar
     };
 }
 
+const string SERVICE_UNREACHABLE_REASON = "Smart Search could not be reached. Please retry.";
+
 # Saves an indexing failure, logging a warning if it can't be saved.
 #
 # + contentId - The content that failed to index
@@ -314,8 +316,9 @@ public isolated function recordUnindexableLink(int contentId, string contentType
 # + title - The content's title
 # + displayLink - Set only when driveLink is a transcript, not the content's own link
 # + requestedBy - Email of the admin whose action triggered this, for the logs
+# + recordUnreachable - Save a failure when the request can't be sent, so a retry never leaves the item with no reason
 public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title,
-        string? displayLink = (), string? requestedBy = ()) {
+        string? displayLink = (), string? requestedBy = (), boolean recordUnreachable = false) {
     DriveLinkIngestRequest payload = {
         driveLink,
         title,
@@ -328,6 +331,9 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
     if ingestClient is error {
         // Never actually submitted - a reserved backfill slot shouldn't wait out its TTL for this.
         releaseBackfillReservation(contentId);
+        if recordUnreachable {
+            recordIndexFailure(contentId, SERVICE_UNREACHABLE_REASON);
+        }
         return;
     }
     http:Response|http:ClientError response = ingestClient->post("/ingest-drive-link", payload);
@@ -335,6 +341,9 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
         log:printWarn(string `Smart Search: could not reach the indexing service for content ${contentId}`,
                 reason = response.message());
         releaseBackfillReservation(contentId);
+        if recordUnreachable {
+            recordIndexFailure(contentId, SERVICE_UNREACHABLE_REASON);
+        }
         return;
     }
 
@@ -612,7 +621,7 @@ isolated function retryIndexContentLocked(int contentId, string? requestedBy) re
         // Reserved so the status page lists it as in progress; released once indexed, failed, or not submitted.
         _ = reserveForBackfill(contentId);
         indexContentForSmartSearch(contentId, link, info.description,
-                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy);
+                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy, true);
         return true;
     }
 }
@@ -1075,9 +1084,12 @@ public isolated function getBackfillStatusList(string? contentType, string? cont
 # + contentSubtype - Filter by content subtype, when set
 # + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
 # + requestedBy - Email of the admin who started this run
+# + retryFailed - Retry the content currently marked failed, instead of indexing content never tried
 isolated function runBulkIndexInBackground(string? contentType, string? contentSubtype, int? maxCount,
-        string? requestedBy) {
-    error? result = trap runBulkIndexLoop(contentType, contentSubtype, maxCount, requestedBy);
+        string? requestedBy, boolean retryFailed) {
+    error? result = retryFailed
+        ? trap runBulkRetryFailedLoop(contentType, contentSubtype, maxCount, requestedBy)
+        : trap runBulkIndexLoop(contentType, contentSubtype, maxCount, requestedBy);
     if result is error {
         log:printError("Smart Search: bulk index run failed unexpectedly", result);
     }
@@ -1129,20 +1141,124 @@ isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, 
     }
 }
 
+# Every content id currently marked failed that matches the filters. Read in full before any retry starts,
+# since retrying clears and re-records failures and would shift the pages of a live listing.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + return - The ids in ascending order, or an error if the list couldn't be read
+isolated function listFailedContentIds(string? contentType, string? contentSubtype) returns int[]|error {
+    int[] ids = [];
+    int offsetRows = 0;
+    while ids.length() < MAX_BULK_INDEX_ITERATIONS * MAX_BACKFILL_BATCH_SIZE {
+        database:ContentIndexStatus[] rows = check database:getSmartSearchContentStatus(contentType, contentSubtype,
+                "failed", offsetRows, MAX_STATUS_LIST_COUNT);
+        foreach database:ContentIndexStatus row in rows {
+            ids.push(row.contentId);
+        }
+        if rows.length() < MAX_STATUS_LIST_COUNT {
+            break;
+        }
+        offsetRows += rows.length();
+    }
+    return ids;
+}
+
+# Retries every failed content item matching the filters once, in paced batches - the same retry a single
+# Retry click does. Each item is tried a single time, so one that fails again doesn't loop, and the failed list
+# is re-read before every batch so an item fixed in the meantime isn't cleared and indexed again.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + maxCount - Stop after this many items, when set - unlimited otherwise
+# + requestedBy - Email of the admin who started this run
+isolated function runBulkRetryFailedLoop(string? contentType, string? contentSubtype, int? maxCount,
+        string? requestedBy) {
+    int[]|error listed = listFailedContentIds(contentType, contentSubtype);
+    if listed is error {
+        log:printWarn("Smart Search: could not list failed content to retry, stopping this run", listed);
+        return;
+    }
+    int[] failedIds = listed;
+    if maxCount is int {
+        int cap = maxCount < 0 ? 0 : maxCount;
+        if cap < listed.length() {
+            failedIds = listed.slice(0, cap);
+        }
+    }
+    map<boolean> stillFailed = {};
+    foreach int failedId in failedIds {
+        stillFailed[failedId.toString()] = true;
+    }
+    int position = 0;
+    int retried = 0;
+    int skipped = 0;
+    foreach int contentId in failedIds {
+        // One batch, then a pause - the same pacing a normal bulk run keeps.
+        if position > 0 && position % MAX_BACKFILL_BATCH_SIZE == 0 {
+            runtime:sleep(BULK_INDEX_BATCH_INTERVAL_SECONDS);
+            // The pause is long enough for an admin to fix some of the remaining items - only retry what still needs it.
+            int[]|error current = listFailedContentIds(contentType, contentSubtype);
+            if current is error {
+                log:printWarn("Smart Search: could not re-check the failed list, stopping this run so nothing healthy is re-indexed",
+                        current);
+                break;
+            }
+            stillFailed = {};
+            foreach int id in current {
+                stillFailed[id.toString()] = true;
+            }
+        }
+        position += 1;
+        if !stillFailed.hasKey(contentId.toString()) || isReservedForBackfill(contentId) {
+            skipped += 1;
+            continue;
+        }
+        if requestedBy is string && !waitForIngestQuota(requestedBy) {
+            log:printWarn("Smart Search: the indexing limit stayed full, stopping this retry run");
+            break;
+        }
+        retried += 1;
+        http:NotFound|error? result = retryIndexContent(contentId, requestedBy);
+        if result is error {
+            log:printWarn("Smart Search: retrying failed content did not go through", result, contentId = contentId);
+        }
+    }
+    log:printInfo(string `Smart Search: retried ${retried} failed content item(s), skipped ${skipped} that no longer needed it`);
+}
+
+# Counts one indexing request against the admin's per-minute limit, waiting briefly for room when it is full.
+#
+# + userEmail - The admin whose limit to count against
+# + return - False if there was still no room after waiting out a full window
+isolated function waitForIngestQuota(string userEmail) returns boolean {
+    int waited = 0;
+    while !isIngestAllowedForEmail(userEmail) {
+        if waited >= INGEST_WINDOW_SECONDS + 5 {
+            return false;
+        }
+        runtime:sleep(5);
+        waited += 5;
+    }
+    return true;
+}
+
 # Starts an "index everything" run for the given filters, unless one is already active.
 #
 # + ctx - Request context, for the admin's identity
 # + contentType - Filter by content type, when set
 # + contentSubtype - Filter by content subtype, when set
 # + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
+# + retryFailed - Retry the content currently marked failed, instead of indexing content never tried
 # + return - Whether a run actually started - false if one was already active
 public isolated function startBulkIndex(http:RequestContext ctx, string? contentType, string? contentSubtype,
-        int? maxCount) returns BulkIndexStartResult {
+        int? maxCount, boolean retryFailed = false) returns BulkIndexStartResult {
     if !tryStartBulkIndexRun() {
         return {started: false};
     }
     string|error requestedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-    _ = start runBulkIndexInBackground(contentType, contentSubtype, maxCount, requestedBy is string ? requestedBy : ());
+    _ = start runBulkIndexInBackground(contentType, contentSubtype, maxCount,
+            requestedBy is string ? requestedBy : (), retryFailed);
     return {started: true};
 }
 

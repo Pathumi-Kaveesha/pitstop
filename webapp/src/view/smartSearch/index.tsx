@@ -135,7 +135,7 @@ const withTextFragment = (url: string, matchedText: string, query: string): stri
   return parsed.toString();
 };
 
-export default function SmartSearchPoc() {
+export default function SmartSearch() {
   const theme = useTheme();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);

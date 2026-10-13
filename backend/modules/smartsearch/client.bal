@@ -16,7 +16,7 @@
 
 import ballerina/http;
 
-// Smart Search (POC) runs as a separate Python service - the AI libraries
+// Smart Search runs as a separate Python service - the AI libraries
 // it needs are far more mature there than in Ballerina today.
 public configurable SmartSearchServiceConfig? smartSearchServiceConfig = ();
 

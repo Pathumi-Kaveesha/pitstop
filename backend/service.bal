@@ -2046,9 +2046,10 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + contentType - Filter by content type, when set
     # + contentSubtype - Filter by content subtype, when set
     # + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
+    # + retryFailed - Retry the content currently marked failed, instead of indexing content never tried
     # + return - Whether a run actually started, 403 Forbidden, 404 Not Found, or 500 Internal Server Error
     resource function post smart\-search/backfill\-index\-all(http:RequestContext ctx,
-            string? contentType = (), string? contentSubtype = (), int? maxCount = ())
+            string? contentType = (), string? contentSubtype = (), int? maxCount = (), boolean retryFailed = false)
         returns smartsearch:BulkIndexStartResult|http:Forbidden|http:NotFound|http:InternalServerError {
 
         if !smartsearch:isSmartSearchEnabled() {
@@ -2059,7 +2060,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             return authError;
         }
 
-        return smartsearch:startBulkIndex(ctx, contentType, contentSubtype, maxCount);
+        return smartsearch:startBulkIndex(ctx, contentType, contentSubtype, maxCount, retryFailed);
     }
 
     # Lists content with its indexing status, for the admin bulk-index status page.
