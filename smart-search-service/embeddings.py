@@ -42,7 +42,13 @@ from http_session import make_session
 
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
-_HOST = "aiplatform.googleapis.com" if VERTEX_LOCATION == "global" else f"{VERTEX_LOCATION}-aiplatform.googleapis.com"
+# The us and eu multi-regions have their own addresses; a single region like us-central1 uses the regional form.
+_HOSTS = {
+    "global": "aiplatform.googleapis.com",
+    "us": "aiplatform.us.rep.googleapis.com",
+    "eu": "aiplatform.eu.rep.googleapis.com",
+}
+_HOST = _HOSTS.get(VERTEX_LOCATION) or f"{VERTEX_LOCATION}-aiplatform.googleapis.com"
 _EMBED_URL = (
     f"https://{_HOST}/v1/projects/{VERTEX_PROJECT_ID}/locations/{VERTEX_LOCATION}"
     f"/publishers/google/models/{GEMINI_EMBEDDING_MODEL}:embedContent"
