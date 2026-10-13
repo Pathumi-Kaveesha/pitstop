@@ -1931,48 +1931,6 @@ service http:InterceptableService / on new http:Listener(9090) {
         return smartsearch:filterToAuthorizedSources(ctx, result);
     }
 
-    # Download the original PDF of an indexed content, so it can be opened at a given page.
-    #
-    # + ctx - Request object
-    # + contentId - The content whose PDF to download
-    # + return - The PDF, or an error
-    resource function get smart\-search/documents/[int contentId]/file(http:RequestContext ctx)
-        returns http:Response|http:Forbidden|http:NotFound|http:TooManyRequests|http:PayloadTooLarge|http:InternalServerError {
-
-        if !smartsearch:isSmartSearchEnabled() {
-            return http:NOT_FOUND;
-        }
-        if !smartsearch:canViewContent(ctx, contentId) {
-            return http:FORBIDDEN;
-        }
-        if !smartsearch:isWithinDownloadLimit(ctx) {
-            return http:TOO_MANY_REQUESTS;
-        }
-
-        byte[]|http:NotFound|http:PayloadTooLarge|error result = smartsearch:fetchDocumentFile(contentId);
-        if result is byte[] {
-            http:Response response = new;
-            response.setBinaryPayload(result, "application/pdf");
-            response.setHeader("Content-Disposition", "inline");
-            response.setHeader("Cache-Control", "private, no-store");
-            response.setHeader("X-Content-Type-Options", "nosniff");
-            response.setHeader("Content-Security-Policy", "sandbox");
-            return response;
-        }
-        if result is http:NotFound {
-            return result;
-        }
-        if result is http:PayloadTooLarge {
-            return <http:PayloadTooLarge>{
-                body: {message: "This PDF is too large to open at a page."}
-            };
-        }
-        log:printError(constants:SMART_SEARCH_ERROR, <error>result);
-        return <http:InternalServerError>{
-            body: {message: constants:SMART_SEARCH_ERROR}
-        };
-    }
-
     # Get content that failed to index.
     #
     # + ctx - Request context

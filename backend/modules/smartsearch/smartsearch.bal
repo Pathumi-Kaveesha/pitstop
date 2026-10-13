@@ -43,63 +43,6 @@ public isolated function searchDocuments(string userQuery, boolean includeAnswer
     return serviceClient->get(string `/search?userQuery=${encodedQuery}&includeAnswer=${includeAnswer}`);
 }
 
-# Whether the caller may see this content - the same rule search uses. Denies on any doubt.
-#
-# + ctx - Request object
-# + contentId - The content whose file is being requested
-# + return - Whether the caller is allowed to see it
-public isolated function canViewContent(http:RequestContext ctx, int contentId) returns boolean {
-    string[]|error userGroups = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
-    string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-    if userGroups is error || userEmail is error {
-        return false;
-    }
-    boolean isUser = !authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups);
-
-    types:ContentResponse[]|error matched = database:getContentsByIds([contentId], isUser, userEmail);
-    if matched is error {
-        log:printWarn("Smart Search: could not verify access to a document file", matched);
-        return false;
-    }
-    return matched.length() > 0;
-}
-
-// User email -> [window start in seconds, downloads in that window]
-isolated map<[int, int]> fileDownloadWindows = {};
-
-# Counts one PDF download for the caller and says whether they are still within the limit.
-#
-# + ctx - Request object
-# + return - False once the caller has used up this minute's downloads
-public isolated function isWithinDownloadLimit(http:RequestContext ctx) returns boolean {
-    string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-    if userEmail is error {
-        return false;
-    }
-    int now = time:utcNow()[0];
-
-    lock {
-        if fileDownloadWindows.length() > MAX_TRACKED_DOWNLOAD_USERS {
-            foreach string email in fileDownloadWindows.keys() {
-                if now - fileDownloadWindows.get(email)[0] >= DOWNLOAD_WINDOW_SECONDS {
-                    _ = fileDownloadWindows.remove(email);
-                }
-            }
-        }
-
-        [int, int]? window = fileDownloadWindows[userEmail];
-        if window is () || now - window[0] >= DOWNLOAD_WINDOW_SECONDS {
-            fileDownloadWindows[userEmail] = [now, 1];
-            return true;
-        }
-        if window[1] >= MAX_FILE_DOWNLOADS_PER_MINUTE {
-            return false;
-        }
-        fileDownloadWindows[userEmail] = [window[0], window[1] + 1];
-        return true;
-    }
-}
-
 // User email -> [window start in seconds, search calls in that window]
 isolated map<[int, int]> searchWindows = {};
 
@@ -228,25 +171,6 @@ public isolated function isRetryAllowed(http:RequestContext ctx, int contentId) 
                 : [now, 1];
         return true;
     }
-}
-
-# Fetches an indexed PDF from the Smart Search service, so the browser can open it at a page.
-#
-# + contentId - The content whose PDF to fetch
-# + return - The file's bytes, a not-found or too-large response, or an error
-public isolated function fetchDocumentFile(int contentId) returns byte[]|http:NotFound|http:PayloadTooLarge|error {
-    http:Client serviceClient = check getSearchClient();
-    http:Response upstream = check serviceClient->get(string `/documents/${contentId}/file`);
-    if upstream.statusCode == http:STATUS_NOT_FOUND {
-        return http:NOT_FOUND;
-    }
-    if upstream.statusCode == http:STATUS_PAYLOAD_TOO_LARGE {
-        return http:PAYLOAD_TOO_LARGE;
-    }
-    if upstream.statusCode != http:STATUS_OK {
-        return error(string `Smart Search service returned status ${upstream.statusCode} for a document file`);
-    }
-    return check upstream.getBinaryPayload();
 }
 
 # Can Smart Search index this content? Keyed on the link rather than where
