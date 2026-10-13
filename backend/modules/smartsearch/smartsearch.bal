@@ -1156,7 +1156,8 @@ isolated function listFailedContentIds(string? contentType, string? contentSubty
 }
 
 # Retries every failed content item matching the filters once, in paced batches - the same retry a single
-# Retry click does. Each item is tried a single time, so one that fails again doesn't loop.
+# Retry click does. Each item is tried a single time, so one that fails again doesn't loop, and the failed list
+# is re-read before every batch so an item fixed in the meantime isn't cleared and indexed again.
 #
 # + contentType - Filter by content type, when set
 # + contentSubtype - Filter by content subtype, when set
@@ -1176,19 +1177,41 @@ isolated function runBulkRetryFailedLoop(string? contentType, string? contentSub
             failedIds = listed.slice(0, cap);
         }
     }
-    int attempted = 0;
+    map<boolean> stillFailed = {};
+    foreach int failedId in failedIds {
+        stillFailed[failedId.toString()] = true;
+    }
+    int position = 0;
+    int retried = 0;
+    int skipped = 0;
     foreach int contentId in failedIds {
         // One batch, then a pause - the same pacing a normal bulk run keeps.
-        if attempted > 0 && attempted % MAX_BACKFILL_BATCH_SIZE == 0 {
+        if position > 0 && position % MAX_BACKFILL_BATCH_SIZE == 0 {
             runtime:sleep(BULK_INDEX_BATCH_INTERVAL_SECONDS);
+            // The pause is long enough for an admin to fix some of the remaining items - only retry what still needs it.
+            int[]|error current = listFailedContentIds(contentType, contentSubtype);
+            if current is error {
+                log:printWarn("Smart Search: could not re-check the failed list, stopping this run so nothing healthy is re-indexed",
+                        current);
+                break;
+            }
+            stillFailed = {};
+            foreach int id in current {
+                stillFailed[id.toString()] = true;
+            }
         }
-        attempted += 1;
+        position += 1;
+        if !stillFailed.hasKey(contentId.toString()) || isReservedForBackfill(contentId) {
+            skipped += 1;
+            continue;
+        }
+        retried += 1;
         http:NotFound|error? result = retryIndexContent(contentId, requestedBy);
         if result is error {
             log:printWarn("Smart Search: retrying failed content did not go through", result, contentId = contentId);
         }
     }
-    log:printInfo(string `Smart Search: retried ${attempted} failed content item(s)`);
+    log:printInfo(string `Smart Search: retried ${retried} failed content item(s), skipped ${skipped} that no longer needed it`);
 }
 
 # Starts an "index everything" run for the given filters, unless one is already active.
