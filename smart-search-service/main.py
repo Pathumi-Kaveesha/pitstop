@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Smart Search POC service, in Python. Handles chunking, embedding and
+"""Smart Search service, in Python. Handles chunking, embedding and
 vector search; login and admin checks stay in the Ballerina backend."""
 
 import hashlib
@@ -66,7 +66,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smart-search-service")
 
 # No route here checks who's calling - relies on Choreo "Organization" network visibility (not public, but not backend-only either) plus access checks living in the Ballerina backend
-app = FastAPI(title="Pitstop Smart Search (POC)")
+app = FastAPI(title="Pitstop Smart Search")
 
 
 class ErrorResponse(BaseModel):
@@ -201,7 +201,9 @@ async def _record_ingest_rejection(content_id: Optional[str], message: str) -> N
     try:
         await run_in_threadpool(clear_stale_index_job, content_id, INDEX_STALE_AFTER_SECONDS)
     except Exception:  # noqa: BLE001 - the rejection itself still has to reach the caller
-        logger.warning("Could not clear an old index job mark for document %s", content_id, exc_info=True)
+        logger.warning(
+            "Could not clear an old index job mark for document %s", _safe_log_value(content_id), exc_info=True
+        )
 
 
 def _keep_job_marked_alive(document_id: str, generation: int, stop: threading.Event) -> None:
@@ -225,7 +227,9 @@ def _index_job_interrupted(document_id: str) -> bool:
     try:
         return is_index_job_stale(document_id, INDEX_STALE_AFTER_SECONDS)
     except Exception:  # noqa: BLE001 - a failed check must not break the status call
-        logger.warning("Could not check whether indexing for document %s was interrupted", document_id, exc_info=True)
+        logger.warning(
+            "Could not check whether indexing for document %s was interrupted", _safe_log_value(document_id), exc_info=True
+        )
         return False
 
 
@@ -240,7 +244,7 @@ def _index_drive_file_in_background(
     generation is claimed by the caller at accept time, not in here, so a queued task can't miss a delete that lands before it actually starts.
 
     display_link is set when drive_link is only a stand-in document, read for its text but never itself shown."""
-    logger.info("Started indexing '%s' (id %s, %s) - downloading", title, document_id, info.extension)
+    logger.info("Started indexing '%s' (id %s, %s) - downloading", _safe_log_value(title), document_id, info.extension)
     _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
 
     try:
@@ -250,14 +254,14 @@ def _index_drive_file_in_background(
             if info.size_bytes is None
             else download_drive_file(info)
         )
-        logger.info("Downloaded '%s' (%.1f MB), chunking", title, len(file_bytes) / 1_048_576)
+        logger.info("Downloaded '%s' (%.1f MB), chunking", _safe_log_value(title), len(file_bytes) / 1_048_576)
 
         # A stand-in doc is read for timestamps instead of headings - only docx actually has them
         extraction_extension = "transcript" if display_link and info.extension == "docx" else info.extension
         chunks, unit_headings = chunk_document(file_bytes, extraction_extension)
         if not chunks:
             logger.warning(
-                "Nothing worth indexing in '%s' (id %s) - too short or unreadable", title, document_id
+                "Nothing worth indexing in '%s' (id %s) - too short or unreadable", _safe_log_value(title), document_id
             )
             _set_index_error(document_id, "Nothing worth indexing was found in this file.")
             return
@@ -282,7 +286,7 @@ def _index_drive_file_in_background(
             "drive", display_link or drive_link, chunk_native_links,
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to return an error to
-        logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
+        logger.exception("Background indexing failed for '%s' (id %s)", _safe_log_value(title), document_id)
         _set_index_error(document_id, _friendly_index_error(error))
 
 
@@ -297,7 +301,9 @@ def _embed_and_store(
         logger.info("Content %s was deleted or re-indexed before this job started embedding - discarding this attempt.", document_id)
         return
 
-    logger.info("Embedding '%s': %d chunks, roughly %d min", title, len(chunks), max(1, len(chunks) // 60))
+    logger.info(
+        "Embedding '%s': %d chunks, roughly %d min", _safe_log_value(title), len(chunks), max(1, len(chunks) // 60)
+    )
     vectors = embed_chunks([c.text for c in chunks], title, EMBED_REQUEST_SPACING_SECONDS)
 
     # Embedding is slow - a delete or newer job could easily have landed meanwhile, on any copy of the
@@ -312,7 +318,7 @@ def _embed_and_store(
         return
 
     _clear_search_cache()
-    logger.info("Indexed '%s' (%d chunks, id %s)", title, len(chunks), document_id)
+    logger.info("Indexed '%s' (%d chunks, id %s)", _safe_log_value(title), len(chunks), document_id)
 
 
 def _index_webpage_in_background(
@@ -323,13 +329,13 @@ def _index_webpage_in_background(
     to report them to.
 
     generation is claimed by the caller at accept time - see the same note on _index_drive_file_in_background."""
-    logger.info("Started indexing '%s' (id %s, webpage) - chunking", title, document_id)
+    logger.info("Started indexing '%s' (id %s, webpage) - chunking", _safe_log_value(title), document_id)
     _clear_index_error(document_id)
 
     try:
         chunks, _unit_headings = chunk_document(text.encode("utf-8"), "webpage")
         if not chunks:
-            logger.warning("Nothing worth indexing in '%s' (id %s) - too short", title, document_id)
+            logger.warning("Nothing worth indexing in '%s' (id %s) - too short", _safe_log_value(title), document_id)
             _set_index_error(document_id, "Nothing worth indexing was found on this page.")
             return
 
@@ -342,13 +348,14 @@ def _index_webpage_in_background(
             UNIT_LABELS["webpage"], "webpage", "web", url, [None] * len(chunks),
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to report an error to
-        logger.exception("Background indexing failed for '%s' (id %s)", title, document_id)
+        logger.exception("Background indexing failed for '%s' (id %s)", _safe_log_value(title), document_id)
         _set_index_error(document_id, _friendly_index_error(error))
 
 
-def _safe_actor(value: Optional[str]) -> str:
+def _safe_log_value(value: object) -> str:
     """Strips control characters and caps length, so a caller-supplied value can't forge log lines."""
-    cleaned = "".join(ch for ch in (value or "") if ch.isprintable())[:254]
+    text = ("" if value is None else str(value)).replace("\r", "").replace("\n", "")
+    cleaned = "".join(ch for ch in text if ch.isprintable())[:254]
     return cleaned or "unknown"
 
 
@@ -357,7 +364,7 @@ async def _claim_generation(document_id: str) -> int:
     try:
         return await run_in_threadpool(claim_generation, document_id)
     except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 503
-        logger.exception("Failed to claim a generation for document %s", document_id)
+        logger.exception("Failed to claim a generation for document %s", _safe_log_value(document_id))
         raise HTTPException(status_code=503, detail="Could not start indexing. Please try again.") from error
 
 
@@ -382,7 +389,10 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
     how long this takes to answer: metadata/text is resolved first (fast,
     catches real errors), then chunk/embed/store happens in the
     background - a failure there only reaches the log, not the caller."""
-    logger.info("Ingest requested for %s by %s", body.contentId or body.driveLink, _safe_actor(body.adminEmail))
+    logger.info(
+        "Ingest requested for %s by %s",
+        _safe_log_value(body.contentId or body.driveLink), _safe_log_value(body.adminEmail),
+    )
     if is_web_page_link(body.driveLink):
         try:
             page = await run_in_threadpool(fetch_web_page_text, body.driveLink)
@@ -458,24 +468,24 @@ def list_documents_endpoint() -> dict:
     responses={404: {"model": ErrorResponse, "description": "No indexed chunks found for this document id."}},
 )
 def delete_document_endpoint(
-    document_id: str, x_admin_email: Optional[str] = Header(default=None),
+    document_id: str = Path(..., pattern=r"^[0-9]+$"), x_admin_email: Optional[str] = Header(default=None),
 ) -> dict:
     """Removes a document's chunks. In the same database transaction it claims a new generation, so a
     background index for the same id - on any copy of the service - discards its work instead of
     recreating what was just deleted. A never-indexed id gets a 404."""
-    logger.info("Delete requested for document %s by %s", document_id, _safe_actor(x_admin_email))
+    logger.info("Delete requested for document %s by %s", _safe_log_value(document_id), _safe_log_value(x_admin_email))
 
     try:
         existed = delete_document(document_id)
     except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
-        logger.exception("Failed to delete document %s", document_id)
+        logger.exception("Failed to delete document %s", _safe_log_value(document_id))
         raise HTTPException(status_code=500, detail="Error while deleting document.") from error
 
     if not existed:
         raise HTTPException(status_code=404, detail=f"No indexed chunks found for document {document_id}.")
 
     _clear_search_cache()
-    logger.info("Removed indexed chunks for document %s", document_id)
+    logger.info("Removed indexed chunks for document %s", _safe_log_value(document_id))
     return {"status": "deleted", "documentId": document_id}
 
 
@@ -485,7 +495,7 @@ def get_document_status(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> di
     try:
         indexed = document_exists(document_id)
     except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
-        logger.exception("Failed to check indexing status for document %s", document_id)
+        logger.exception("Failed to check indexing status for document %s", _safe_log_value(document_id))
         raise HTTPException(status_code=500, detail="Could not check indexing status.") from error
 
     with _index_errors_lock:

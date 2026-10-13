@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Pitstop Smart Search (POC)
+  title: Pitstop Smart Search
   version: 0.1.0
 paths:
   /health:
@@ -91,7 +91,16 @@ paths:
         required: true
         schema:
           type: string
+          pattern: ^[0-9]+$
           title: Document Id
+      - name: x-admin-email
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Admin-Email
       responses:
         '200':
           description: Successful Response
