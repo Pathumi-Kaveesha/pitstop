@@ -14,9 +14,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-const int MAX_FILE_DOWNLOADS_PER_MINUTE = 10;
-const int DOWNLOAD_WINDOW_SECONDS = 60;
-const int MAX_TRACKED_DOWNLOAD_USERS = 1000;
 const int SEARCH_WINDOW_SECONDS = 60;
 // One search on the page makes two calls (sources, then the answer), so this allows about 20 searches a minute.
 const int MAX_SEARCHES_PER_MINUTE = 40;

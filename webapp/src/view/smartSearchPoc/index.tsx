@@ -43,8 +43,6 @@ import { ApiService } from "@utils/apiService";
 import { formatSmartSearchSnippet, groupSmartSearchSourcesByDocument } from "@utils/utils";
 import ComponentCard from "@components/ui/content/Card";
 import { ContentResponse, SmartSearchResponse, SmartSearchResult } from "@/types/types";
-import { useAppDispatch } from "@slices/store";
-import { enqueueSnackbarMessage } from "@slices/commonSlice/common";
 
 // Shown as clickable suggestions before the first search
 const EXAMPLE_PROMPTS = [
@@ -139,7 +137,6 @@ const withTextFragment = (url: string, matchedText: string, query: string): stri
 
 export default function SmartSearchPoc() {
   const theme = useTheme();
-  const dispatch = useAppDispatch();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const searchingRef = useRef(false);
@@ -161,42 +158,6 @@ export default function SmartSearchPoc() {
   const showNoSummaryNote =
     hasSearched && !searching && !answerLoading && !answer && !searchError && sources.length > 0;
 
-  // Drive's PDF viewer ignores "#page=N", so the PDF is fetched from our backend instead.
-  const openPdfAtPage = async (source: SmartSearchResult) => {
-    const fragment = source.page ? `#page=${source.page}` : "";
-    // Opened before the fetch so the popup blocker allows it.
-    const tab = window.open("about:blank", "_blank");
-    if (tab) {
-      tab.opener = null;
-    }
-    try {
-      const response = await ApiService.getInstance().get<Blob>(
-        `${AppConfig.serviceUrls.smartSearch}/documents/${source.documentId}/file`,
-        { responseType: "blob" }
-      );
-      const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
-      if (tab) {
-        tab.location.href = `${url}${fragment}`;
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 413) {
-        dispatch(
-          enqueueSnackbarMessage({
-            message: "This PDF is too large to open at a page - opening the original file instead.",
-            type: "warning",
-            anchorOrigin: { vertical: "bottom", horizontal: "right" },
-          })
-        );
-      }
-      if (tab && isTrustedDriveOrigin(source.driveLink)) {
-        tab.location.href = `${source.driveLink}${fragment}`;
-      } else {
-        tab?.close();
-      }
-    }
-  };
-
   // Always a new tab - Google pages don't load inside an iframe.
   const handleOpenDocument = (source: SmartSearchResult) => {
     if (!source.documentId) {
@@ -204,10 +165,6 @@ export default function SmartSearchPoc() {
     }
     if (source.nativeLink && isTrustedDriveOrigin(source.nativeLink)) {
       window.open(source.nativeLink, "_blank", "noopener,noreferrer");
-      return;
-    }
-    if (source.fileExtension === "pdf") {
-      void openPdfAtPage(source);
       return;
     }
     // Indexed via a stand-in document - opens its own link, never the stand-in

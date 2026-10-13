@@ -43,6 +43,13 @@ CREATE TABLE IF NOT EXISTS document_state (
     document_id TEXT PRIMARY KEY,
     generation BIGINT NOT NULL
 );
+
+-- One row per running index job, refreshed while it works - a stale row means the service died mid-job.
+CREATE TABLE IF NOT EXISTS index_jobs (
+    document_id TEXT PRIMARY KEY,
+    generation BIGINT NOT NULL,
+    heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 CLAIM_GENERATION = """
@@ -55,6 +62,29 @@ GET_GENERATION = "SELECT generation FROM document_state WHERE document_id = %s"
 
 # Holds the row until the surrounding transaction ends, so a delete or newer index can't slip in mid-write.
 LOCK_GENERATION = "SELECT generation FROM document_state WHERE document_id = %s FOR UPDATE"
+
+# The WHERE keeps a slow older job from overwriting the mark of a newer one.
+START_INDEX_JOB = """
+INSERT INTO index_jobs (document_id, generation, heartbeat_at) VALUES (%s, %s, now())
+ON CONFLICT (document_id) DO UPDATE SET generation = EXCLUDED.generation, heartbeat_at = now()
+WHERE index_jobs.generation <= EXCLUDED.generation
+"""
+
+TOUCH_INDEX_JOB = "UPDATE index_jobs SET heartbeat_at = now() WHERE document_id = %s AND generation = %s"
+
+FINISH_INDEX_JOB = "DELETE FROM index_jobs WHERE document_id = %s AND generation = %s"
+
+CLEAR_INDEX_JOB = "DELETE FROM index_jobs WHERE document_id = %s"
+
+CLEAR_STALE_INDEX_JOB = """
+DELETE FROM index_jobs
+WHERE document_id = %s AND heartbeat_at < now() - make_interval(secs => %s::double precision)
+"""
+
+STALE_INDEX_JOB = """
+SELECT 1 FROM index_jobs
+WHERE document_id = %s AND heartbeat_at < now() - make_interval(secs => %s::double precision)
+"""
 
 UPSERT_CHUNK = """
 INSERT INTO chunks (id, document_id, embedding, content, title, page, unit_label,
@@ -88,8 +118,6 @@ LIMIT %s
 DOCUMENT_EXISTS = "SELECT 1 FROM chunks WHERE document_id = %s LIMIT 1"
 
 LIST_DOCUMENT_IDS = "SELECT DISTINCT document_id FROM chunks"
-
-FIND_DOCUMENT_SOURCE = "SELECT drive_link, file_extension FROM chunks WHERE document_id = %s LIMIT 1"
 
 DELETE_STALE_CHUNKS = "DELETE FROM chunks WHERE document_id = %s AND id <> ALL(%s::text[])"
 
