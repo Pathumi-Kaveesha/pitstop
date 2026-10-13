@@ -27,7 +27,7 @@ export default function LibrarySearchButton() {
       <Fab
         color="primary"
         aria-label="Search these documents"
-        onClick={() => navigate("/smart-search-poc")}
+        onClick={() => navigate("/smart-search")}
         sx={{
           position: "fixed",
           // Clears the fixed footer bar (35px) instead of sitting on top of it.

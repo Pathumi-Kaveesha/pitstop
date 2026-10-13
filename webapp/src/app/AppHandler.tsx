@@ -24,12 +24,12 @@ import { useSnackbar } from "notistack";
 import PreLoader from "@components/common/PreLoader";
 import ErrorHandler from "@components/common/ErrorHandler";
 import Search from "@view/search/index";
-import SmartSearchPoc from "@view/smartSearchPoc/index";
+import SmartSearch from "@view/smartSearch/index";
 import { IS_SMART_SEARCH_ENABLED } from "@config/constant";
-import LibrarySearchButton from "@view/smartSearchPoc/LibrarySearchButton";
-import UnindexedContent from "@view/smartSearchPoc/UnindexedContent";
-import BackfillContent from "@view/smartSearchPoc/BackfillContent";
-import { Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
+import LibrarySearchButton from "@view/smartSearch/LibrarySearchButton";
+import UnindexedContent from "@view/smartSearch/UnindexedContent";
+import BackfillContent from "@view/smartSearch/BackfillContent";
+import { Navigate, Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
 import { useMemo, useEffect } from "react";
 import Summary from "@view/summary/index";
 import VerticalTemplate from "@layout/pages/VerticalTemplate";
@@ -118,9 +118,13 @@ const AppHandler = () => {
                 errorElement: <Error />,
               },
               {
-                path: "/smart-search-poc",
-                element: IS_SMART_SEARCH_ENABLED ? <SmartSearchPoc /> : <Error />,
+                path: "/smart-search",
+                element: IS_SMART_SEARCH_ENABLED ? <SmartSearch /> : <Error />,
                 errorElement: <Error />,
+              },
+              {
+                path: "/smart-search-poc",
+                element: <Navigate to="/smart-search" replace />,
               },
               {
                 path: "/smart-search-unindexed",
