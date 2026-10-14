@@ -20,6 +20,7 @@ import pitstop.database;
 import pitstop.types;
 
 import ballerina/http;
+import ballerina/lang.regexp;
 import ballerina/lang.runtime;
 import ballerina/log;
 import ballerina/task;
@@ -217,10 +218,19 @@ public isolated function isWebPageLink(string link) returns boolean {
 # + return - Whether this content should also be indexed
 public isolated function isContentLinkIndexable(string contentType, string? contentSubtype, string link)
         returns boolean {
-    if contentType == "external" && contentSubtype == "generic" {
+    // No subtype is shown as Generic in Pitstop, so it follows the same rule: a webpage only.
+    if contentType == "external" && (contentSubtype == "generic" || isSubtypeBlank(contentSubtype)) {
         return isWebPageLink(link);
     }
     return isIndexableLink(link);
+}
+
+# Whether a content has no subtype set - older content, which Pitstop treats as Generic.
+#
+# + contentSubtype - Subtype of the content, when set
+# + return - True when it is missing or empty
+isolated function isSubtypeBlank(string? contentSubtype) returns boolean {
+    return contentSubtype is () || contentSubtype.trim() == "";
 }
 
 # Narrows a raw search response down to sources whose document the caller
@@ -267,18 +277,68 @@ public isolated function filterToAuthorizedSources(http:RequestContext ctx, Smar
     SmartSearchResult[] authorizedSources = [];
     foreach SmartSearchResult searchResult in response.sources {
         if authorizedIds.hasKey(searchResult.documentId) {
-            authorizedSources.push(searchResult);
+            SmartSearchResult cleaned = searchResult.clone();
+            cleaned.content = stripControlCharacters(searchResult.content);
+            cleaned.title = stripControlCharacters(searchResult.title);
+            authorizedSources.push(cleaned);
         }
     }
 
+    string? answerText = response.answer;
     return {
-        answer: authorizedSources.length() == response.sources.length() ? response.answer : (),
+        answer: authorizedSources.length() == response.sources.length()
+                ? (answerText is string ? stripControlCharacters(answerText) : ())
+                : (),
         sources: authorizedSources,
-        contents: matched
+        contents: from types:ContentResponse content in matched
+            select cleanContent(content)
     };
 }
 
 const string SERVICE_UNREACHABLE_REASON = "Smart Search could not be reached. Please retry.";
+
+# Removes the control characters a JSON string can't carry raw. A PowerPoint soft line break is one, and a single
+# one left in made the browser reject the whole search response and show "No results found".
+#
+# + text - Text taken from an indexed document
+# + return - The text without those characters, keeping newlines, tabs and carriage returns
+isolated function stripControlCharacters(string text) returns string {
+    return regexp:replaceAll(re `[\u{00}-\u{08}\u{0B}\u{0C}\u{0E}-\u{1F}]`, text, "");
+}
+
+# Removes those characters from every text value inside a JSON value, however deeply nested.
+#
+# + value - The JSON value to clean
+# + return - The same value with its text cleaned
+isolated function stripControlCharactersInJson(json value) returns json {
+    if value is string {
+        return stripControlCharacters(value);
+    }
+    if value is json[] {
+        json[] cleaned = [];
+        foreach json item in value {
+            cleaned.push(stripControlCharactersInJson(item));
+        }
+        return cleaned;
+    }
+    if value is map<json> {
+        map<json> cleaned = {};
+        foreach [string, json] [key, item] in value.entries() {
+            cleaned[key] = stripControlCharactersInJson(item);
+        }
+        return cleaned;
+    }
+    return value;
+}
+
+# A content card with the control characters removed from all of its text - its title, note, tags and rich text.
+#
+# + content - The content card as stored
+# + return - The cleaned card, or the original one if it couldn't be rebuilt
+isolated function cleanContent(types:ContentResponse content) returns types:ContentResponse {
+    types:ContentResponse|error cleaned = stripControlCharactersInJson(content.toJson()).fromJsonWithType();
+    return cleaned is types:ContentResponse ? cleaned : content;
+}
 
 # Saves an indexing failure, logging a warning if it can't be saved.
 #
@@ -482,7 +542,7 @@ public isolated function displayLinkFor(string contentType, string? contentSubty
 # + link - The link that was rejected
 # + return - A user-facing reason
 isolated function unindexableLinkReason(string contentType, string? contentSubtype, string link) returns string {
-    if contentType == "external" && contentSubtype == "generic" {
+    if contentType == "external" && (contentSubtype == "generic" || isSubtypeBlank(contentSubtype)) {
         // A Drive link here was never fetched - generic external links are only ever read as webpages.
         if isIndexableLink(link) {
             return "This looks like a Google Drive link, but this content is set to \"Generic\" - "
