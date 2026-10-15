@@ -18,6 +18,7 @@
 public const REQUESTED_BY_USER_EMAIL = "requestedByUserEmail";
 public const REQUESTED_BY_USER_ROLES = "requestedByUserRoles";
 public const JWT_ASSERTION = "x-jwt-assertion";
+public const REQUESTED_BY_USER_JWT = "requestedByUserJwt";
 public const TIMEZONE_OFFSET_HEADER = "x-timezone-offset";
 public const REQUESTED_BY_USER_TIMEZONE_OFFSET = "requestedByUserTimezoneOffset";
 public const REQUESTED_BY_USER_PROFILE = "requestedByUserProfile";

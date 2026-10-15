@@ -415,7 +415,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             // Fire-and-forget - content creation never waits on indexing.
             _ = start smartsearch:indexContentForSmartSearch(newContentId, indexLink, contentPayload.description,
                     smartsearch:displayLinkFor(contentPayload.contentType, contentPayload.contentSubtype,
-                            contentPayload.contentLink), createdBy);
+                            contentPayload.contentLink), createdBy, false, smartsearch:userJwtOf(ctx));
             return http:CREATED;
         }
 
@@ -1294,7 +1294,8 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         // Clears the content's Smart Search entries if it had any
         if smartsearch:isSmartSearchEnabled() {
-            _ = start smartsearch:deleteContentFromSmartSearch(contentId, deletedBy is string ? deletedBy : "unknown");
+            _ = start smartsearch:deleteContentFromSmartSearch(contentId, deletedBy is string ? deletedBy : "unknown",
+                    smartsearch:userJwtOf(ctx));
         }
 
         return http:OK;
@@ -1700,7 +1701,8 @@ service http:InterceptableService / on new http:Listener(9090) {
                 if newLink != previousLink || newDisplayLink != previousDisplayLink || titleChanged
                         || newNeedsIndexing != previousNeedsIndexing {
                     if !newNeedsIndexing || smartsearch:isIngestAllowed(ctx) {
-                        _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, userEmail);
+                        _ = start smartsearch:reindexAfterLinkChange(contentId, newLink, userEmail,
+                                smartsearch:userJwtOf(ctx));
                     } else {
                         smartsearch:deferReindex(contentId);
                     }
@@ -1921,7 +1923,9 @@ service http:InterceptableService / on new http:Listener(9090) {
         if !smartsearch:isSearchAllowed(ctx) {
             return http:TOO_MANY_REQUESTS;
         }
-        smartsearch:SmartSearchResponse|error result = smartsearch:searchDocuments(userQuery, includeAnswer);
+        string|error userJwt = ctx.getWithType(authorization:REQUESTED_BY_USER_JWT);
+        smartsearch:SmartSearchResponse|error result =
+            smartsearch:searchDocuments(userQuery, includeAnswer, userJwt is string ? userJwt : ());
         if result is error {
             log:printError(constants:SMART_SEARCH_ERROR, result);
             return <http:InternalServerError>{
@@ -1976,7 +1980,8 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         string|error retryUser = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-        http:NotFound|error? result = smartsearch:retryIndexContent(contentId, retryUser is string ? retryUser : ());
+        http:NotFound|error? result = smartsearch:retryIndexContent(contentId, retryUser is string ? retryUser : (),
+                smartsearch:userJwtOf(ctx));
         if result is http:NotFound {
             return result;
         }
@@ -2009,7 +2014,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         smartsearch:BackfillCandidatesResult|error result =
-            smartsearch:findBackfillCandidates(contentType, contentSubtype, count);
+            smartsearch:findBackfillCandidates(contentType, contentSubtype, count, smartsearch:userJwtOf(ctx));
         if result is error {
             log:printError(constants:SMART_SEARCH_ERROR, result);
             return <http:InternalServerError>{
