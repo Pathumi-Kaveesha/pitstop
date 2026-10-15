@@ -43,8 +43,9 @@ _TOKENLESS_ROUTES = (
     ("POST", re.compile(r"^/ingest-drive-link$")),
 )
 
+# Only the key list is cached (for an hour), not each key, so a key the provider removes stops working at the next refresh.
 # A short timeout, so an unreachable key server can't hold every request for the library's default 30 seconds.
-_jwks_client = jwt.PyJWKClient(JWT_JWKS_URL, cache_keys=True, lifespan=3600, timeout=5)
+_jwks_client = jwt.PyJWKClient(JWT_JWKS_URL, cache_keys=False, lifespan=3600, timeout=5)
 
 
 def _tokenless_allowed(method: str, path: str) -> bool:

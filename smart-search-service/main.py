@@ -66,8 +66,8 @@ from vectorstore import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smart-search-service")
 
-# Network visibility is Choreo's "Organization" level (not public, but not backend-only either), so every route also runs
-# verify_caller, which checks the user's token the backend forwards. Who may see which result is still decided in the backend.
+# Network visibility is Choreo's "Project" level (only components in this project can reach it, not just the backend), so every
+# route also runs verify_caller, which checks the user's token the backend forwards. Who may see which result is still decided in the backend.
 app = FastAPI(title="Pitstop Smart Search", dependencies=[Depends(verify_caller)])
 
 
