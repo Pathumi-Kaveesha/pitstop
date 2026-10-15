@@ -15,7 +15,7 @@
 # under the License.
 
 """Checks the user's login token that the backend forwards, the same way the backend checks it:
-signature against the provider's public keys, then issuer, audience and expiry."""
+signature against the provider's public keys, then issuer, audience and expiry, then the user's role."""
 
 import logging
 import re
@@ -26,8 +26,10 @@ import jwt
 from fastapi import HTTPException, Request
 
 from config import (
+    JWT_ADMIN_ROLE,
     JWT_AUDIENCE,
     JWT_CLOCK_SKEW_SECONDS,
+    JWT_EMPLOYEE_ROLE,
     JWT_ISSUER,
     JWT_JWKS_URL,
 )
@@ -37,8 +39,9 @@ logger = logging.getLogger("smart-search-service")
 # Not x-jwt-assertion: Choreo's gateway sets that one itself on the calls it carries.
 USER_JWT_HEADER = "x-user-jwt"
 
-# The backend's scheduled jobs (orphan sweep, reconciliation) call these without a user, so they can't carry a token.
-_TOKENLESS_ROUTES = (
+# The admin-only routes: the backend only calls them for an admin, or from its scheduled jobs and bulk runs. Those have
+# no user, so they can't carry a token and are allowed without one. A call that does carry a token needs the admin role.
+_ADMIN_ROUTES = (
     ("GET", re.compile(r"^/documents$")),
     ("GET", re.compile(r"^/documents/[0-9]+/status$")),
     ("DELETE", re.compile(r"^/documents/[0-9]+$")),
@@ -80,26 +83,35 @@ def _signing_key_for(token: str):
     return key
 
 
-def _tokenless_allowed(method: str, path: str) -> bool:
-    return any(method == allowed and pattern.fullmatch(path) for allowed, pattern in _TOKENLESS_ROUTES)
+def _is_admin_route(method: str, path: str) -> bool:
+    return any(method == allowed and pattern.fullmatch(path) for allowed, pattern in _ADMIN_ROUTES)
+
+
+def _groups_of(claims: dict) -> list[str]:
+    groups = claims.get("groups")
+    if isinstance(groups, str):
+        return [groups]
+    if isinstance(groups, list):
+        return [group for group in groups if isinstance(group, str)]
+    return []
 
 
 def verify_caller(request: Request) -> None:
-    """Runs before every route. Anything that carries a token must carry a valid one; a call without one is
-    only allowed on the routes the scheduled jobs use."""
+    """Runs before every route. Anything that carries a token must carry a valid one for a user with the right role;
+    a call without one is only allowed on the admin routes the scheduled jobs use."""
     path = request.scope["path"]
     if path == "/health":
         return
 
     token = request.headers.get(USER_JWT_HEADER)
     if not token:
-        if _tokenless_allowed(request.method, path):
+        if _is_admin_route(request.method, path):
             return
         raise HTTPException(status_code=401, detail="Missing user token.")
 
     try:
         signing_key = _signing_key_for(token)
-        jwt.decode(
+        claims = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
@@ -117,3 +129,9 @@ def verify_caller(request: Request) -> None:
     except Exception as error:  # noqa: BLE001 - anything unexpected still rejects the call
         logger.exception("Unexpected error while checking a user token")
         raise HTTPException(status_code=401, detail="Invalid or expired user token.") from error
+
+    groups = _groups_of(claims)
+    allowed_roles = {JWT_ADMIN_ROLE} if _is_admin_route(request.method, path) else {JWT_ADMIN_ROLE, JWT_EMPLOYEE_ROLE}
+    if not allowed_roles.intersection(groups):
+        logger.warning("Rejected a user token without the needed role for %s %s", request.method, path)
+        raise HTTPException(status_code=403, detail="Insufficient privileges.")
