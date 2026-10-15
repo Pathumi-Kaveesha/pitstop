@@ -17,6 +17,7 @@
 import { Theme } from "@mui/material";
 import * as Yup from "yup";
 import { NonIndexRouteObject } from "react-router-dom";
+import { IS_SMART_SEARCH_ENABLED } from "@config/constant";
 import { Role, CONTENT_SUBTYPE } from "@utils/types";
 
 export const MAX_LABEL_LENGTH = 50;
@@ -155,12 +156,13 @@ export const validationContentSchema = Yup.object({
     //   "Enter correct image url!"
     // )
     .required("Content link is required"),
-  // Required for content Smart Search can only index via a stand-in document
+  // Required for content Smart Search can only index via a stand-in document, and only while Smart Search is on
   transcriptLink: Yup.string().when(["contentType", "contentSubtype"], {
     is: (contentType: string, contentSubtype: string) =>
-      (contentType === "external" && contentSubtype === "video") ||
-      contentType === "lms" ||
-      contentType === "salesforce",
+      IS_SMART_SEARCH_ENABLED &&
+      ((contentType === "external" && contentSubtype === "video") ||
+        contentType === "lms" ||
+        contentType === "salesforce"),
     then: (schema) => schema.required("A Google Doc link is required for this content type"),
     otherwise: (schema) => schema.notRequired(),
   }),
