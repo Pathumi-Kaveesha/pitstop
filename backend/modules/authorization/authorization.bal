@@ -94,6 +94,7 @@ public isolated service class JwtInterceptor {
             if userInfo.groups.some(r => r === role) {
                 ctx.set(REQUESTED_BY_USER_EMAIL, userInfo.email);
                 ctx.set(REQUESTED_BY_USER_ROLES, userInfo.groups);
+                ctx.set(REQUESTED_BY_USER_JWT, idToken);
 
                 // OPTIMIZATION: Build a unified UserProfile using stringifyClaim().
                 // This converts dynamic claims (which Asgardeo emits as a string for single entries

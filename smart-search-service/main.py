@@ -24,10 +24,11 @@ import time
 
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 
+from auth import verify_caller
 from chunking import Chunk, UNIT_LABELS, chunk_document
 from deep_links import build_native_links, build_video_timestamp_links
 from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
@@ -65,8 +66,9 @@ from vectorstore import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smart-search-service")
 
-# No route here checks who's calling - relies on Choreo "Organization" network visibility (not public, but not backend-only either) plus access checks living in the Ballerina backend
-app = FastAPI(title="Pitstop Smart Search")
+# Network visibility is Choreo's "Project" level (only components in this project can reach it, not just the backend), so every
+# route also runs verify_caller, which checks the user's token the backend forwards. Who may see which result is still decided in the backend.
+app = FastAPI(title="Pitstop Smart Search", dependencies=[Depends(verify_caller)])
 
 
 class ErrorResponse(BaseModel):

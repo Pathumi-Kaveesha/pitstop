@@ -130,3 +130,19 @@ GENERATION_TIMEOUT_SECONDS = 90
 GENERATION_CONNECT_TIMEOUT_SECONDS = 5
 GENERATION_MAX_RETRIES = 1
 GENERATION_RETRY_DELAY_SECONDS = 3
+
+# Checking the user's login token on each call (see auth.py): the same issuer, audience and JWKS address the backend
+# validates with. The audience can list several, comma-separated.
+JWT_ISSUER = os.environ["JWT_ISSUER"].strip()
+JWT_AUDIENCE = [value.strip() for value in os.environ["JWT_AUDIENCE"].split(",") if value.strip()]
+JWT_JWKS_URL = os.environ["JWT_JWKS_URL"].strip()
+JWT_CLOCK_SKEW_SECONDS = _positive_int_env("JWT_CLOCK_SKEW_SECONDS", 60)
+# The group names the backend allows (authorizedRoles.adminRole and employeeRole): any of them may search, only admins may index or delete.
+JWT_ADMIN_ROLE = os.environ["JWT_ADMIN_ROLE"].strip()
+JWT_EMPLOYEE_ROLE = os.environ["JWT_EMPLOYEE_ROLE"].strip()
+if not (JWT_ISSUER and JWT_AUDIENCE and JWT_JWKS_URL and JWT_ADMIN_ROLE and JWT_EMPLOYEE_ROLE):
+    raise ValueError(
+        "JWT_ISSUER, JWT_AUDIENCE, JWT_JWKS_URL, JWT_ADMIN_ROLE and JWT_EMPLOYEE_ROLE must all be set and not blank."
+    )
+if not JWT_JWKS_URL.startswith("https://"):
+    raise ValueError("JWT_JWKS_URL must use https:// - the keys that sign the tokens come from this address.")

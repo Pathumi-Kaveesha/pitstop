@@ -14,6 +14,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// The user's login token, forwarded so the Smart Search service can check it too. Not x-jwt-assertion: Choreo's gateway sets that one itself.
+const string USER_JWT_HEADER = "x-user-jwt";
+
 const int SEARCH_WINDOW_SECONDS = 60;
 // One search on the page makes two calls (sources, then the answer), so this allows about 20 searches a minute.
 const int MAX_SEARCHES_PER_MINUTE = 40;

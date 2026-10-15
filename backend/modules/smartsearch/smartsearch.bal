@@ -29,19 +29,42 @@ import ballerina/url;
 
 public isolated function isSmartSearchEnabled() returns boolean => smartSearchEnabled;
 
+# The caller's login token for this request, to forward to the Smart Search service.
+#
+# + ctx - Request context
+# + return - The token, or nil when the request has none
+public isolated function userJwtOf(http:RequestContext ctx) returns string? {
+    string|error userJwt = ctx.getWithType(authorization:REQUESTED_BY_USER_JWT);
+    return userJwt is string ? userJwt : ();
+}
+
+# Headers that carry the caller's login token to the Smart Search service, when there is one.
+#
+# + userJwt - The caller's login token
+# + return - The headers to send
+isolated function userJwtHeaders(string? userJwt) returns map<string|string[]> {
+    map<string|string[]> headers = {};
+    if userJwt is string {
+        headers[USER_JWT_HEADER] = userJwt;
+    }
+    return headers;
+}
+
 # Runs a search against the Smart Search service.
 #
 # + userQuery - What the user typed into the search box
 # + includeAnswer - False returns just the sources, without waiting for the generated answer
+# + userJwt - The caller's login token, forwarded so the service can check it
 # + return - A generated answer plus its sources, or an error
-public isolated function searchDocuments(string userQuery, boolean includeAnswer)
+public isolated function searchDocuments(string userQuery, boolean includeAnswer, string? userJwt = ())
     returns SmartSearchResponse|error {
 
     // Explicit encoding - a query can contain a comma, which Ballerina's
     // query-parameter parser otherwise treats as a list separator.
     string encodedQuery = check url:encode(userQuery, "UTF-8");
     http:Client serviceClient = check getSearchClient();
-    return serviceClient->get(string `/search?userQuery=${encodedQuery}&includeAnswer=${includeAnswer}`);
+    return serviceClient->get(string `/search?userQuery=${encodedQuery}&includeAnswer=${includeAnswer}`,
+            userJwtHeaders(userJwt));
 }
 
 // User email -> [window start in seconds, search calls in that window]
@@ -377,8 +400,10 @@ public isolated function recordUnindexableLink(int contentId, string contentType
 # + displayLink - Set only when driveLink is a transcript, not the content's own link
 # + requestedBy - Email of the admin whose action triggered this, for the logs
 # + recordUnreachable - Save a failure when the request can't be sent, so a retry never leaves the item with no reason
+# + userJwt - The admin's login token, forwarded so the service can check it
 public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title,
-        string? displayLink = (), string? requestedBy = (), boolean recordUnreachable = false) {
+        string? displayLink = (), string? requestedBy = (), boolean recordUnreachable = false,
+        string? userJwt = ()) {
     DriveLinkIngestRequest payload = {
         driveLink,
         title,
@@ -396,7 +421,7 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
         }
         return;
     }
-    http:Response|http:ClientError response = ingestClient->post("/ingest-drive-link", payload);
+    http:Response|http:ClientError response = ingestClient->post("/ingest-drive-link", payload, userJwtHeaders(userJwt));
     if response is http:ClientError {
         log:printWarn(string `Smart Search: could not reach the indexing service for content ${contentId}`,
                 reason = response.message());
@@ -433,7 +458,8 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
 #
 # + contentId - The content that was deleted
 # + deletedBy - Email of the admin who deleted it, for the audit log
-public isolated function deleteContentFromSmartSearch(int contentId, string deletedBy) {
+# + userJwt - The admin's login token, forwarded so the service can check it
+public isolated function deleteContentFromSmartSearch(int contentId, string deletedBy, string? userJwt = ()) {
     error? clearError = database:clearSmartSearchIndexFailure(contentId);
     if clearError is error {
         log:printWarn("Smart Search: could not clear a deleted content's index failure", clearError,
@@ -446,7 +472,7 @@ public isolated function deleteContentFromSmartSearch(int contentId, string dele
     }
 
     foreach int attempt in 1 ... DELETE_INDEX_MAX_ATTEMPTS {
-        if clearIndexedEntries(contentId, deletedBy) {
+        if clearIndexedEntries(contentId, deletedBy, userJwt) {
             break;
         }
         if attempt == DELETE_INDEX_MAX_ATTEMPTS {
@@ -463,9 +489,10 @@ public isolated function deleteContentFromSmartSearch(int contentId, string dele
 #
 # + contentId - The content whose entries to remove
 # + deletedBy - Email of the admin who deleted the content, when this is a real deletion
+# + userJwt - The admin's login token, forwarded so the service can check it
 # + return - False if the entries could not be removed
-isolated function clearIndexedEntries(int contentId, string? deletedBy = ()) returns boolean {
-    map<string|string[]> headers = {};
+isolated function clearIndexedEntries(int contentId, string? deletedBy = (), string? userJwt = ()) returns boolean {
+    map<string|string[]> headers = userJwtHeaders(userJwt);
     if deletedBy is string {
         headers["X-Admin-Email"] = deletedBy;
     }
@@ -561,10 +588,12 @@ isolated int reindexRuns = 0;
 # + contentId - The content that was edited
 # + newLink - What should be indexed after the edit, when known at the time
 # + requestedBy - Email of the admin who made the edit, for the logs
-public isolated function reindexAfterLinkChange(int contentId, string? newLink, string? requestedBy = ()) {
-    if reindexAfterLinkChangeLocked(contentId, newLink, requestedBy) {
+# + userJwt - The admin's login token, forwarded so the service can check it
+public isolated function reindexAfterLinkChange(int contentId, string? newLink, string? requestedBy = (),
+        string? userJwt = ()) {
+    if reindexAfterLinkChangeLocked(contentId, newLink, requestedBy, userJwt) {
         // Confirm the outcome directly, same as a retry - `start` can't run inside the lock below.
-        _ = start confirmIndexOutcome(contentId);
+        _ = start confirmIndexOutcome(contentId, userJwt);
     }
 }
 
@@ -573,15 +602,17 @@ public isolated function reindexAfterLinkChange(int contentId, string? newLink, 
 # + contentId - The content that was edited
 # + newLink - What should be indexed after the edit, when known at the time
 # + requestedBy - Email of the admin who made the edit, for the logs
+# + userJwt - The admin's login token, forwarded so the service can check it
 # + return - True if indexing was actually submitted
-isolated function reindexAfterLinkChangeLocked(int contentId, string? newLink, string? requestedBy) returns boolean {
+isolated function reindexAfterLinkChangeLocked(int contentId, string? newLink, string? requestedBy,
+        string? userJwt) returns boolean {
     lock {
         reindexRuns += 1;
 
         database:IndexingInfo?|error current = database:getIndexingInfo(contentId);
         if current is error {
             log:printWarn("Smart Search: could not look up content after a link change", current, contentId = contentId);
-            _ = clearIndexedEntries(contentId);
+            _ = clearIndexedEntries(contentId, userJwt = userJwt);
             recordIndexFailure(contentId, "Could not check this content after its link changed. Please retry.");
             return false;
         }
@@ -607,14 +638,14 @@ isolated function reindexAfterLinkChangeLocked(int contentId, string? newLink, s
         }
 
         // Clear the old version first, so a failed re-index never leaves stale results
-        if !clearIndexedEntries(contentId) {
+        if !clearIndexedEntries(contentId, userJwt = userJwt) {
             recordIndexFailure(contentId, "Could not remove the previous version. Please retry.");
             return false;
         }
 
         if newLink is string && isContentLinkIndexable(current.contentType, current.contentSubtype, newLink) {
             indexContentForSmartSearch(contentId, newLink, current.description,
-                    displayLinkFor(current.contentType, current.contentSubtype, current.contentLink), requestedBy);
+                    displayLinkFor(current.contentType, current.contentSubtype, current.contentLink), requestedBy, false, userJwt);
             return true;
         } else if newLink is string && newLink != "" {
             // Whether or not the previous link was indexable - the admin should see a reason either way.
@@ -629,12 +660,14 @@ isolated function reindexAfterLinkChangeLocked(int contentId, string? newLink, s
 #
 # + contentId - The content to retry
 # + requestedBy - Email of the admin who retried it, for the logs
+# + userJwt - The admin's login token, forwarded so the service can check it
 # + return - Not-found when there's no such content, an error, or nil on success
-public isolated function retryIndexContent(int contentId, string? requestedBy = ()) returns http:NotFound|error? {
-    boolean|http:NotFound submitted = check retryIndexContentLocked(contentId, requestedBy);
+public isolated function retryIndexContent(int contentId, string? requestedBy = (), string? userJwt = ())
+        returns http:NotFound|error? {
+    boolean|http:NotFound submitted = check retryIndexContentLocked(contentId, requestedBy, userJwt);
     if submitted is boolean && submitted {
         // Confirm the outcome directly, rather than relying on updated_on being bumped above.
-        _ = start confirmIndexOutcome(contentId);
+        _ = start confirmIndexOutcome(contentId, userJwt);
         return;
     }
     if submitted is http:NotFound {
@@ -647,8 +680,10 @@ public isolated function retryIndexContent(int contentId, string? requestedBy = 
 #
 # + contentId - The content to retry
 # + requestedBy - Email of the admin who retried it, for the logs
+# + userJwt - The admin's login token, forwarded so the service can check it
 # + return - True if indexing was actually submitted, not-found when there's no such content, or an error
-isolated function retryIndexContentLocked(int contentId, string? requestedBy) returns boolean|http:NotFound|error {
+isolated function retryIndexContentLocked(int contentId, string? requestedBy, string? userJwt)
+        returns boolean|http:NotFound|error {
     lock {
         reindexRuns += 1;
 
@@ -666,7 +701,7 @@ isolated function retryIndexContentLocked(int contentId, string? requestedBy) re
             recordIndexFailure(contentId, unindexableLinkReason(info.contentType, info.contentSubtype, link));
             return false;
         }
-        if !clearIndexedEntries(contentId) {
+        if !clearIndexedEntries(contentId, userJwt = userJwt) {
             return error("Could not clear the previous version of this content");
         }
         error? clearError = database:clearSmartSearchIndexFailure(contentId);
@@ -681,7 +716,7 @@ isolated function retryIndexContentLocked(int contentId, string? requestedBy) re
         // Reserved so the status page lists it as in progress; released once indexed, failed, or not submitted.
         _ = reserveForBackfill(contentId);
         indexContentForSmartSearch(contentId, link, info.description,
-                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy, true);
+                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy, true, userJwt);
         return true;
     }
 }
@@ -744,8 +779,9 @@ isolated function releaseBackfillReservation(int contentId) {
 # Records or clears a content item's indexing failure based on its status.
 #
 # + contentId - The content to check
+# + userJwt - The admin's login token, forwarded so the service can check it; nil for scheduled jobs
 # + return - False if the Smart Search service could not be reached
-isolated function reconcileIndexStatus(int contentId) returns boolean {
+isolated function reconcileIndexStatus(int contentId, string? userJwt = ()) returns boolean {
     // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent, so a status read from
     // before an edit can never be written after that edit's own clear-and-reindex has finished.
     lock {
@@ -755,7 +791,8 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
         if serviceClient is error {
             return false;
         }
-        IndexStatusResponse|http:ClientError status = serviceClient->get(string `/documents/${contentId}/status`);
+        IndexStatusResponse|http:ClientError status =
+            serviceClient->get(string `/documents/${contentId}/status`, userJwtHeaders(userJwt));
         if status is http:ClientError {
             return false;
         }
@@ -786,22 +823,25 @@ isolated function reconcileIndexStatus(int contentId) returns boolean {
 # Waits for a retry or edit to realistically finish indexing, then confirms its outcome.
 #
 # + contentId - The content that was just retried or edited
-isolated function confirmIndexOutcome(int contentId) {
+# + userJwt - The admin's login token, forwarded so the service can check it
+isolated function confirmIndexOutcome(int contentId, string? userJwt = ()) {
     runtime:sleep(INDEX_CONFIRMATION_DELAY_SECONDS);
-    _ = reconcileIndexStatus(contentId);
+    _ = reconcileIndexStatus(contentId, userJwt);
 }
 
 # Whether a content item has never been indexed and never failed - a genuine backfill candidate.
 #
 # + contentId - The content to check
+# + userJwt - The admin's login token, forwarded so the service can check it
 # + return - True only when nothing has been attempted for it yet, or an error if Smart Search couldn't be reached
-isolated function isPendingSmartSearchIndex(int contentId) returns boolean|error {
+isolated function isPendingSmartSearchIndex(int contentId, string? userJwt = ()) returns boolean|error {
     // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent - see reconcileIndexStatus.
     lock {
         reindexRuns += 1;
 
         http:Client serviceClient = check getSearchClient();
-        IndexStatusResponse status = check serviceClient->get(string `/documents/${contentId}/status`);
+        IndexStatusResponse status =
+            check serviceClient->get(string `/documents/${contentId}/status`, userJwtHeaders(userJwt));
         if status.indexed {
             // Learned just now - remembered from here on, so future searches skip the live check.
             error? updateError = database:setSmartSearchIndexedAt(contentId);
@@ -830,9 +870,10 @@ isolated function isPendingSmartSearchIndex(int contentId) returns boolean|error
 # + contentType - Filter by content type, when set
 # + contentSubtype - Filter by content subtype, when set
 # + count - How many pending items to return
+# + userJwt - The admin's login token, forwarded so the service can check it; nil for a background run
 # + return - Up to `count` pending content items plus whether the scan was incomplete, or an error
-public isolated function findBackfillCandidates(string? contentType, string? contentSubtype, int count)
-        returns BackfillCandidatesResult|error {
+public isolated function findBackfillCandidates(string? contentType, string? contentSubtype, int count,
+        string? userJwt = ()) returns BackfillCandidatesResult|error {
     int effectiveCount = count;
     if effectiveCount < 1 {
         effectiveCount = 1;
@@ -877,7 +918,7 @@ public isolated function findBackfillCandidates(string? contentType, string? con
             statusChecks += 1;
             // Either branch here changes something - adds a candidate, or reconciles a stale record.
             progressed = true;
-            if check isPendingSmartSearchIndex(candidate.contentId) {
+            if check isPendingSmartSearchIndex(candidate.contentId, userJwt) {
                 pending.push(candidate);
             }
         }
@@ -902,7 +943,8 @@ public isolated function findBackfillCandidates(string? contentType, string? con
 public isolated function runBackfillBatch(http:RequestContext ctx, int[] contentIds, string? requestedBy)
         returns BackfillResult {
     string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
-    return runBackfillBatchForEmail(userEmail is string ? userEmail : (), contentIds, requestedBy);
+    return runBackfillBatchForEmail(userEmail is string ? userEmail : (), contentIds, requestedBy,
+            userJwt = userJwtOf(ctx));
 }
 
 # Same as runBackfillBatch, but for a background job that has no live request context.
@@ -912,9 +954,10 @@ public isolated function runBackfillBatch(http:RequestContext ctx, int[] content
 # + requestedBy - Email of the admin who triggered this, for the logs
 # + recordDeferralFailure - False to leave a rate-limited item pending instead of marking it
 #                            failed - for a background run that will just retry it itself later
+# + userJwt - The admin's login token, forwarded so the service can check it; nil for a background run
 # + return - A summary of what happened to each item
 isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, string? requestedBy,
-        boolean recordDeferralFailure = true) returns BackfillResult {
+        boolean recordDeferralFailure = true, string? userJwt = ()) returns BackfillResult {
     int[] boundedIds = contentIds.length() > MAX_BACKFILL_BATCH_SIZE
         ? contentIds.slice(0, MAX_BACKFILL_BATCH_SIZE)
         : contentIds;
@@ -952,7 +995,7 @@ isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, 
             continue;
         }
         _ = start indexContentForSmartSearch(contentId, link, info.description,
-                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy);
+                displayLinkFor(info.contentType, info.contentSubtype, info.contentLink), requestedBy, false, userJwt);
         submitted += 1;
     }
     return {submitted, deferred, notIndexable: notIndexableCount};
