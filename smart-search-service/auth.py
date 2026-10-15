@@ -19,6 +19,8 @@ signature against the provider's public keys, then issuer, audience and expiry."
 
 import logging
 import re
+import threading
+import time
 
 import jwt
 from fastapi import HTTPException, Request
@@ -48,6 +50,36 @@ _TOKENLESS_ROUTES = (
 _jwks_client = jwt.PyJWKClient(JWT_JWKS_URL, cache_keys=False, lifespan=3600, timeout=5)
 
 
+# A token with a key id we don't know makes us re-download the key list, in case the provider just rotated its keys.
+# Without a limit, junk tokens could make every request call the provider, so that refresh happens at most this often.
+_KEY_REFRESH_MIN_INTERVAL_SECONDS = 30
+_refresh_lock = threading.Lock()
+_last_forced_refresh = float("-inf")
+
+
+def _find_key(keys, key_id):
+    return next((key for key in keys if key.key_id == key_id), None)
+
+
+def _signing_key_for(token: str):
+    """The key that signed this token. A key id missing from the cached list refreshes the list, at most once per interval."""
+    global _last_forced_refresh
+    key_id = jwt.get_unverified_header(token).get("kid")
+    key = _find_key(_jwks_client.get_signing_keys(), key_id)
+    if key is not None:
+        return key
+
+    with _refresh_lock:
+        now = time.monotonic()
+        if now - _last_forced_refresh < _KEY_REFRESH_MIN_INTERVAL_SECONDS:
+            raise jwt.PyJWKClientError("Unknown key id, and the key list was refreshed too recently to try again")
+        _last_forced_refresh = now
+    key = _find_key(_jwks_client.get_signing_keys(refresh=True), key_id)
+    if key is None:
+        raise jwt.PyJWKClientError("Unable to find a signing key that matches the token's key id")
+    return key
+
+
 def _tokenless_allowed(method: str, path: str) -> bool:
     return any(method == allowed and pattern.fullmatch(path) for allowed, pattern in _TOKENLESS_ROUTES)
 
@@ -66,7 +98,7 @@ def verify_caller(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Missing user token.")
 
     try:
-        signing_key = _jwks_client.get_signing_key_from_jwt(token)
+        signing_key = _signing_key_for(token)
         jwt.decode(
             token,
             signing_key.key,
