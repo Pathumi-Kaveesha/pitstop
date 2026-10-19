@@ -486,6 +486,8 @@ public type ContentResponse record {|
     CustomTheme customContentTheme?;
     # content creaeted date
     string createdOn;
+    # When the content was last verified
+    string lastVerifiedOn?;
     # number of comments
     int commentCount;
     # Content tags

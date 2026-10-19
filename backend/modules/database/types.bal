@@ -190,6 +190,9 @@ public type ContentResponse record {|
     # content created date
     @sql:Column {name: "created_on"}
     string createdOn;
+    # When the content was last verified
+    @sql:Column {name: "last_verified_on"}
+    string lastVerifiedOn?;
     # number of comments
     @sql:Column {name: "comment_count"}
     int commentCount;
