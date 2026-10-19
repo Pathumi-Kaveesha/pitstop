@@ -66,7 +66,7 @@ public type BackfillCandidatesResult record {|
 |};
 
 # Where one content item stands in an admin bulk-index run.
-public type BackfillStatus "not_started"|"in_progress"|"indexed"|"failed";
+public type BackfillStatus "not_started"|"queued"|"in_progress"|"indexed"|"failed";
 
 # One content item's status, for the admin bulk-index status list.
 #
@@ -102,6 +102,21 @@ public type BackfillStatusResult record {|
     int totalCount;
     boolean countIsApproximate;
     boolean running;
+|};
+
+# What an active "index everything" run covers, so the status list can show what is still waiting to be sent.
+#
+# + contentType - The content type the run is limited to, when set
+# + contentSubtype - The content subtype the run is limited to, when set
+# + maxCount - How many items the run may send in total, when limited
+# + submitted - How many items the run has sent so far
+# + retryFailed - True if the run retries failed content - those items already show as failed, so none are queued
+type BulkRunScope record {|
+    string? contentType;
+    string? contentSubtype;
+    int? maxCount;
+    int submitted;
+    boolean retryFailed;
 |};
 
 # Result of trying to start an "index everything" run.

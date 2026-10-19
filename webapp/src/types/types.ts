@@ -851,7 +851,7 @@ export interface SmartSearchBackfillResult {
   notIndexable: number;
 }
 
-export type SmartSearchBackfillStatus = "not_started" | "in_progress" | "indexed" | "failed";
+export type SmartSearchBackfillStatus = "not_started" | "queued" | "in_progress" | "indexed" | "failed";
 
 export interface SmartSearchBackfillStatusItem {
   contentId: number;

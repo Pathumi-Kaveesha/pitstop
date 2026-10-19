@@ -74,9 +74,10 @@ const typeLabel = (type: string): string => {
 
 const STATUS_META: Record<
   SmartSearchBackfillStatus,
-  { label: string; color: "default" | "info" | "success" | "error" }
+  { label: string; color: "default" | "info" | "success" | "error" | "warning" }
 > = {
   not_started: { label: "Not started", color: "default" },
+  queued: { label: "Queued", color: "warning" },
   in_progress: { label: "In progress", color: "info" },
   indexed: { label: "Indexed", color: "success" },
   failed: { label: "Failed", color: "error" },

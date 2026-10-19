@@ -1001,42 +1001,92 @@ isolated function runBackfillBatchForEmail(string? userEmail, int[] contentIds, 
     return {submitted, deferred, notIndexable: notIndexableCount};
 }
 
-// True while one "index everything" run is active - only one at a time, admin tool, kept simple.
-isolated boolean bulkIndexRunning = false;
+// The active "index everything" run, if any - only one at a time, admin tool, kept simple.
+isolated BulkRunScope? activeBulkRun = ();
 
 # Whether an "index everything" run is currently active.
 #
 # + return - True if one is running
 public isolated function isBulkIndexRunning() returns boolean {
     lock {
-        return bulkIndexRunning;
+        return activeBulkRun is BulkRunScope;
     }
 }
 
 # Claims the bulk-index run, unless one is already active.
 #
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
+# + retryFailed - Whether the run retries failed content, instead of indexing content never tried
 # + return - False if one was already running - nothing changed
-isolated function tryStartBulkIndexRun() returns boolean {
+isolated function tryStartBulkIndexRun(string? contentType, string? contentSubtype, int? maxCount,
+        boolean retryFailed) returns boolean {
     lock {
-        if bulkIndexRunning {
+        if activeBulkRun is BulkRunScope {
             return false;
         }
-        bulkIndexRunning = true;
+        activeBulkRun = {contentType, contentSubtype, maxCount, submitted: 0, retryFailed};
         return true;
     }
 }
 
+# Ends the active bulk-index run, so a new one can start.
 isolated function clearBulkIndexRun() {
     lock {
-        bulkIndexRunning = false;
+        activeBulkRun = ();
     }
+}
+
+# Adds to how many items the active run has sent so far.
+#
+# + count - How many items were just sent
+isolated function addBulkRunSubmitted(int count) {
+    lock {
+        BulkRunScope? scope = activeBulkRun;
+        if scope is BulkRunScope {
+            scope.submitted += count;
+        }
+    }
+}
+
+# The active index run's scope.
+#
+# + return - The scope, or nothing when no run is active or it only retries failed items
+isolated function currentBulkRunScope() returns BulkRunScope? {
+    lock {
+        BulkRunScope? scope = activeBulkRun;
+        return scope is BulkRunScope && !scope.retryFailed ? scope.cloneReadOnly() : ();
+    }
+}
+
+# How many more items a run may still send.
+#
+# + scope - The run
+# + return - The count, or nothing when the run has no limit
+isolated function bulkRunRemaining(BulkRunScope scope) returns int? {
+    int? maxCount = scope.maxCount;
+    return maxCount is int ? int:max(0, maxCount - scope.submitted) : ();
+}
+
+# Whether a content item falls under the filters of a run.
+#
+# + scope - The run
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + return - True if the run covers it
+isolated function belongsToBulkRun(BulkRunScope scope, string contentType, string? contentSubtype) returns boolean {
+    return (scope.contentType is () || scope.contentType == contentType)
+        && (scope.contentSubtype is () || scope.contentSubtype == contentSubtype);
 }
 
 # Where one content item stands, combining its DB record with any live backfill reservation.
 #
 # + row - The content's raw status from the database
+# + limitedQueuedIds - The items an index run with a limit will send next - leave out when the run has no limit
 # + return - Its current backfill status
-isolated function classifyBackfillStatus(database:ContentIndexStatus row) returns BackfillStatus {
+isolated function classifyBackfillStatus(database:ContentIndexStatus row, int[]? limitedQueuedIds = ())
+        returns BackfillStatus {
     if row.indexedFlag is string {
         return "indexed";
     }
@@ -1045,6 +1095,14 @@ isolated function classifyBackfillStatus(database:ContentIndexStatus row) return
     }
     if isReservedForBackfill(row.contentId) {
         return "in_progress";
+    }
+    BulkRunScope? scope = currentBulkRunScope();
+    if scope is BulkRunScope && belongsToBulkRun(scope, row.contentType, row.contentSubtype) {
+        // A run with a limit only queues the next few - the ones it will send before it reaches the limit.
+        // Without a list of those (no limit, or too many to look up), everything matching the run is queued.
+        if limitedQueuedIds is () || limitedQueuedIds.indexOf(row.contentId) is int {
+            return "queued";
+        }
     }
     return "not_started";
 }
@@ -1066,6 +1124,42 @@ isolated function backfillReservationContentIds() returns int[] {
         }
         return ids.clone();
     }
+}
+
+# Waits until fewer than MAX_BULK_IN_FLIGHT items are still being indexed, so a bulk run never builds a long queue in
+# the search service. Gives up after about an hour, so an item that never finishes can't hold the run forever.
+#
+# + return - How many more items may be sent now, or 0 if the service never caught up
+isolated function waitForIndexingRoom() returns int {
+    foreach int _ in 0 ..< MAX_BULK_ROOM_CHECKS {
+        int room = MAX_BULK_IN_FLIGHT - backfillReservationContentIds().length();
+        if room > 0 {
+            return room;
+        }
+        runtime:sleep(BULK_IN_FLIGHT_CHECK_SECONDS);
+    }
+    return 0;
+}
+
+# Whether any content matching the filters is still waiting to be sent: not indexed, not failed, not already in flight.
+# Assumes there is when it can't tell, so a database hiccup never ends a run early.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + return - False only when the check shows nothing is left
+isolated function hasUnsentPendingContent(string? contentType, string? contentSubtype) returns boolean {
+    // The in-flight items sit in the same list, so look at one more row than there are of them.
+    database:ContentIndexStatus[]|error rows = database:getSmartSearchContentStatus(contentType, contentSubtype,
+            "pending", 0, backfillReservationContentIds().length() + 1);
+    if rows is error {
+        return true;
+    }
+    foreach database:ContentIndexStatus row in rows {
+        if !isReservedForBackfill(row.contentId) {
+            return true;
+        }
+    }
+    return false;
 }
 
 # The "in progress" status page - served straight from the live reservation set rather than the
@@ -1116,6 +1210,54 @@ isolated function getInProgressStatusPage(string? contentType, string? contentSu
     };
 }
 
+# The items a run with a limit will send next, in the order it sends them: the first not-yet-sent ones matching the run.
+#
+# + scope - The active run
+# + return - Up to the run's remaining count of rows, or an error if they couldn't be read
+isolated function limitedQueuedRows(BulkRunScope scope) returns database:ContentIndexStatus[]|error {
+    int remaining = bulkRunRemaining(scope) ?: 0;
+    if remaining == 0 {
+        return [];
+    }
+    // The sent-but-unfinished items sit in the same list, so ask for that many extra and skip them.
+    database:ContentIndexStatus[] rows = check database:getSmartSearchContentStatus(scope.contentType,
+            scope.contentSubtype, "pending", 0, remaining + backfillReservationContentIds().length());
+    database:ContentIndexStatus[] queued = [];
+    foreach database:ContentIndexStatus row in rows {
+        if queued.length() < remaining && !isReservedForBackfill(row.contentId) {
+            queued.push(row);
+        }
+    }
+    return queued;
+}
+
+# One page of the queued items.
+#
+# + rows - Every row that belongs in the list
+# + page - Which page to return (1-based)
+# + count - How many items per page
+# + return - That page, with counts
+isolated function pageOfRows(database:ContentIndexStatus[] rows, int page, int count) returns BackfillStatusResult {
+    int totalCount = rows.length();
+    int totalPages = totalCount == 0 ? 1 : ((totalCount - 1) / count) + 1;
+    int effectivePage = page > totalPages ? totalPages : page;
+    int startIndex = (effectivePage - 1) * count;
+    database:ContentIndexStatus[] pageRows = startIndex < totalCount
+        ? rows.slice(startIndex, int:min(startIndex + count, totalCount))
+        : [];
+    BackfillStatusItem[] items = from database:ContentIndexStatus row in pageRows
+        select {
+            contentId: row.contentId,
+            description: row.description,
+            contentType: row.contentType,
+            contentSubtype: row.contentSubtype,
+            contentLink: row.contentLink,
+            status: "queued",
+            failureReason: ()
+        };
+    return {items, page: effectivePage, totalPages, totalCount, countIsApproximate: true, running: isBulkIndexRunning()};
+}
+
 # Lists content with its indexing status, for the admin bulk-index status page.
 #
 # + contentType - Filter by content type, when set
@@ -1139,23 +1281,65 @@ public isolated function getBackfillStatusList(string? contentType, string? cont
         return getInProgressStatusPage(contentType, contentSubtype, requestedPage, effectiveCount);
     }
 
+    // A run with a limit only queues the next few, so those are looked up first and used for both the queued
+    // list and the labels in the other lists.
+    BulkRunScope? scope = currentBulkRunScope();
+    database:ContentIndexStatus[]? limitedQueued = ();
+    if scope is BulkRunScope {
+        int? remaining = bulkRunRemaining(scope);
+        if remaining is int && remaining <= MAX_QUEUED_LOOKUP {
+            limitedQueued = check limitedQueuedRows(scope);
+        }
+    }
+    int[]? limitedQueuedIds = ();
+    if limitedQueued is database:ContentIndexStatus[] {
+        int[] ids = [];
+        foreach database:ContentIndexStatus queuedRow in limitedQueued {
+            ids.push(queuedRow.contentId);
+        }
+        limitedQueuedIds = ids;
+    }
+    if statusFilter == "queued" && limitedQueued is database:ContentIndexStatus[] {
+        database:ContentIndexStatus[] shown = [];
+        foreach database:ContentIndexStatus queuedRow in limitedQueued {
+            if (contentType is () || queuedRow.contentType == contentType)
+                    && (contentSubtype is () || queuedRow.contentSubtype == contentSubtype) {
+                shown.push(queuedRow);
+            }
+        }
+        return pageOfRows(shown, requestedPage, effectiveCount);
+    }
+
+    // Queued only exists while an index run is active, and only for what that run covers.
+    string? listContentType = contentType;
+    string? listContentSubtype = contentSubtype;
+    if statusFilter == "queued" {
+        if scope is () || (contentType is string && scope.contentType is string && contentType != scope.contentType)
+                || (contentSubtype is string && scope.contentSubtype is string && contentSubtype != scope.contentSubtype) {
+            return {items: [], page: 1, totalPages: 1, totalCount: 0, countIsApproximate: false,
+                running: isBulkIndexRunning()};
+        }
+        listContentType = contentType ?: scope.contentType;
+        listContentSubtype = contentSubtype ?: scope.contentSubtype;
+    }
+
     // "not started" is approximate - it shares its DB bucket with "in progress", which SQL can't tell apart.
     string bucket = statusFilter == "indexed" ? "indexed"
         : statusFilter == "failed" ? "failed"
-        : statusFilter == "not_started" ? "pending"
+        : (statusFilter == "not_started" || statusFilter == "queued") ? "pending"
         : "all";
-    int totalCount = check database:getSmartSearchContentStatusCount(contentType, contentSubtype, bucket);
+    int totalCount = check database:getSmartSearchContentStatusCount(listContentType, listContentSubtype, bucket);
     int totalPages = totalCount == 0 ? 1 : ((totalCount - 1) / effectiveCount) + 1;
     int effectivePage = requestedPage > totalPages ? totalPages : requestedPage;
     int offsetRows = (effectivePage - 1) * effectiveCount;
 
-    database:ContentIndexStatus[] rows = check database:getSmartSearchContentStatus(contentType, contentSubtype,
-            bucket, offsetRows, effectiveCount);
+    database:ContentIndexStatus[] rows = check database:getSmartSearchContentStatus(listContentType,
+            listContentSubtype, bucket, offsetRows, effectiveCount);
     BackfillStatusItem[] items = [];
     foreach database:ContentIndexStatus row in rows {
-        BackfillStatus status = classifyBackfillStatus(row);
+        BackfillStatus status = classifyBackfillStatus(row, limitedQueuedIds);
         // The "pending" bucket mixes in whatever's reserved - filter those back out here.
-        if statusFilter == "not_started" && status != "not_started" {
+        if (statusFilter == "not_started" || statusFilter == "queued") && status != statusFilter {
             continue;
         }
         items.push({
@@ -1174,14 +1358,14 @@ public isolated function getBackfillStatusList(string? contentType, string? cont
         page: effectivePage,
         totalPages,
         totalCount,
-        countIsApproximate: statusFilter == "not_started",
+        countIsApproximate: statusFilter == "not_started" || statusFilter == "queued",
         running: isBulkIndexRunning()
     };
 }
 
 # Works through everything matching the filters in automatic batches, pacing itself against the
 # admin's own save limit. Launched with `start`, so the triggering request never waits on it.
-# Trapped so a panic anywhere in the loop can't leave bulkIndexRunning stuck true forever.
+# Trapped so a panic anywhere in the loop can't leave the run stuck as active forever.
 #
 # + contentType - Filter by content type, when set
 # + contentSubtype - Filter by content subtype, when set
@@ -1190,15 +1374,24 @@ public isolated function getBackfillStatusList(string? contentType, string? cont
 # + retryFailed - Retry the content currently marked failed, instead of indexing content never tried
 isolated function runBulkIndexInBackground(string? contentType, string? contentSubtype, int? maxCount,
         string? requestedBy, boolean retryFailed) {
+    log:printInfo(string `Smart Search: bulk ${retryFailed ? "retry" : "index"} run started by ${requestedBy ?: "unknown"}`);
     error? result = retryFailed
         ? trap runBulkRetryFailedLoop(contentType, contentSubtype, maxCount, requestedBy)
         : trap runBulkIndexLoop(contentType, contentSubtype, maxCount, requestedBy);
     if result is error {
         log:printError("Smart Search: bulk index run failed unexpectedly", result);
     }
+    log:printInfo("Smart Search: bulk run finished");
     clearBulkIndexRun();
 }
 
+# The loop behind an "index everything" run: sends batches of never-tried content, with only as many in flight at once
+# as the search service has room for, until nothing is left or the limit is reached.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + maxCount - Stop once this many have been submitted, when set - unlimited otherwise
+# + requestedBy - Email of the admin who started this run
 isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, int? maxCount,
         string? requestedBy) {
     int totalSubmitted = 0;
@@ -1212,6 +1405,17 @@ isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, 
             }
             batchSize = remaining < MAX_BACKFILL_BATCH_SIZE ? remaining : MAX_BACKFILL_BATCH_SIZE;
         }
+        // Nothing left to send means the run is done - no point waiting for room first.
+        if !hasUnsentPendingContent(contentType, contentSubtype) {
+            break;
+        }
+        // Only as many as the search service has room for, so it never builds a queue.
+        int room = waitForIndexingRoom();
+        if room == 0 {
+            log:printWarn("Smart Search: the search service stayed busy for an hour, stopping this bulk run");
+            break;
+        }
+        batchSize = int:min(batchSize, room);
         BackfillCandidatesResult|error candidatesResult = findBackfillCandidates(contentType, contentSubtype,
                 batchSize);
         if candidatesResult is error {
@@ -1224,6 +1428,8 @@ isolated function runBulkIndexLoop(string? contentType, string? contentSubtype, 
             int[] contentIds = from database:IndexingInfo candidate in candidates select candidate.contentId;
             BackfillResult batchResult = runBackfillBatchForEmail(requestedBy, contentIds, requestedBy, false);
             totalSubmitted += batchResult.submitted;
+            addBulkRunSubmitted(batchResult.submitted);
+            log:printInfo(string `Smart Search: bulk run sent ${batchResult.submitted} item(s), ${totalSubmitted} so far`);
         } else if !candidatesResult.scanIncomplete {
             // A genuinely empty scan - nothing left matching these filters.
             break;
@@ -1321,6 +1527,10 @@ isolated function runBulkRetryFailedLoop(string? contentType, string? contentSub
             log:printWarn("Smart Search: the indexing limit stayed full, stopping this retry run");
             break;
         }
+        if waitForIndexingRoom() == 0 {
+            log:printWarn("Smart Search: the search service stayed busy for an hour, stopping this retry run");
+            break;
+        }
         retried += 1;
         http:NotFound|error? result = retryIndexContent(contentId, requestedBy);
         if result is error {
@@ -1356,7 +1566,7 @@ isolated function waitForIngestQuota(string userEmail) returns boolean {
 # + return - Whether a run actually started - false if one was already active
 public isolated function startBulkIndex(http:RequestContext ctx, string? contentType, string? contentSubtype,
         int? maxCount, boolean retryFailed = false) returns BulkIndexStartResult {
-    if !tryStartBulkIndexRun() {
+    if !tryStartBulkIndexRun(contentType, contentSubtype, maxCount, retryFailed) {
         return {started: false};
     }
     string|error requestedBy = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
