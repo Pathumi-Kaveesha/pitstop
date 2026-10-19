@@ -2263,7 +2263,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         <TableRow>
                           <TableCell>Day of Week</TableCell>
                           <TableCell align="center">Peak Hour Window</TableCell>
-                          <TableCell align="center">Visit Count</TableCell>
+                          <TableCell align="center">View Count</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
