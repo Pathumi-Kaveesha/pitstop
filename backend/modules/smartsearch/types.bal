@@ -75,6 +75,7 @@ public type BackfillStatus "not_started"|"queued"|"in_progress"|"indexed"|"faile
 # + contentType - Type of the content
 # + contentSubtype - Subtype of the content, when set
 # + contentLink - The content's link
+# + routePath - The Pitstop page this content is on, empty when it has none
 # + status - Where this item stands
 # + failureReason - Why it failed, when status is "failed"
 public type BackfillStatusItem record {|
@@ -83,6 +84,7 @@ public type BackfillStatusItem record {|
     string contentType;
     string? contentSubtype;
     string contentLink;
+    string routePath = "";
     BackfillStatus status;
     string? failureReason;
 |};

@@ -15,6 +15,7 @@
 // under the License.
 
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -32,6 +33,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import UploadRoundedIcon from "@mui/icons-material/UploadRounded";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
@@ -86,6 +88,7 @@ const STATUS_META: Record<
 // Admin page that indexes everything matching the filters in the background, in automatic batches.
 export default function BackfillContent() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const [contentType, setContentType] = useState("");
   const [contentSubtype, setContentSubtype] = useState("");
   const [statusFilter, setStatusFilter] = useState<SmartSearchBackfillStatus | "">("");
@@ -562,6 +565,17 @@ export default function BackfillContent() {
                       size="small"
                       sx={{ height: 24, fontSize: "0.75rem", bgcolor: "action.hover", flexShrink: 0 }}
                     />
+
+                    {item.routePath && (
+                      <Chip
+                        clickable
+                        onClick={() => navigate(item.routePath)}
+                        icon={<ArrowForwardIcon sx={{ fontSize: "0.85rem !important" }} />}
+                        label="Go to page"
+                        size="small"
+                        sx={{ height: 24, fontSize: "0.75rem", bgcolor: "action.hover", flexShrink: 0 }}
+                      />
+                    )}
                   </Stack>
                 </Box>
               );

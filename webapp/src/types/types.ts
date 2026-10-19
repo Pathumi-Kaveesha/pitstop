@@ -859,6 +859,7 @@ export interface SmartSearchBackfillStatusItem {
   contentType: string;
   contentSubtype: string | null;
   contentLink: string;
+  routePath: string;
   status: SmartSearchBackfillStatus;
   failureReason: string | null;
 }

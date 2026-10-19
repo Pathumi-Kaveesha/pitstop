@@ -1268,6 +1268,30 @@ isolated function pageOfRows(database:ContentIndexStatus[] rows, int page, int c
 # + return - A page of results, or an error
 public isolated function getBackfillStatusList(string? contentType, string? contentSubtype,
         BackfillStatus? statusFilter, int page, int count) returns BackfillStatusResult|error {
+    BackfillStatusResult result = check getBackfillStatusPage(contentType, contentSubtype, statusFilter, page, count);
+    // Only a missing page link is lost if this fails - the list itself is still right.
+    map<string>|error routePaths = database:getContentRoutePaths(
+            from BackfillStatusItem item in result.items select item.contentId);
+    if routePaths is error {
+        log:printWarn("Smart Search: could not look up the pages of the listed content", routePaths);
+        return result;
+    }
+    foreach BackfillStatusItem item in result.items {
+        item.routePath = routePaths[item.contentId.toString()] ?: "";
+    }
+    return result;
+}
+
+# One page of the status list, without the page links of its items.
+#
+# + contentType - Filter by content type, when set
+# + contentSubtype - Filter by content subtype, when set
+# + statusFilter - Only include items in this status, when set
+# + page - Which page to return (1-based)
+# + count - How many items per page
+# + return - A page of results, or an error
+isolated function getBackfillStatusPage(string? contentType, string? contentSubtype,
+        BackfillStatus? statusFilter, int page, int count) returns BackfillStatusResult|error {
     int effectiveCount = count;
     if effectiveCount < 1 {
         effectiveCount = 1;
