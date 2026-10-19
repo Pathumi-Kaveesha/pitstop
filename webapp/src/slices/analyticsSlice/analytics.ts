@@ -84,6 +84,8 @@ export interface DailyTrendMetric {
   timeSpentSeconds: number;
   totalEngagements: number;
   avgActionsPerVisit: number;
+  visitorEmails?: string[];
+  sessionIds?: string[];
 }
 
 export interface AnalyticsSummary {
@@ -105,6 +107,7 @@ export interface AnalyticsFilterParams {
   startDate?: string;
   endDate?: string;
   region?: string;
+  team?: string;
   userEmail?: string;
   pageRoute?: string;
   sortBy?:
@@ -178,6 +181,7 @@ const buildQueryString = (params: AnalyticsFilterParams) => {
   if (params.startDate) queryParams.append("startDate", params.startDate);
   if (params.endDate) queryParams.append("endDate", params.endDate);
   if (params.region) queryParams.append("region", params.region);
+  if (params.team) queryParams.append("team", params.team);
   if (params.userEmail) queryParams.append("userEmail", params.userEmail);
   if (params.pageRoute) queryParams.append("pageRoute", params.pageRoute);
   if (params.sortBy) queryParams.append("sortBy", params.sortBy);

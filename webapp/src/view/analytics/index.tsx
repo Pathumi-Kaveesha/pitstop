@@ -40,6 +40,8 @@ import {
   Button,
   Alert,
   Tooltip,
+  Switch,
+  FormControlLabel,
   IconButton,
   Popover,
   ToggleButton,
@@ -76,6 +78,7 @@ import {
 } from "@slices/analyticsSlice/analytics";
 import { ApiService } from "@utils/apiService";
 import { AppConfig } from "@config/config";
+import { Role } from "@utils/types";
 import { UserEmailAutocomplete } from "../../component/common/UserEmailAutocomplete";
 import AnalyticsTrendsChart, { TrendDataPoint } from "../analytics/AnalyticsTrendsChart";
 import {
@@ -94,7 +97,13 @@ const AVAILABLE_REGIONS = [
   "LATAM",
   "EU",
   "UK",
+  "UK & EU",
+  "Sales Development",
 ];
+
+const AVAILABLE_TEAMS = ["SALES", "Sales Engineering"];
+
+const TIME_METRICS_STORAGE_KEY = "pitstop_analytics_show_time_metrics";
 
 const PROD_LAUNCH_DATE = new Date(2026, 7, 21);
 PROD_LAUNCH_DATE.setHours(0, 0, 0, 0);
@@ -133,6 +142,11 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
       ? globalFilters.region.split(",").map((r) => r.trim()).filter(Boolean)
       : []
   );
+  const [teams, setTeams] = useState<string[]>(
+    globalFilters.team
+      ? globalFilters.team.split(",").map((t) => t.trim()).filter(Boolean)
+      : []
+  );
   const [userEmails, setUserEmails] = useState<string[]>(
     globalFilters.userEmail
       ? globalFilters.userEmail.split(",").map((e) => e.trim()).filter(Boolean)
@@ -147,6 +161,11 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
     setRegions(
       globalFilters.region
         ? globalFilters.region.split(",").map((r) => r.trim()).filter(Boolean)
+        : []
+    );
+    setTeams(
+      globalFilters.team
+        ? globalFilters.team.split(",").map((t) => t.trim()).filter(Boolean)
         : []
     );
     setUserEmails(
@@ -179,6 +198,7 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
       startDate,
       endDate,
       region: regions.join(","),
+      team: teams.join(","),
       userEmail: userEmails.join(","),
       pageRoute,
       timezoneOffsetMinutes: globalFilters.timezoneOffsetMinutes,
@@ -190,6 +210,11 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
     setRegions(
       globalFilters.region
         ? globalFilters.region.split(",").map((r) => r.trim()).filter(Boolean)
+        : []
+    );
+    setTeams(
+      globalFilters.team
+        ? globalFilters.team.split(",").map((t) => t.trim()).filter(Boolean)
         : []
     );
     setUserEmails(
@@ -276,14 +301,14 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
 
           <FormControl size="small" fullWidth disabled={userEmails.length > 0}>
             <InputLabel shrink id="card-region-label">
-              Region / Team
+              Region
             </InputLabel>
             <Select
               labelId="card-region-label"
               multiple
               displayEmpty
               value={regions}
-              label="Region / Team"
+              label="Region"
               onChange={(e) => {
                 const val = e.target.value;
                 setRegions(typeof val === "string" ? val.split(",") : val);
@@ -308,6 +333,40 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
             </Select>
           </FormControl>
 
+          <FormControl size="small" fullWidth disabled={userEmails.length > 0}>
+            <InputLabel shrink id="card-team-label">
+              Team
+            </InputLabel>
+            <Select
+              labelId="card-team-label"
+              multiple
+              displayEmpty
+              value={teams}
+              label="Team"
+              onChange={(e) => {
+                const val = e.target.value;
+                setTeams(typeof val === "string" ? val.split(",") : val);
+              }}
+              renderValue={(selected) =>
+                selected.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                    All Teams
+                  </Typography>
+                ) : (
+                  selected.join(", ")
+                )
+              }
+              sx={{ height: 40 }}
+            >
+              {AVAILABLE_TEAMS.map((t) => (
+                <MenuItem key={t} value={t}>
+                  <Checkbox size="small" checked={teams.indexOf(t) > -1} />
+                  <ListItemText primary={t} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
           <UserEmailAutocomplete
             value={userEmails}
             onChange={(emails) => {
@@ -322,7 +381,7 @@ const CardFilterPopover: React.FC<CardFilterPopoverProps> = ({
             label="User Email(s)"
             placeholder={userEmails.length === 0 ? "All Users" : "Type a name..."}
             size="small"
-            disabled={regions.length > 0}
+            disabled={regions.length > 0 || teams.length > 0}
             multiple
           />
 
@@ -401,7 +460,19 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
   const timezoneOffsetMinutes = useMemo(() => -new Date().getTimezoneOffset(), []);
 
+  const isAdmin = useAppSelector((state) => state.auth.roles?.includes(Role.SALES_ADMIN) ?? false);
+  const [adminShowTime, setAdminShowTime] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(TIME_METRICS_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const showTimeMetrics = isAdmin && adminShowTime;
+  const kpiCardColumns = showTimeMetrics ? 2.4 : 3;
+
   const [globalRegions, setGlobalRegions] = useState<string[]>([]);
+  const [globalTeams, setGlobalTeams] = useState<string[]>([]);
   const [globalUserEmails, setGlobalUserEmails] = useState<string[]>([]);
   const [globalStartDate, setGlobalStartDate] = useState<string>("");
   const [globalEndDate, setGlobalEndDate] = useState<string>("");
@@ -460,6 +531,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
       startDate: globalStartDate,
       endDate: globalEndDate,
       region: globalRegions.join(","),
+      team: globalTeams.join(","),
       userEmail: globalUserEmails.join(","),
       pageRoute: globalPageRoute,
       sortBy: topContentSortBy,
@@ -484,6 +556,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
   const handleResetGlobalFilters = () => {
     setGlobalRegions([]);
+    setGlobalTeams([]);
     setGlobalUserEmails([]);
     setGlobalStartDate("");
     setGlobalEndDate("");
@@ -537,6 +610,23 @@ const AnalyticsAdminDashboard: React.FC = () => {
       setRegionalSortBy(newSortBy);
       const activeFilters = cardRegionalFilters || appliedFilters;
       dispatch(fetchRegionalTimeSpent({ ...activeFilters, sortBy: newSortBy }));
+    }
+  };
+
+  const handleTimeMetricsToggle = (checked: boolean) => {
+    setAdminShowTime(checked);
+    try {
+      localStorage.setItem(TIME_METRICS_STORAGE_KEY, String(checked));
+    } catch {
+      // storage unavailable, the choice just won't be remembered
+    }
+    if (!checked) {
+      if (leaderboardSortBy === "avgTimeSpentSeconds") {
+        handleLeaderboardSortChange(null, "actions");
+      }
+      if (regionalSortBy === "avgTimeSpentSeconds") {
+        handleRegionalSortChange(null, "totalVisits");
+      }
     }
   };
 
@@ -697,6 +787,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
       timeSpentSeconds: number;
       totalEngagements: number;
       avgActionsPerVisit: number;
+      visitorEmails: string[];
+      sessionIds: string[];
     }[] = [];
 
     const current = new Date(start);
@@ -717,6 +809,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
         timeSpentSeconds: Number(item?.timeSpentSeconds || 0),
         totalEngagements: Number(item?.totalEngagements || 0),
         avgActionsPerVisit: Number(item?.avgActionsPerVisit || 0),
+        visitorEmails: item?.visitorEmails || [],
+        sessionIds: item?.sessionIds || [],
       });
 
       current.setDate(current.getDate() + 1);
@@ -747,11 +841,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
         label: string;
         fullLabel: string;
         totalViews: number;
-        uniqueViews: number;
         timeSpentSeconds: number;
         totalEngagements: number;
-        avgActionsSum: number;
-        count: number;
+        visitors: Set<string>;
+        sessions: Set<string>;
       }
     >();
 
@@ -791,28 +884,23 @@ const AnalyticsAdminDashboard: React.FC = () => {
       }
 
       const existing = aggregatedMap.get(groupKey);
-      const hasActivity = pt.avgActionsPerVisit > 0 || pt.totalEngagements > 0;
 
       if (existing) {
         existing.totalViews += pt.totalViews;
-        existing.uniqueViews += pt.uniqueViews;
         existing.timeSpentSeconds += pt.timeSpentSeconds;
         existing.totalEngagements += pt.totalEngagements;
-        if (hasActivity) {
-          existing.avgActionsSum += pt.avgActionsPerVisit;
-          existing.count += 1;
-        }
+        pt.visitorEmails.forEach((e) => existing.visitors.add(e));
+        pt.sessionIds.forEach((s) => existing.sessions.add(s));
       } else {
         aggregatedMap.set(groupKey, {
           startDate: pt.dateKey,
           label,
           fullLabel,
           totalViews: pt.totalViews,
-          uniqueViews: pt.uniqueViews,
           timeSpentSeconds: pt.timeSpentSeconds,
           totalEngagements: pt.totalEngagements,
-          avgActionsSum: hasActivity ? pt.avgActionsPerVisit : 0,
-          count: hasActivity ? 1 : 0,
+          visitors: new Set(pt.visitorEmails),
+          sessions: new Set(pt.sessionIds),
         });
       }
     });
@@ -822,11 +910,13 @@ const AnalyticsAdminDashboard: React.FC = () => {
       startDate: agg.startDate,
       formattedDate: agg.fullLabel,
       totalViews: agg.totalViews,
-      uniqueViews: agg.uniqueViews,
+      uniqueViews: agg.visitors.size,
       timeSpentSeconds: agg.timeSpentSeconds,
       totalEngagements: agg.totalEngagements,
       avgActionsPerVisit:
-        agg.count > 0 ? Number((agg.avgActionsSum / agg.count).toFixed(2)) : 0,
+        agg.sessions.size > 0
+          ? Number((agg.totalEngagements / agg.sessions.size).toFixed(2))
+          : 0,
     }));
   }, [trends, trendsOverridden, summary, trendFilters, appliedFilters, granularity]);
 
@@ -867,6 +957,18 @@ const AnalyticsAdminDashboard: React.FC = () => {
               Deep content performance, regional metrics, and user engagement leaderboards
             </Typography>
           </Box>
+          {isAdmin && (
+            <FormControlLabel
+              sx={{ ml: "auto" }}
+              control={
+                <Switch
+                  checked={adminShowTime}
+                  onChange={(e) => handleTimeMetricsToggle(e.target.checked)}
+                />
+              }
+              label="Show time metrics"
+            />
+          )}
         </Box>
 
         {/* Global Dynamic Filters Panel */}
@@ -988,7 +1090,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
               }}
             />
 
-            {/* Region / Team Multi-Select Dropdown */}
+            {/* Region Multi-Select Dropdown */}
             <FormControl
               size="small"
               sx={{
@@ -998,14 +1100,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
               disabled={globalUserEmails.length > 0}
             >
               <InputLabel shrink id="global-region-select-label">
-                Region / Team
+                Region
               </InputLabel>
               <Select
                 labelId="global-region-select-label"
                 multiple
                 displayEmpty
                 value={globalRegions}
-                label="Region / Team"
+                label="Region"
                 onChange={(e) => {
                   const val = e.target.value;
                   setGlobalRegions(typeof val === "string" ? val.split(",") : val);
@@ -1060,6 +1162,78 @@ const AnalyticsAdminDashboard: React.FC = () => {
               </Select>
             </FormControl>
 
+            {/* Team Multi-Select Dropdown */}
+            <FormControl
+              size="small"
+              sx={{
+                flex: "1 1 0px",
+                minWidth: 0,
+              }}
+              disabled={globalUserEmails.length > 0}
+            >
+              <InputLabel shrink id="global-team-select-label">
+                Team
+              </InputLabel>
+              <Select
+                labelId="global-team-select-label"
+                multiple
+                displayEmpty
+                value={globalTeams}
+                label="Team"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setGlobalTeams(typeof val === "string" ? val.split(",") : val);
+                }}
+                renderValue={(selected) => {
+                  if (selected.length === 0) {
+                    return (
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ fontSize: "0.8125rem", fontStyle: "normal" }}
+                      >
+                        All Teams
+                      </Typography>
+                    );
+                  }
+                  return (
+                    <Tooltip title={selected.join(", ")} arrow placement="top">
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontSize: "0.8125rem",
+                          fontWeight: 500,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {selected.join(", ")}
+                      </Typography>
+                    </Tooltip>
+                  );
+                }}
+                sx={{
+                  height: 40,
+                  "& .MuiSelect-select": {
+                    display: "flex",
+                    alignItems: "center",
+                    overflow: "hidden !important",
+                    textOverflow: "ellipsis !important",
+                    whiteSpace: "nowrap !important",
+                    paddingRight: "32px !important",
+                  },
+                }}
+              >
+                {AVAILABLE_TEAMS.map((t) => (
+                  <MenuItem key={t} value={t}>
+                    <Checkbox size="small" checked={globalTeams.indexOf(t) > -1} />
+                    <ListItemText primary={t} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
             {/* User Email Multi-Select Autocomplete */}
             <Box sx={{ flex: "1 1 0px", minWidth: 0 }}>
               <UserEmailAutocomplete
@@ -1076,7 +1250,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 label="Global User Email(s)"
                 placeholder={globalUserEmails.length === 0 ? "All Users" : "Type a name..."}
                 size="small"
-                disabled={globalRegions.length > 0}
+                disabled={globalRegions.length > 0 || globalTeams.length > 0}
                 multiple
               />
             </Box>
@@ -1092,7 +1266,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
             {/* Overall KPI Cards */}
             <Grid container spacing={2}>
               {/* Card 1: Total Views */}
-              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: kpiCardColumns }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -1147,7 +1321,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
               </Grid>
 
               {/* Card 2: Unique Visitors with Paginated Hover Popover */}
-              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: kpiCardColumns }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -1206,7 +1380,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
               </Grid>
 
               {/* Card 3: Time Spent on Platform */}
-              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+              {showTimeMetrics && (
+              <Grid size={{ xs: 12, sm: 6, md: kpiCardColumns }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -1259,9 +1434,10 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   </Tooltip>
                 </Paper>
               </Grid>
+              )}
 
               {/* Card 4: Total Platform Engagements */}
-              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: kpiCardColumns }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -1316,7 +1492,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
               </Grid>
 
               {/* Card 5: Average Actions per Visit */}
-              <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: kpiCardColumns }}>
                 <Paper
                   elevation={0}
                   sx={{
@@ -1363,7 +1539,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     </Box>
                   </Box>
                   <Tooltip
-                    title="Average number of active interactions (Total Actions ÷ Total Unique Sessions)."
+                    title="Average number of actions per visit (Total Actions ÷ Total Visits). A visit ends after 30 minutes without any activity."
                     arrow
                   >
                     <IconButton size="small" aria-label="Average Actions Per Visit info">
@@ -1429,7 +1605,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   }}
                 />
               </Box>
-              <AnalyticsTrendsChart trendData={realTrendData} />
+              <AnalyticsTrendsChart trendData={realTrendData} showTimeMetrics={showTimeMetrics} />
             </Box>
 
             {/* Content Performance & Leaderboard Grid */}
@@ -1687,7 +1863,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                           User Activity Leaderboard
                         </Typography>
                         <Tooltip
-                          title="Team members ranked by your selected metric (actions, visits, or average time spent)."
+                          title="Team members ranked by your selected metric (actions or visits)."
                           arrow
                         >
                           <IconButton size="small" aria-label="User Activity Leaderboard info">
@@ -1709,9 +1885,11 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         <ToggleButton value="visits" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
                           By Visits
                         </ToggleButton>
-                        <ToggleButton value="avgTimeSpentSeconds" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
-                          By Avg Time
-                        </ToggleButton>
+                        {showTimeMetrics && (
+                          <ToggleButton value="avgTimeSpentSeconds" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                            By Avg Time
+                          </ToggleButton>
+                        )}
                       </ToggleButtonGroup>
                     </Box>
 
@@ -1758,12 +1936,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                             label="Actions"
                             onSort={(m) => handleLeaderboardSortChange(null, m)}
                           />
-                          <SortableHeaderCell
-                            metric="avgTimeSpentSeconds"
-                            activeMetric={leaderboardSortBy}
-                            label="Avg Time Spent"
-                            onSort={(m) => handleLeaderboardSortChange(null, m)}
-                          />
+                          {showTimeMetrics && (
+                            <SortableHeaderCell
+                              metric="avgTimeSpentSeconds"
+                              activeMetric={leaderboardSortBy}
+                              label="Avg Time Spent"
+                              onSort={(m) => handleLeaderboardSortChange(null, m)}
+                            />
+                          )}
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1796,20 +1976,22 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                   sx={{ fontWeight: 700 }}
                                 />
                               </TableCell>
-                              <TableCell align="center">
-                                <Typography
-                                  variant="body2"
-                                  fontWeight={leaderboardSortBy === "avgTimeSpentSeconds" ? 800 : 500}
-                                  color={leaderboardSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.primary"}
-                                >
-                                  {formatTime(u.avgTimeSpentSeconds)}
-                                </Typography>
-                              </TableCell>
+                              {showTimeMetrics && (
+                                <TableCell align="center">
+                                  <Typography
+                                    variant="body2"
+                                    fontWeight={leaderboardSortBy === "avgTimeSpentSeconds" ? 800 : 500}
+                                    color={leaderboardSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.primary"}
+                                  >
+                                    {formatTime(u.avgTimeSpentSeconds)}
+                                  </Typography>
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
+                            <TableCell colSpan={showTimeMetrics ? 4 : 3} align="center" sx={{ py: 3 }}>
                               <Typography variant="body2" color="text.secondary">
                                 No user activity recorded for this route/filter.
                               </Typography>
@@ -1863,7 +2045,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                           Global Team Performance
                         </Typography>
                         <Tooltip
-                          title="Platform activity broken down by regional teams, comparing unique visitors, total visits, total actions, and average time spent per visit."
+                          title="Platform activity broken down by regional teams, comparing unique visitors, total visits, and total actions."
                           arrow
                         >
                           <IconButton size="small" aria-label="Global Team Performance info">
@@ -1888,9 +2070,11 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         <ToggleButton value="actions" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
                           By Actions
                         </ToggleButton>
-                        <ToggleButton value="avgTimeSpentSeconds" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
-                          By Avg Time
-                        </ToggleButton>
+                        {showTimeMetrics && (
+                          <ToggleButton value="avgTimeSpentSeconds" sx={{ px: 1.2, py: 0.5, fontSize: "0.75rem", fontWeight: 600 }}>
+                            By Avg Time
+                          </ToggleButton>
+                        )}
                       </ToggleButtonGroup>
                     </Box>
 
@@ -1942,12 +2126,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                             label="Actions"
                             onSort={(m) => handleRegionalSortChange(null, m)}
                           />
-                          <SortableHeaderCell
-                            metric="avgTimeSpentSeconds"
-                            activeMetric={regionalSortBy}
-                            label="Avg Time Spent"
-                            onSort={(m) => handleRegionalSortChange(null, m)}
-                          />
+                          {showTimeMetrics && (
+                            <SortableHeaderCell
+                              metric="avgTimeSpentSeconds"
+                              activeMetric={regionalSortBy}
+                              label="Avg Time Spent"
+                              onSort={(m) => handleRegionalSortChange(null, m)}
+                            />
+                          )}
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1989,20 +2175,22 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                   sx={{ fontWeight: 700 }}
                                 />
                               </TableCell>
-                              <TableCell align="center">
-                                <Typography
-                                  variant="body2"
-                                  fontWeight={regionalSortBy === "avgTimeSpentSeconds" ? 800 : 500}
-                                  color={regionalSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.primary"}
-                                >
-                                  {formatTime(r.avgTimeSpentSeconds)}
-                                </Typography>
-                              </TableCell>
+                              {showTimeMetrics && (
+                                <TableCell align="center">
+                                  <Typography
+                                    variant="body2"
+                                    fontWeight={regionalSortBy === "avgTimeSpentSeconds" ? 800 : 500}
+                                    color={regionalSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.primary"}
+                                  >
+                                    {formatTime(r.avgTimeSpentSeconds)}
+                                  </Typography>
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                            <TableCell colSpan={showTimeMetrics ? 5 : 4} align="center" sx={{ py: 3 }}>
                               <Typography variant="body2" color="text.secondary">
                                 No team metrics found.
                               </Typography>
@@ -2044,7 +2232,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         Peak Activity Windows
                       </Typography>
                       <Tooltip
-                        title="The busiest 1-hour time slot on the platform for each day of the week, based on visit counts."
+                        title="The busiest 1-hour time slot on the platform for each day of the week, based on how many content views happened in that hour."
                         arrow
                       >
                         <IconButton size="small" aria-label="Peak Activity Windows info">
@@ -2075,7 +2263,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         <TableRow>
                           <TableCell>Day of Week</TableCell>
                           <TableCell align="center">Peak Hour Window</TableCell>
-                          <TableCell align="center">Visit Count</TableCell>
+                          <TableCell align="center">View Count</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -2088,7 +2276,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                 {String((p.peakHour + 1) % 24).padStart(2, "0")}:00
                               </TableCell>
                               <TableCell align="center">
-                                <Chip label={`${p.visitCount} visits`} size="small" color="secondary" />
+                                <Chip label={`${p.visitCount} views`} size="small" color="secondary" />
                               </TableCell>
                             </TableRow>
                           ))

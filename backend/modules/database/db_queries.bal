@@ -388,7 +388,7 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region), buildTeamPredicate(filter.team));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
@@ -487,11 +487,25 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region), buildTeamPredicate(filter.team));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     query = sql:queryConcat(query, `
+        ),
+        LogVisitGaps AS (
+            SELECT 
+                dl.*,
+                CASE WHEN LAG(dl.event_timestamp) OVER (PARTITION BY dl.user_email ORDER BY dl.event_timestamp, dl.id) IS NULL
+                          OR TIMESTAMPDIFF(SECOND, LAG(dl.event_timestamp) OVER (PARTITION BY dl.user_email ORDER BY dl.event_timestamp, dl.id), dl.event_timestamp) > ${VISIT_GAP_SECONDS}
+                     THEN 1 ELSE 0 END as newVisit
+            FROM DeduplicatedLogs dl
+        ),
+        LogVisits AS (
+            SELECT 
+                g.*,
+                CONCAT(g.user_email, '#', CAST(SUM(g.newVisit) OVER (PARTITION BY g.user_email ORDER BY g.event_timestamp, g.id) AS SIGNED)) as visitKey
+            FROM LogVisitGaps g
         ),
         UniqueSessionTimes AS (
             SELECT 
@@ -514,13 +528,13 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             COALESCE(NULLIF(MAX(d.user_name), ''), d.user_email) as userName,
             COALESCE(NULLIF(MAX(d.department), ''), 'N/A') as department,
             COALESCE(NULLIF(MAX(d.region), ''), 'N/A') as region,
-            CAST(COUNT(DISTINCT CASE WHEN d.session_id IS NOT NULL AND d.session_id != '' THEN d.session_id END) AS SIGNED) as visits,
+            CAST(COUNT(DISTINCT d.visitKey) AS SIGNED) as visits,
             CAST(SUM(CASE WHEN UPPER(d.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) AS SIGNED) as actions,
             CAST(COALESCE(
-                MAX(uts.totalTimeSpent) / NULLIF(COUNT(DISTINCT CASE WHEN d.session_id IS NOT NULL AND d.session_id != '' THEN d.session_id END), 0), 
+                MAX(uts.totalTimeSpent) / NULLIF(COUNT(DISTINCT d.visitKey), 0), 
                 0
             ) AS SIGNED) as avgTimeSpentSeconds
-        FROM DeduplicatedLogs d
+        FROM LogVisits d
         LEFT JOIN UserTimeSummary uts ON uts.user_email = d.user_email
         GROUP BY d.user_email
     `);
@@ -550,6 +564,8 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
         WITH BaseLogs AS (
             SELECT 
                 UPPER(l.region) as region,
+                l.id,
+                l.event_timestamp,
                 l.user_email,
                 l.user_name,
                 l.session_id,
@@ -565,15 +581,29 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
             LEFT JOIN section s ON s.section_id = c.section_id
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-            WHERE UPPER(l.region) IN ('NA', 'ME', 'APAC', 'AFRICA', 'LATAM', 'EU', 'UK')
+            WHERE UPPER(l.region) IN ('NA', 'ME', 'APAC', 'AFRICA', 'LATAM', 'EU', 'UK', 'SALES DEVELOPMENT', 'UK & EU')
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region), buildTeamPredicate(filter.team));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     query = sql:queryConcat(query, `
+        ),
+        RegionVisitGaps AS (
+            SELECT 
+                bl.*,
+                CASE WHEN LAG(bl.event_timestamp) OVER (PARTITION BY bl.user_email ORDER BY bl.event_timestamp, bl.id) IS NULL
+                          OR TIMESTAMPDIFF(SECOND, LAG(bl.event_timestamp) OVER (PARTITION BY bl.user_email ORDER BY bl.event_timestamp, bl.id), bl.event_timestamp) > ${VISIT_GAP_SECONDS}
+                     THEN 1 ELSE 0 END as newVisit
+            FROM BaseLogs bl
+        ),
+        RegionVisits AS (
+            SELECT 
+                g.*,
+                CONCAT(g.user_email, '#', CAST(SUM(g.newVisit) OVER (PARTITION BY g.user_email ORDER BY g.event_timestamp, g.id) AS SIGNED)) as visitKey
+            FROM RegionVisitGaps g
         ),
         DeduplicatedSessionTimes AS (
             SELECT 
@@ -599,7 +629,6 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
                 COALESCE(MAX(NULLIF(user_name, '')), user_email) as user_name
             FROM BaseLogs
             WHERE user_email IS NOT NULL AND user_email != ''
-              AND session_id IS NOT NULL AND session_id != ''
             GROUP BY region, user_email
         ),
         RegionalUsersAgg AS (
@@ -611,15 +640,15 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
         )
         SELECT 
             b.region as region,
-            CAST(COUNT(DISTINCT CASE WHEN b.session_id IS NOT NULL AND b.session_id != '' THEN b.user_email END) AS SIGNED) as uniqueVisits,
-            CAST(COUNT(DISTINCT CASE WHEN b.session_id IS NOT NULL AND b.session_id != '' THEN b.session_id END) AS SIGNED) as totalVisits,
+            CAST(COUNT(DISTINCT b.user_email) AS SIGNED) as uniqueVisits,
+            CAST(COUNT(DISTINCT b.visitKey) AS SIGNED) as totalVisits,
             CAST(SUM(CASE WHEN UPPER(b.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) AS SIGNED) as actions,
             CAST(COALESCE(
-                MAX(rts.totalTimeSpent) / NULLIF(COUNT(DISTINCT CASE WHEN b.session_id IS NOT NULL AND b.session_id != '' THEN b.session_id END), 0), 
+                MAX(rts.totalTimeSpent) / NULLIF(COUNT(DISTINCT b.visitKey), 0), 
                 0
             ) AS SIGNED) as avgTimeSpentSeconds,
             COALESCE(MAX(rua.uniqueVisitorDetails), JSON_ARRAY()) as uniqueVisitorDetails
-        FROM BaseLogs b
+        FROM RegionVisits b
         LEFT JOIN RegionalTimeSummary rts ON rts.region = b.region
         LEFT JOIN RegionalUsersAgg rua ON rua.region = b.region
         GROUP BY b.region
@@ -676,7 +705,7 @@ isolated function getPeakActivityTimesQuery(types:AnalyticsFilter filter) return
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region), buildTeamPredicate(filter.team));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
@@ -725,7 +754,7 @@ isolated function getTopSearchesQuery(types:AnalyticsFilter filter) returns sql:
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region), buildTeamPredicate(filter.team));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
@@ -740,7 +769,7 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
     int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
 
     sql:ParameterizedQuery datePred = buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset);
-    sql:ParameterizedQuery regionPred = buildRegionPredicate(filter.region);
+    sql:ParameterizedQuery regionPred = sql:queryConcat(buildRegionPredicate(filter.region), buildTeamPredicate(filter.team));
     sql:ParameterizedQuery emailPred = buildUserEmailPredicate(filter.userEmail);
     sql:ParameterizedQuery routePred = buildPageRoutePredicate(filter.pageRoute);
 
@@ -768,6 +797,8 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
         ),
         PlatformEventLogs AS (
             SELECT 
+                l.id,
+                l.event_timestamp,
                 l.event_type,
                 l.user_email,
                 l.user_name,
@@ -788,6 +819,20 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
     query = sql:queryConcat(query, part2, datePred, regionPred, emailPred, routePred);
 
     sql:ParameterizedQuery part3 = `
+        ),
+        PlatformVisitGaps AS (
+            SELECT 
+                pe.*,
+                CASE WHEN LAG(pe.event_timestamp) OVER (PARTITION BY pe.user_email ORDER BY pe.event_timestamp, pe.id) IS NULL
+                          OR TIMESTAMPDIFF(SECOND, LAG(pe.event_timestamp) OVER (PARTITION BY pe.user_email ORDER BY pe.event_timestamp, pe.id), pe.event_timestamp) > ${VISIT_GAP_SECONDS}
+                     THEN 1 ELSE 0 END as newVisit
+            FROM PlatformEventLogs pe
+        ),
+        PlatformVisits AS (
+            SELECT 
+                g.*,
+                CONCAT(g.user_email, '#', CAST(SUM(g.newVisit) OVER (PARTITION BY g.user_email ORDER BY g.event_timestamp, g.id) AS SIGNED)) as visitKey
+            FROM PlatformVisitGaps g
         ),
         DistinctTotalUsers AS (
             SELECT 
@@ -832,10 +877,10 @@ isolated function getAnalyticsTotalsQuery(types:AnalyticsFilter filter) returns 
 
             CAST(COALESCE(
                 SUM(CASE WHEN UPPER(p.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) / 
-                NULLIF(COUNT(DISTINCT CASE WHEN session_id IS NOT NULL AND session_id != '' THEN session_id END), 0), 
+                NULLIF(COUNT(DISTINCT p.visitKey), 0), 
                 0.0
             ) AS DECIMAL(10,2)) as avgActionsPerVisit
-        FROM PlatformEventLogs p
+        FROM PlatformVisits p
         LEFT JOIN TotalUsersAgg tua ON 1=1
     `;
 
@@ -874,7 +919,7 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
     `;
 
     query = sql:queryConcat(query, timeLookbackPredicate);
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region), buildTeamPredicate(filter.team));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
@@ -901,6 +946,8 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
         PlatformDailyLogs AS (
             SELECT 
                 DATE_FORMAT(DATE_ADD(l.event_timestamp, INTERVAL ${tzOffset} MINUTE), '%Y-%m-%d') as eventDate,
+                l.id,
+                l.event_timestamp,
                 l.event_type,
                 l.user_email,
                 l.session_id,
@@ -918,11 +965,44 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
     `);
 
     query = sql:queryConcat(query, datePredicate);
-    query = sql:queryConcat(query, buildRegionPredicate(filter.region));
+    query = sql:queryConcat(query, buildRegionPredicate(filter.region), buildTeamPredicate(filter.team));
     query = sql:queryConcat(query, buildUserEmailPredicate(filter.userEmail));
     query = sql:queryConcat(query, buildPageRoutePredicate(filter.pageRoute));
 
     return sql:queryConcat(query, `
+        ),
+        DailyVisitGaps AS (
+            SELECT 
+                pd.*,
+                CASE WHEN LAG(pd.event_timestamp) OVER (PARTITION BY pd.user_email ORDER BY pd.event_timestamp, pd.id) IS NULL
+                          OR TIMESTAMPDIFF(SECOND, LAG(pd.event_timestamp) OVER (PARTITION BY pd.user_email ORDER BY pd.event_timestamp, pd.id), pd.event_timestamp) > ${VISIT_GAP_SECONDS}
+                     THEN 1 ELSE 0 END as newVisit
+            FROM PlatformDailyLogs pd
+        ),
+        DailyVisits AS (
+            SELECT 
+                g.*,
+                CONCAT(g.user_email, '#', CAST(SUM(g.newVisit) OVER (PARTITION BY g.user_email ORDER BY g.event_timestamp, g.id) AS SIGNED)) as visitKey
+            FROM DailyVisitGaps g
+        ),
+        DailyVisitors AS (
+            SELECT eventDate, JSON_ARRAYAGG(user_email) as visitorEmails
+            FROM (
+                SELECT DISTINCT eventDate, user_email
+                FROM PlatformDailyLogs
+                WHERE UPPER(event_type) = 'SESSION_TIME'
+                  AND (trackingType = 'page_view_duration' OR trackingType IS NULL)
+                  AND user_email IS NOT NULL AND user_email != ''
+            ) v
+            GROUP BY eventDate
+        ),
+        DailySessions AS (
+            SELECT eventDate, JSON_ARRAYAGG(visitKey) as sessionIds
+            FROM (
+                SELECT DISTINCT eventDate, visitKey
+                FROM DailyVisits
+            ) s
+            GROUP BY eventDate
         )
         SELECT 
             p.eventDate as date,
@@ -949,11 +1029,16 @@ isolated function getDailyTrendsQuery(types:AnalyticsFilter filter) returns sql:
 
             CAST(COALESCE(
                 SUM(CASE WHEN UPPER(p.event_type) != 'SESSION_TIME' THEN 1 ELSE 0 END) / 
-                NULLIF(COUNT(DISTINCT CASE WHEN p.session_id IS NOT NULL AND p.session_id != '' THEN p.session_id END), 0), 
+                NULLIF(COUNT(DISTINCT p.visitKey), 0), 
                 0.0
-            ) AS DECIMAL(10,2)) as avgActionsPerVisit
-        FROM PlatformDailyLogs p
+            ) AS DECIMAL(10,2)) as avgActionsPerVisit,
+
+            COALESCE(MAX(dv.visitorEmails), JSON_ARRAY()) as visitorEmails,
+            COALESCE(MAX(ds.sessionIds), JSON_ARRAY()) as sessionIds
+        FROM DailyVisits p
         LEFT JOIN DailySessionDurationSummary dss ON dss.eventDate = p.eventDate
+        LEFT JOIN DailyVisitors dv ON dv.eventDate = p.eventDate
+        LEFT JOIN DailySessions ds ON ds.eventDate = p.eventDate
         GROUP BY p.eventDate
         ORDER BY p.eventDate ASC
     `);

@@ -29,6 +29,9 @@ public const int DEFAULT_TZ_OFFSET_MINUTES = 330;
 public const int MIN_TZ_OFFSET_MINUTES = -840;
 public const int MAX_TZ_OFFSET_MINUTES = 840;
 
+// A visit ends after this many seconds without any activity (30 minutes)
+const int VISIT_GAP_SECONDS = 1800;
+
 // Production launch date cutoff in analytics feature (August 21, 2026)
 public const string PROD_LAUNCH_DATE_STR = "2026-08-21";
 

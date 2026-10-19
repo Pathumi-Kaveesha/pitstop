@@ -474,12 +474,24 @@ public isolated function getComprehensiveAnalytics(types:AnalyticsFilter filter)
 # + filter - Applied time range, region, user email, page route, and timezone offset filters
 # + return - Array of DailyTrendMetric records or database error
 public isolated function getDailyTrendMetrics(types:AnalyticsFilter filter) returns types:DailyTrendMetric[]|error {
-    stream<types:DailyTrendMetric, sql:Error?> trendStream = dbClient->query(getDailyTrendsQuery(filter));
-    types:DailyTrendMetric[]|error metrics = from var item in trendStream select item;
+    stream<DbDailyTrendMetric, sql:Error?> trendStream = dbClient->query(getDailyTrendsQuery(filter));
+    types:DailyTrendMetric[] metrics = [];
+
+    check from DbDailyTrendMetric row in trendStream
+        do {
+            metrics.push({
+                date: row.date,
+                totalViews: row.totalViews,
+                uniqueViews: row.uniqueViews,
+                timeSpentSeconds: row.timeSpentSeconds,
+                totalEngagements: row.totalEngagements,
+                avgActionsPerVisit: row.avgActionsPerVisit,
+                visitorEmails: parseStringArray(row.visitorEmails),
+                sessionIds: parseStringArray(row.sessionIds)
+            });
+        };
+
     error? closeErr = trendStream.close();
-    if metrics is error {
-        return metrics;
-    }
     if closeErr is error {
         return closeErr;
     }

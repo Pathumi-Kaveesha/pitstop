@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Box,
   Paper,
@@ -58,7 +58,7 @@ interface MetricConfig {
   formatValue: (val: number) => string;
 }
 
-const METRIC_OPTIONS: MetricConfig[] = [
+const ALL_METRIC_OPTIONS: MetricConfig[] = [
   {
     id: "totalViews",
     label: "Total Views",
@@ -102,6 +102,7 @@ const METRIC_OPTIONS: MetricConfig[] = [
 
 interface AnalyticsTrendsChartProps {
   trendData: TrendDataPoint[];
+  showTimeMetrics?: boolean;
 }
 
 // Prod launch date threshold (Aug 21, 2026)
@@ -129,7 +130,12 @@ const isValidCalendarDate = (dateStr: string): boolean => {
 
 export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
   trendData = [],
+  showTimeMetrics = false,
 }) => {
+  const METRIC_OPTIONS = useMemo(
+    () => ALL_METRIC_OPTIONS.filter((m) => showTimeMetrics || m.id !== "timeSpentSeconds"),
+    [showTimeMetrics]
+  );
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
@@ -147,6 +153,16 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
   const handleClosePopover = () => {
     setAnchorEl(null);
   };
+
+  // Drop the time metric from the selection when it gets hidden, so the chart never ends up empty
+  useEffect(() => {
+    if (showTimeMetrics) return;
+    setSelectedMetrics((prev) => {
+      if (!prev.includes("timeSpentSeconds")) return prev;
+      const remaining = prev.filter((id) => id !== "timeSpentSeconds");
+      return remaining.length > 0 ? remaining : ["totalViews", "uniqueViews"];
+    });
+  }, [showTimeMetrics]);
 
   const handleMetricToggle = (metricId: string) => {
     setSelectedMetrics((prev) => {
@@ -227,7 +243,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
   }, [formattedChartData.length]);
 
   const isLargeRange = formattedChartData.length > 25;
-  const isTimeSpentSelected = selectedMetrics.includes("timeSpentSeconds");
+  const isTimeSpentSelected = showTimeMetrics && selectedMetrics.includes("timeSpentSeconds");
 
   // Custom Black Tooltip matching design specs
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -292,7 +308,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
 
   const activeMetricConfigs = useMemo(() => {
     return METRIC_OPTIONS.filter((m) => selectedMetrics.includes(m.id));
-  }, [selectedMetrics]);
+  }, [selectedMetrics, METRIC_OPTIONS]);
 
   return (
     <Paper

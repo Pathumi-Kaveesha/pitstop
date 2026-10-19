@@ -172,7 +172,7 @@ const Header = (props: HeaderProps) => {
   }, [publiclyVisibleRoutes]);
 
   const newRoutes = useMemo(() => {
-    const visibleItemCount = isPaddock ? 8 : 5;
+    const visibleItemCount = isPaddock ? 9 : 5;
     const overflowThreshold = isPaddock ? visibleItemCount : visibleItemCount + 1;
     const hasMoreItems = baseMenuRoutes.length > overflowThreshold;
     let finalRoutes: RouteResponse[] = [];
