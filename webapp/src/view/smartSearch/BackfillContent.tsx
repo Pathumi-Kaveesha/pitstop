@@ -15,7 +15,7 @@
 // under the License.
 
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link as RouterLink } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -88,7 +88,6 @@ const STATUS_META: Record<
 // Admin page that indexes everything matching the filters in the background, in automatic batches.
 export default function BackfillContent() {
   const theme = useTheme();
-  const navigate = useNavigate();
   const [contentType, setContentType] = useState("");
   const [contentSubtype, setContentSubtype] = useState("");
   const [statusFilter, setStatusFilter] = useState<SmartSearchBackfillStatus | "">("");
@@ -568,8 +567,9 @@ export default function BackfillContent() {
 
                     {item.routePath && (
                       <Chip
+                        component={RouterLink}
+                        to={item.routePath}
                         clickable
-                        onClick={() => navigate(item.routePath)}
                         icon={<ArrowForwardIcon sx={{ fontSize: "0.85rem !important" }} />}
                         label="Go to page"
                         size="small"
