@@ -967,6 +967,26 @@ type DbRegionalTimeMetric record {|
     json uniqueVisitorDetails;
 |};
 
+# Internal record used to stream SQL query results for daily trends before mapping to public types.
+type DbDailyTrendMetric record {|
+    # Date of the recorded activity trend (YYYY-MM-DD)
+    string date;
+    # Total page views recorded on this date
+    int totalViews;
+    # Number of distinct visitors on this date
+    int uniqueViews;
+    # Total cumulative time spent in seconds on this date
+    int timeSpentSeconds;
+    # Total user interactions and engagements on this date
+    int totalEngagements;
+    # Average number of actions performed per visit on this date
+    decimal avgActionsPerVisit;
+    # Raw JSON array of distinct visitor emails retrieved from database
+    json visitorEmails;
+    # Raw JSON array of distinct session ids retrieved from database
+    json sessionIds;
+|};
+
 # Internal record used to stream SQL query results for global analytics totals before mapping to public types.
 type DbAnalyticsTotals record {|
     # Total number of content views

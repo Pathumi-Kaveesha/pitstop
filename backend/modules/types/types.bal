@@ -138,6 +138,8 @@ public type AnalyticsFilter record {|
     string? endDate = ();
     # Optional region filter
     string? region = ();
+    # Optional team (department) filter, e.g. SALES, Sales Engineering
+    string? team = ();
     # Optional individual user email filter
     string? userEmail = ();
     # Optional page route filter
@@ -260,6 +262,10 @@ public type DailyTrendMetric record {|
     int totalEngagements;
     # Average number of actions performed per visit on this date
     decimal avgActionsPerVisit;
+    # Emails of the distinct visitors on this date, so weekly and monthly views can count each person once
+    string[] visitorEmails = [];
+    # Ids of the distinct sessions on this date, so weekly and monthly views can count each session once
+    string[] sessionIds = [];
 |};
 
 # Comprehensive Admin Analytics Summary.

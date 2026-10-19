@@ -686,6 +686,30 @@ isolated function buildRegionPredicate(string? region) returns sql:Parameterized
     return query;
 }
 
+# Constructs parameterized SQL predicate for team (department) filtering (supports multi-select).
+# A user with several teams has them saved as one comma separated text, so each team is matched as a whole item of that list.
+#
+# + team - Optional comma-separated team names
+# + return - Parameterized SQL query fragment
+isolated function buildTeamPredicate(string? team) returns sql:ParameterizedQuery {
+    if team is () || team.trim() == "" {
+        return ``;
+    }
+    string[] teams = splitCommaSeparated(team);
+    if teams.length() == 0 {
+        return ``;
+    }
+    sql:ParameterizedQuery query = ` AND (`;
+    foreach int i in 0 ..< teams.length() {
+        if i > 0 {
+            query = sql:queryConcat(query, ` OR `);
+        }
+        query = sql:queryConcat(query, `FIND_IN_SET(${teams[i].trim().toUpperAscii()}, REPLACE(UPPER(TRIM(l.department)), ', ', ',')) > 0`);
+    }
+    query = sql:queryConcat(query, `)`);
+    return query;
+}
+
 # Constructs parameterized SQL predicate for individual user email filtering (supports multi-select).
 #
 # + userEmail - Optional comma-separated target user emails
@@ -738,12 +762,10 @@ isolated function buildPageRoutePredicate(string? pageRoute) returns sql:Paramet
     }
 
     return ` AND (
-        LOWER(TRIM(r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${cleanRoute})), '%')
-        OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT('%', LOWER(TRIM(${cleanRoute})), '%')
-        OR LOWER(TRIM(r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
-        OR LOWER(TRIM(parent_r.label)) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
-        OR LOWER(REPLACE(r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
-        OR LOWER(REPLACE(parent_r.label, ' ', '-')) LIKE CONCAT('%', REPLACE(LOWER(TRIM(${cleanRoute})), '/', ''), '%')
+        LOWER(TRIM(r.route_path)) = LOWER(TRIM(${cleanRoute}))
+        OR LOWER(TRIM(r.route_path)) LIKE CONCAT(LOWER(TRIM(${cleanRoute})), '/%')
+        OR LOWER(TRIM(parent_r.route_path)) = LOWER(TRIM(${cleanRoute}))
+        OR LOWER(TRIM(parent_r.route_path)) LIKE CONCAT(LOWER(TRIM(${cleanRoute})), '/%')
         OR l.meta_page_route = ${cleanRoute}
         OR l.meta_page_route LIKE CONCAT(${cleanRoute}, '/%')
         OR (l.meta_page_route IS NULL AND (
@@ -776,6 +798,15 @@ isolated function splitCommaSeparated(string input) returns string[] {
         parts.push(current.trim());
     }
     return parts;
+}
+
+# Safely parses raw SQL JSON output into a string array.
+#
+# + jsonVal - Raw JSON value retrieved from database JSON column queries
+# + return - Clean array of strings
+isolated function parseStringArray(json jsonVal) returns string[] {
+    string[]|error parsed = jsonVal.cloneWithType();
+    return parsed is string[] ? parsed : [];
 }
 
 # Safely parses raw SQL JSON output into a strongly-typed VisitorUser array.

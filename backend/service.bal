@@ -715,6 +715,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + startDate - Optional start date filter (YYYY-MM-DD)
     # + endDate - Optional end date filter (YYYY-MM-DD)
     # + region - Optional region/team filter
+    # + team - Optional team (department) filter, e.g. SALES
     # + userEmail - Optional individual user email filter
     # + pageRoute - Optional parent or sub-page route filter (e.g. /channel-sales)
     # + sortBy - Optional sorting metric for top content ("totalViews" or "uniqueViews")
@@ -725,6 +726,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? startDate, 
         string? endDate, 
         string? region, 
+        string? team,
         string? userEmail, 
         string? pageRoute,
         string? sortBy,
@@ -740,6 +742,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             startDate: startDate,
             endDate: endDate,
             region: region,
+            team: team,
             userEmail: userEmail,
             pageRoute: pageRoute,
             sortBy: sortBy,
@@ -761,6 +764,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + startDate - Optional start date filter
     # + endDate - Optional end date filter
     # + region - Optional region filter
+    # + team - Optional team (department) filter, e.g. SALES
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
     # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
@@ -770,6 +774,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? startDate, 
         string? endDate, 
         string? region, 
+        string? team,
         string? userEmail,
         string? pageRoute,
         int? timezoneOffsetMinutes
@@ -784,6 +789,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             startDate: startDate, 
             endDate: endDate, 
             region: region, 
+            team: team,
             userEmail: userEmail,
             pageRoute: pageRoute,
             timezoneOffsetMinutes: timezoneOffsetMinutes
@@ -802,6 +808,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + startDate - Optional start date filter
     # + endDate - Optional end date filter
     # + region - Optional region filter
+    # + team - Optional team (department) filter, e.g. SALES
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
     # + sortBy - Optional sorting metric ("totalViews" or "uniqueViews")
@@ -812,6 +819,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? startDate, 
         string? endDate, 
         string? region, 
+        string? team,
         string? userEmail, 
         string? pageRoute,
         string? sortBy,
@@ -827,6 +835,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             startDate: startDate, 
             endDate: endDate, 
             region: region, 
+            team: team,
             userEmail: userEmail,
             pageRoute: pageRoute,
             sortBy: sortBy,
@@ -848,6 +857,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + startDate - Optional start date filter
     # + endDate - Optional end date filter
     # + region - Optional region filter
+    # + team - Optional team (department) filter, e.g. SALES
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
     # + sortBy - Optional sorting metric ("actions", "visits", or "avgTimeSpentSeconds")
@@ -858,6 +868,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? startDate, 
         string? endDate, 
         string? region, 
+        string? team,
         string? userEmail,
         string? pageRoute,
         string? sortBy,
@@ -873,6 +884,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             startDate: startDate, 
             endDate: endDate, 
             region: region, 
+            team: team,
             userEmail: userEmail,
             pageRoute: pageRoute,
             sortBy: sortBy,
@@ -891,6 +903,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + startDate - Optional start date filter
     # + endDate - Optional end date filter
     # + region - Optional region filter
+    # + team - Optional team (department) filter, e.g. SALES
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
     # + sortBy - Optional sorting metric ("totalVisits", "uniqueVisits", "actions", or "avgTimeSpentSeconds")
@@ -901,6 +914,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? startDate, 
         string? endDate, 
         string? region, 
+        string? team,
         string? userEmail,
         string? pageRoute,
         string? sortBy,
@@ -916,6 +930,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             startDate: startDate, 
             endDate: endDate, 
             region: region, 
+            team: team,
             userEmail: userEmail,
             pageRoute: pageRoute,
             sortBy: sortBy,
@@ -934,6 +949,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + startDate - Optional start date filter
     # + endDate - Optional end date filter
     # + region - Optional region filter
+    # + team - Optional team (department) filter, e.g. SALES
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
     # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
@@ -943,6 +959,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? startDate, 
         string? endDate, 
         string? region, 
+        string? team,
         string? userEmail,
         string? pageRoute,
         int? timezoneOffsetMinutes
@@ -957,6 +974,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             startDate: startDate, 
             endDate: endDate, 
             region: region, 
+            team: team,
             userEmail: userEmail,
             pageRoute: pageRoute,
             timezoneOffsetMinutes: timezoneOffsetMinutes
@@ -974,6 +992,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     # + startDate - Optional start date filter
     # + endDate - Optional end date filter
     # + region - Optional region filter
+    # + team - Optional team (department) filter, e.g. SALES
     # + userEmail - Optional user email filter
     # + pageRoute - Optional page route filter
     # + timezoneOffsetMinutes - Optional timezone offset in minutes from UTC
@@ -983,6 +1002,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         string? startDate, 
         string? endDate, 
         string? region, 
+        string? team,
         string? userEmail,
         string? pageRoute,
         int? timezoneOffsetMinutes
@@ -997,6 +1017,7 @@ service http:InterceptableService / on new http:Listener(9090) {
             startDate: startDate, 
             endDate: endDate, 
             region: region, 
+            team: team,
             userEmail: userEmail,
             pageRoute: pageRoute,
             timezoneOffsetMinutes: timezoneOffsetMinutes
