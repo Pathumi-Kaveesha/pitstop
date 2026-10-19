@@ -256,6 +256,23 @@ public isolated function getSmartSearchIndexFailures() returns SmartSearchIndexF
         select result;
 }
 
+# Get the Pitstop page each of the given content items is on.
+#
+# + contentIds - The content ids to look up
+# + return - Each content id's route path, as a map keyed by the id, or an error
+public isolated function getContentRoutePaths(int[] contentIds) returns map<string>|error {
+    map<string> routePaths = {};
+    if contentIds.length() == 0 {
+        return routePaths;
+    }
+    stream<ContentRoutePath, sql:Error?> resultStream = dbClient->query(getContentRoutePathsQuery(contentIds));
+    check from ContentRoutePath result in resultStream
+        do {
+            routePaths[result.contentId.toString()] = result.routePath;
+        };
+    return routePaths;
+}
+
 # Clear an indexing failure.
 #
 # + contentId - The content's id

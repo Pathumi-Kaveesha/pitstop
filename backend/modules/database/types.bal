@@ -248,6 +248,17 @@ public type IndexingInfo record {|
     string? transcriptLink;
 |};
 
+# The Pitstop page one content item is on.
+#
+# + contentId - Id of the content
+# + routePath - The Pitstop page this content is on, empty when it has none
+public type ContentRoutePath record {|
+    @sql:Column {name: "content_id"}
+    int contentId;
+    @sql:Column {name: "route_path"}
+    string routePath;
+|};
+
 # One content item's raw indexing status, for the admin bulk-index status list.
 #
 # + contentId - Id of the content

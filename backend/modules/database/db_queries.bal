@@ -1262,6 +1262,32 @@ isolated function getSmartSearchIndexFailuresQuery() returns sql:ParameterizedQu
         s.updated_on DESC
 `;
 
+# Query for the Pitstop page each of the given content items is on.
+#
+# + contentIds - The content ids to look up, at least one
+# + return - SQL parameterized query
+isolated function getContentRoutePathsQuery(int[] contentIds) returns sql:ParameterizedQuery {
+    sql:ParameterizedQuery idList = `${contentIds[0]}`;
+    foreach int i in 1 ..< contentIds.length() {
+        idList = sql:queryConcat(idList, `, `, `${contentIds[i]}`);
+    }
+    return sql:queryConcat(`
+        SELECT
+            c.content_id,
+            COALESCE(sec_route.route_path, direct_route.route_path, '') AS route_path
+        FROM
+            content c
+        LEFT JOIN
+            section sec ON sec.section_id = c.section_id
+        LEFT JOIN
+            route sec_route ON sec_route.route_id = sec.route_id
+        LEFT JOIN
+            route direct_route ON direct_route.route_id = c.route_id
+        WHERE
+            c.content_id IN (`, idList, `)
+    `);
+}
+
 # Query to clear an indexing failure.
 #
 # + contentId - The content's id

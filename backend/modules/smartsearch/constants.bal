@@ -72,6 +72,18 @@ const decimal BULK_INDEX_BATCH_INTERVAL_SECONDS = 65;
 // Safety net - bounds how many batches one "index everything" run can submit before giving up.
 const int MAX_BULK_INDEX_ITERATIONS = 500;
 
+// A bulk run keeps at most this many items being indexed at once. The search service works on three at a time, so a few
+// more waiting is plenty - a longer queue only slows the service down for everyone else.
+const int MAX_BULK_IN_FLIGHT = 6;
+
+const decimal BULK_IN_FLIGHT_CHECK_SECONDS = 15;
+
+// A run with a limit above this counts everything matching it as queued, rather than looking up exactly which items.
+const int MAX_QUEUED_LOOKUP = 2000;
+
+// How many times a run checks for room before giving up on a service that never catches up - about an hour.
+const int MAX_BULK_ROOM_CHECKS = 240;
+
 // Stops a run that keeps scanning without ever finding anything to submit.
 const int MAX_EMPTY_INCOMPLETE_SCANS = 3;
 

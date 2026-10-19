@@ -15,6 +15,7 @@
 // under the License.
 
 import { useEffect, useRef, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -32,6 +33,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import UploadRoundedIcon from "@mui/icons-material/UploadRounded";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
@@ -74,9 +76,10 @@ const typeLabel = (type: string): string => {
 
 const STATUS_META: Record<
   SmartSearchBackfillStatus,
-  { label: string; color: "default" | "info" | "success" | "error" }
+  { label: string; color: "default" | "info" | "success" | "error" | "warning" }
 > = {
   not_started: { label: "Not started", color: "default" },
+  queued: { label: "Queued", color: "warning" },
   in_progress: { label: "In progress", color: "info" },
   indexed: { label: "Indexed", color: "success" },
   failed: { label: "Failed", color: "error" },
@@ -561,6 +564,18 @@ export default function BackfillContent() {
                       size="small"
                       sx={{ height: 24, fontSize: "0.75rem", bgcolor: "action.hover", flexShrink: 0 }}
                     />
+
+                    {item.routePath && (
+                      <Chip
+                        component={RouterLink}
+                        to={item.routePath}
+                        clickable
+                        icon={<ArrowForwardIcon sx={{ fontSize: "0.85rem !important" }} />}
+                        label="Go to page"
+                        size="small"
+                        sx={{ height: 24, fontSize: "0.75rem", bgcolor: "action.hover", flexShrink: 0 }}
+                      />
+                    )}
                   </Stack>
                 </Box>
               );

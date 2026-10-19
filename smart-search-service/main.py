@@ -21,10 +21,12 @@ import hashlib
 import logging
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import asynccontextmanager
 
 from typing import Optional
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Path, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 
@@ -66,9 +68,21 @@ from vectorstore import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smart-search-service")
 
+# Index jobs run in a small pool of their own. Waiting jobs then sit in a queue, and don't each hold a worker thread
+# of the pool that search, status and every other request share - a long queue used to starve those.
+_index_executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_INDEX_JOBS, thread_name_prefix="index-job")
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    yield
+    # Jobs still waiting are dropped, so a restart doesn't wait out the whole queue; a running job is left to finish.
+    _index_executor.shutdown(wait=False, cancel_futures=True)
+
+
 # Network visibility is Choreo's "Project" level (only components in this project can reach it, not just the backend), so every
 # route also runs verify_caller, which checks the user's token the backend forwards. Who may see which result is still decided in the backend.
-app = FastAPI(title="Pitstop Smart Search", dependencies=[Depends(verify_caller)])
+app = FastAPI(title="Pitstop Smart Search", dependencies=[Depends(verify_caller)], lifespan=_lifespan)
 
 
 class ErrorResponse(BaseModel):
@@ -223,6 +237,16 @@ def _run_tracked(runner, job, document_id: str, generation: int, *args) -> None:
     finally:
         stop.set()
         _best_effort(finish_index_job, document_id, generation)
+
+
+def _log_crashed_job(future: Future) -> None:
+    if not future.cancelled() and future.exception() is not None:
+        logger.error("An index job crashed", exc_info=future.exception())
+
+
+def _submit_index_job(*job) -> None:
+    """Queues an index job. At most MAX_CONCURRENT_INDEX_JOBS run at once, and the rest wait their turn."""
+    _index_executor.submit(*job).add_done_callback(_log_crashed_job)
 
 
 def _index_job_interrupted(document_id: str) -> bool:
@@ -383,7 +407,7 @@ class IngestDriveLinkRequest(BaseModel):
 
 
 @app.post("/ingest-drive-link")
-async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: BackgroundTasks) -> dict:
+async def ingest_drive_link(body: IngestDriveLinkRequest) -> dict:
     """Indexes a document from a Google Drive link, or an ordinary public webpage, no local
     copy saved.
 
@@ -411,15 +435,20 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
 
         # Claimed now, not once the task actually starts, or a delete queued behind it would go unnoticed
         generation = await _claim_generation(document_id)
-        background_tasks.add_task(
+        _submit_index_job(
             _run_tracked, _run_in_index_slot, _index_webpage_in_background, document_id, generation,
             title, document_id, body.driveLink, page.text, generation,
         )
 
         return {"status": "indexing", "title": title, "documentId": document_id, "fileType": "webpage"}
 
+    lookup_started = time.monotonic()
     try:
         info = await run_in_threadpool(resolve_drive_file, body.driveLink)
+        logger.info(
+            "Drive lookup for %s took %.1fs", _safe_log_value(body.contentId or body.driveLink),
+            time.monotonic() - lookup_started,
+        )
     except ValueError as error:
         # Rejected before indexing started, so record it now
         await _record_ingest_rejection(body.contentId, str(error))
@@ -441,7 +470,7 @@ async def ingest_drive_link(body: IngestDriveLinkRequest, background_tasks: Back
         if info.size_bytes is not None and info.size_bytes > LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES
         else _run_in_index_slot
     )
-    background_tasks.add_task(
+    _submit_index_job(
         _run_tracked, runner, _index_drive_file_in_background, document_id, generation,
         info, title, document_id, body.driveLink, generation, body.displayLink,
     )
