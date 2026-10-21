@@ -14,8 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useMemo, useRef, useState } from "react";
 import axios from "axios";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
@@ -40,7 +39,6 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded";
 import { AppConfig } from "@config/config";
-import { SMART_SEARCH_QUERY_PARAM } from "@config/constant";
 import { useSlowAfter } from "../../hooks/useSlowAfter";
 import { ApiService } from "@utils/apiService";
 import { RATE_LIMIT_MESSAGE, describeSearchFailure } from "@utils/smartSearchFailure";
@@ -229,13 +227,13 @@ export default function SmartSearch() {
     }
   };
 
-  const runSearch = async (text: string) => {
-    if (!text.trim() || searchingRef.current) {
+  const handleSearch = async () => {
+    if (!query.trim() || searchingRef.current) {
       return;
     }
 
     searchingRef.current = true;
-    const searchedQuery = text.trim();
+    const searchedQuery = query.trim();
     const searchId = ++latestSearchRef.current;
     setSearching(true);
     setAnswerLoading(false);
@@ -263,21 +261,6 @@ export default function SmartSearch() {
       setSearching(false);
     }
   };
-
-  const handleSearch = () => runSearch(query);
-
-  const [searchParams, setSearchParams] = useSearchParams();
-  const linkedQuery = useRef(searchParams.get(SMART_SEARCH_QUERY_PARAM)?.trim() ?? "");
-  useEffect(() => {
-    const linked = linkedQuery.current;
-    if (!linked) return;
-    linkedQuery.current = "";
-    setQuery(linked);
-    void runSearch(linked);
-    setSearchParams({}, { replace: true });
-    // Runs once, for the question the page was opened with.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <Box sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2.5, sm: 4 }, pt: 7, pb: 6 }}>

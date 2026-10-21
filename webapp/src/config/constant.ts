@@ -82,5 +82,3 @@ export const ROUTE_ID_SMART_SEARCH_BACKFILL = -9;
 
 // Smart Search is off unless IS_SMART_SEARCH_ENABLED=true is set in config.js, same as IS_MATOMO_ENABLED.
 export const IS_SMART_SEARCH_ENABLED = window.config?.IS_SMART_SEARCH_ENABLED === true;
-// The question the home page and the top bar hand to the Smart Search page in its address, e.g. /smart-search?q=...
-export const SMART_SEARCH_QUERY_PARAM = "q";
