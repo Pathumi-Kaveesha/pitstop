@@ -109,7 +109,7 @@ const int MAX_COMPOSE_PURPOSE_LENGTH = 500;
 // How long a message may take to write before the backend gives up on it, so nobody waits on a slow service for minutes.
 const decimal COMPOSE_TIMEOUT_SECONDS = 120;
 
-// How long the search before it may take; with the time above, a place is held at most 135 s.
+// How long the search before writing may take; with the time above, a place is held at most 135 s.
 const decimal COMPOSE_SEARCH_TIMEOUT_SECONDS = 15;
 
 // How many messages may be being written at once. More than that is turned away with "too many", which keeps the
