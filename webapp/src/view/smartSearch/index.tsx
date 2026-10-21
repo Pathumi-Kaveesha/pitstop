@@ -14,7 +14,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
@@ -39,7 +40,10 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded";
 import { AppConfig } from "@config/config";
+import { SMART_SEARCH_QUERY_PARAM } from "@config/constant";
+import { useSlowAfter } from "../../hooks/useSlowAfter";
 import { ApiService } from "@utils/apiService";
+import { RATE_LIMIT_MESSAGE, describeSearchFailure } from "@utils/smartSearchFailure";
 import { formatSmartSearchSnippet, groupSmartSearchSourcesByDocument } from "@utils/utils";
 import ComponentCard from "@components/ui/content/Card";
 import { ContentResponse, SmartSearchResponse, SmartSearchResult } from "@/types/types";
@@ -51,7 +55,8 @@ const EXAMPLE_PROMPTS = [
   "Onboarding steps for a new hire",
 ];
 
-const RATE_LIMIT_MESSAGE = "You're searching too fast. Please wait a minute and try again.";
+// How long a search or an answer may take before the page says it is taking longer than usual.
+const SLOW_AFTER_MS = 12_000;
 
 // A small icon per result type, so it reads at a glance
 const resultTypeIcon = (source: SmartSearchResult): typeof DescriptionRoundedIcon => {
@@ -155,6 +160,9 @@ export default function SmartSearch() {
     [contents]
   );
 
+  const searchIsSlow = useSlowAfter(searching, SLOW_AFTER_MS);
+  const answerIsSlow = useSlowAfter(answerLoading, SLOW_AFTER_MS);
+
   const showNoSummaryNote =
     hasSearched && !searching && !answerLoading && !answer && !searchError && sources.length > 0;
 
@@ -221,13 +229,13 @@ export default function SmartSearch() {
     }
   };
 
-  const handleSearch = async () => {
-    if (!query.trim() || searchingRef.current) {
+  const runSearch = async (text: string) => {
+    if (!text.trim() || searchingRef.current) {
       return;
     }
 
     searchingRef.current = true;
-    const searchedQuery = query.trim();
+    const searchedQuery = text.trim();
     const searchId = ++latestSearchRef.current;
     setSearching(true);
     setAnswerLoading(false);
@@ -246,11 +254,7 @@ export default function SmartSearch() {
         void fetchAnswer(searchId, searchedQuery, new Set(foundSources.map((source) => source.documentId)));
       }
     } catch (error) {
-      setSearchError(
-        axios.isAxiosError(error) && error.response?.status === 429
-          ? RATE_LIMIT_MESSAGE
-          : "Something went wrong with that search. Please try again."
-      );
+      setSearchError(describeSearchFailure(error));
       setHasSearched(false);
       // eslint-disable-next-line no-console
       console.error(error);
@@ -259,6 +263,21 @@ export default function SmartSearch() {
       setSearching(false);
     }
   };
+
+  const handleSearch = () => runSearch(query);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedQuery = useRef(searchParams.get(SMART_SEARCH_QUERY_PARAM)?.trim() ?? "");
+  useEffect(() => {
+    const linked = linkedQuery.current;
+    if (!linked) return;
+    linkedQuery.current = "";
+    setQuery(linked);
+    void runSearch(linked);
+    setSearchParams({}, { replace: true });
+    // Runs once, for the question the page was opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <Box sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2.5, sm: 4 }, pt: 7, pb: 6 }}>
@@ -356,6 +375,12 @@ export default function SmartSearch() {
         </Stack>
       )}
 
+      {searchIsSlow && (
+        <Alert severity="info" sx={{ mt: 3, borderRadius: 2 }}>
+          Still searching - this is taking longer than usual. The service may be busy.
+        </Alert>
+      )}
+
       {searchError && (
         <Alert severity="error" sx={{ mt: 3, borderRadius: 2 }}>
           {searchError}
@@ -373,7 +398,7 @@ export default function SmartSearch() {
         <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mt: 3 }}>
           <CircularProgress size={16} />
           <Typography variant="body2" color="text.secondary">
-            Writing an AI answer...
+            {answerIsSlow ? "Still writing the AI answer - this is taking longer than usual..." : "Writing an AI answer..."}
           </Typography>
         </Stack>
       )}

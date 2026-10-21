@@ -312,7 +312,7 @@ const Header = (props: HeaderProps) => {
     return () => document.removeEventListener("click", handleClick, true);
   }, [adminPanelDrawerToggle]);
 
-  const handleSearchPage = () => navigateWithLoading("/search");
+  const handleSearchPage = () => navigateWithLoading(IS_SMART_SEARCH_ENABLED ? "/smart-search" : "/search");
 
   const isMyBoardActive = matchPath("/my-board", pathname) !== null;
 
@@ -594,7 +594,7 @@ const Header = (props: HeaderProps) => {
                     {theme.palette.mode === "light" ? <DarkModeIcon /> : <LightModeIcon />}
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Browse Pages">
+                <Tooltip title={IS_SMART_SEARCH_ENABLED ? "Search" : "Browse Pages"}>
                   <IconButton
                     aria-label="open search-page"
                     edge="start"

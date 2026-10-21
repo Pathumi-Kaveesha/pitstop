@@ -1903,13 +1903,16 @@ service http:InterceptableService / on new http:Listener(9090) {
         return http:OK;
     }
 
-    # Search contents.
+    # Search contents. Not available once Smart Search is on, which replaces it.
     #
     # + userInput - User input
     # + return - Success or error responses
     resource function post search\-content(http:RequestContext ctx, string userInput)
-        returns types:ContentResponse[]|http:InternalServerError {
+        returns types:ContentResponse[]|http:NotFound|http:InternalServerError {
 
+        if smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         string customEmailError = "Error while fetching user email.";
         if userEmail is error {
@@ -1954,6 +1957,43 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
         return smartsearch:filterToAuthorizedSources(ctx, result);
+    }
+
+    # Write a short email, chat message, plain summary or explanation about one search result.
+    #
+    # + ctx - Request context
+    # + payload - Which result, what the user searched for, and what kind of message to write
+    # + return - The message, or 400, 404, 429 or 500 when it can't be written
+    resource function post smart\-search/compose(http:RequestContext ctx, @http:Payload smartsearch:ComposeRequest payload)
+        returns smartsearch:ComposeResponse|http:BadRequest|http:NotFound|http:TooManyRequests|http:InternalServerError|
+        http:BadGateway|http:ServiceUnavailable|http:GatewayTimeout {
+
+        if !smartsearch:isSmartSearchEnabled() {
+            return http:NOT_FOUND;
+        }
+        if !smartsearch:isSearchAllowed(ctx) {
+            return http:TOO_MANY_REQUESTS;
+        }
+        string|error userJwt = ctx.getWithType(authorization:REQUESTED_BY_USER_JWT);
+        smartsearch:ComposeResponse|http:BadRequest|http:NotFound|http:TooManyRequests|error result =
+            smartsearch:composeMessage(ctx, payload, userJwt is string ? userJwt : ());
+        if result is error {
+            log:printError(constants:SMART_SEARCH_COMPOSE_ERROR, result);
+            // What the page tells the user depends on which of these it is, so each one has its own status.
+            if result is http:IdleTimeoutError {
+                return <http:GatewayTimeout>{body: {message: constants:SMART_SEARCH_COMPOSE_ERROR}};
+            }
+            if result is http:ClientConnectorError {
+                return <http:ServiceUnavailable>{body: {message: constants:SMART_SEARCH_COMPOSE_ERROR}};
+            }
+            if result is http:ClientError {
+                return <http:BadGateway>{body: {message: constants:SMART_SEARCH_COMPOSE_ERROR}};
+            }
+            return <http:InternalServerError>{
+                body: {message: constants:SMART_SEARCH_COMPOSE_ERROR}
+            };
+        }
+        return result;
     }
 
     # Get content that failed to index.

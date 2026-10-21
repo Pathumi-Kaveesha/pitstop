@@ -53,6 +53,57 @@ public type SmartSearchResponse record {|
     types:ContentResponse[] contents = [];
 |};
 
+# What kind of message to write about a piece of material.
+public type ComposeIntent "email"|"chat"|"plain"|"explain"|"custom";
+
+# A request to write a message from the sources a search found.
+#
+# + query - What the user searched for
+# + documentIds - The Pitstop content ids of the results to write from, best first
+# + intent - What kind of message to write
+# + purpose - What the user needs it for, in their own words - required for "custom", ignored for the others
+public type ComposeRequest record {|
+    string query;
+    string[] documentIds;
+    ComposeIntent intent;
+    string? purpose = ();
+|};
+
+# The written message.
+#
+# + text - The message, as plain text - for an email, without its subject line
+# + documentIds - The results it was written from, in the order they were ranked
+# + subject - An email's subject line, when one was written
+public type ComposeResponse record {|
+    string text;
+    string[] documentIds;
+    string? subject = ();
+|};
+
+# One excerpt of one source, sent to the Smart Search service to write from.
+#
+# + title - The document it comes from
+# + label - Where in it, such as "Slide 7"
+# + text - The excerpt's text
+type ComposePassage record {|
+    string title;
+    string label;
+    string text;
+|};
+
+# What the Smart Search service is asked to write.
+#
+# + intent - What kind of message to write
+# + query - What the user searched for
+# + passages - The excerpts of every source to write from, best first
+# + purpose - What the user needs it for, in their own words - only sent for "custom"
+type ComposePayload record {|
+    ComposeIntent intent;
+    string query;
+    ComposePassage[] passages;
+    string? purpose = ();
+|};
+
 # Result of an admin-run backfill scan.
 #
 # + candidates - Up to the requested count of pending content items

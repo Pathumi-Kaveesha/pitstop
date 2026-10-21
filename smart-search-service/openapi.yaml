@@ -202,8 +202,92 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /compose:
+    post:
+      summary: Compose Endpoint
+      description: 'Writes a short email, chat message, plain summary, explanation or something the salesperson describes
+
+        themselves, from the excerpts of all the sources the backend sends. It never reads the index itself.'
+      operationId: compose_endpoint_compose_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComposeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Compose Endpoint Compose Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    ComposePassage:
+      properties:
+        title:
+          type: string
+          maxLength: 300
+          minLength: 1
+          title: Title
+        label:
+          type: string
+          maxLength: 100
+          title: Label
+        text:
+          type: string
+          maxLength: 4000
+          title: Text
+      type: object
+      required:
+      - title
+      - label
+      - text
+      title: ComposePassage
+    ComposeRequest:
+      properties:
+        intent:
+          type: string
+          enum:
+          - email
+          - chat
+          - plain
+          - explain
+          - custom
+          title: Intent
+        query:
+          type: string
+          maxLength: 300
+          minLength: 1
+          title: Query
+        purpose:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Purpose
+        passages:
+          items:
+            $ref: '#/components/schemas/ComposePassage'
+          type: array
+          maxItems: 10
+          minItems: 1
+          title: Passages
+      type: object
+      required:
+      - intent
+      - query
+      - passages
+      title: ComposeRequest
     ErrorResponse:
       properties:
         detail:

@@ -16,11 +16,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { GOOGLE_DOCS_DOMAIN, GOOGLE_DRIVE_DOMAIN } from "@config/constant";
+import { GOOGLE_DOCS_DOMAIN, GOOGLE_DRIVE_DOMAIN, SMART_SEARCH_QUERY_PARAM } from "@config/constant";
 import { CONTENT_SUBTYPE, FILETYPE } from "@utils/types";
 import { GroupedSource, QuestionFormData, SmartSearchResult } from "@/types/types";
 
 const SMART_SEARCH_SNIPPET_MAX_LENGTH = 220;
+
+// The Smart Search page, opened on a question when there is one, which it searches straight away.
+export const smartSearchPathFor = (question: string): string => {
+  const trimmed = question.trim();
+  return trimmed ? `/smart-search?${SMART_SEARCH_QUERY_PARAM}=${encodeURIComponent(trimmed)}` : "/smart-search";
+};
 
 export const formatSmartSearchSnippet = (content: string): string => {
   const collapsed = content.replace(/\s+/g, " ").trim();
