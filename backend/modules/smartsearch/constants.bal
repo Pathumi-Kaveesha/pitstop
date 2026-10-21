@@ -88,3 +88,27 @@ const int MAX_BULK_ROOM_CHECKS = 240;
 const int MAX_EMPTY_INCOMPLETE_SCANS = 3;
 
 const int MAX_STATUS_LIST_COUNT = 100;
+
+// The longest question a search or a written message accepts - the same limit the Library's search box has.
+const int MAX_QUERY_LENGTH = 300;
+
+// A written message is made from every result the search found, and a search finds at most 10 excerpts, so this many of
+// each is as much as there can be - and the most the Smart Search service accepts.
+const int MAX_COMPOSE_DOCUMENTS = 10;
+
+const int MAX_COMPOSE_PASSAGES = 10;
+
+const int MAX_COMPOSE_PASSAGE_LENGTH = 1500;
+
+// The longest "what do you need it for" a user may type.
+const int MAX_COMPOSE_PURPOSE_LENGTH = 500;
+
+// How long a message may take to write before the backend gives up on it, so nobody waits on a slow service for minutes.
+const decimal COMPOSE_TIMEOUT_SECONDS = 120;
+
+// How many messages may be being written at once. More than that is turned away with "too many", which keeps the
+// Smart Search service free for searches and answers.
+const int MAX_COMPOSE_IN_FLIGHT = 8;
+
+// The longest subject line an email is given.
+const int MAX_COMPOSE_SUBJECT_LENGTH = 120;

@@ -88,3 +88,31 @@ isolated function initSmartSearchClient(boolean withRetry) returns http:Client|e
             timeout: 300
         });
 }
+
+// Used only for writing a message. No retry - a second attempt would pay for the same message twice - and a shorter
+// timeout than the others, so a slow service is reported to the user rather than waited on.
+final http:Client? smartSearchComposeClient = smartSearchEnabled ? check initSmartSearchComposeClient() : ();
+
+isolated function getComposeClient() returns http:Client|error {
+    return smartSearchComposeClient ?: error("Smart Search is off");
+}
+
+# Builds the client used for writing a message. Like initSmartSearchClient, it goes through Choreo's gateway when
+# oauthConfig is set, and straight to the service when it isn't.
+#
+# + return - The client, or an error if it could not be initialised
+isolated function initSmartSearchComposeClient() returns http:Client|error {
+    SmartSearchServiceConfig? configured = smartSearchServiceConfig;
+    if configured is () {
+        return error("Smart Search is on, but its service settings are not configured");
+    }
+    Oauth2Config? oauthConfig = configured.oauthConfig;
+    if oauthConfig is () {
+        return new (configured.apiEndpoint, {httpVersion: http:HTTP_1_1, timeout: COMPOSE_TIMEOUT_SECONDS});
+    }
+    return new (configured.apiEndpoint, {
+        auth: {...oauthConfig},
+        httpVersion: http:HTTP_1_1,
+        timeout: COMPOSE_TIMEOUT_SECONDS
+    });
+}
