@@ -36,12 +36,13 @@ import {
   getPageData,
   resetPageData,
 } from "@slices/pageSlice/page";
-import { PINNED_CONTENT_SECTION_ID, SUGGESTED_CONTENT_SECTION_ID } from "@config/constant";
+import { IS_SMART_SEARCH_ENABLED, PINNED_CONTENT_SECTION_ID, SUGGESTED_CONTENT_SECTION_ID } from "@config/constant";
 import SearchIcon from "@mui/icons-material/Search";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { useNavigate, useLocation } from "react-router-dom";
 import CustomerTestimonialSection from "@components/ui/section/CustomerTestimonialSection";
 import { Role } from "@utils/types";
+import { smartSearchPathFor } from "@utils/utils";
 import { fetchCustomerTestimonials } from "@slices/customerTestimonialSlice/customerTestimonial";
 import raceVideo from "@assets/images/race.mp4";
 
@@ -272,6 +273,10 @@ function Home() {
 
   const handleSearchPage = (query: string) => {
     if (!query.trim()) return;
+    if (IS_SMART_SEARCH_ENABLED) {
+      navigate(smartSearchPathFor(query));
+      return;
+    }
     navigate(`/search?query=${encodeURIComponent(query)}`);
   };
 

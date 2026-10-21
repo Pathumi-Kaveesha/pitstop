@@ -26,7 +26,6 @@ import ErrorHandler from "@components/common/ErrorHandler";
 import Search from "@view/search/index";
 import SmartSearch from "@view/smartSearch/index";
 import { IS_SMART_SEARCH_ENABLED } from "@config/constant";
-import LibrarySearchButton from "@view/smartSearch/LibrarySearchButton";
 import UnindexedContent from "@view/smartSearch/UnindexedContent";
 import BackfillContent from "@view/smartSearch/BackfillContent";
 import { Navigate, Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
@@ -73,13 +72,7 @@ const GlobalSnackbarListener = () => {
   return null;
 };
 
-// Wraps every route so the search shortcut is available on every page.
-const AppShell = () => (
-  <>
-    <Outlet />
-    {IS_SMART_SEARCH_ENABLED && <LibrarySearchButton />}
-  </>
-);
+const AppShell = () => <Outlet />;
 
 const AppHandler = () => {
   const auth = useAppSelector((state: RootState) => state.auth);
@@ -150,7 +143,7 @@ const AppHandler = () => {
           },
           {
             path: "/search",
-            element: <Search />,
+            element: IS_SMART_SEARCH_ENABLED ? <Error /> : <Search />,
             errorElement: <Error />,
           },
           {
