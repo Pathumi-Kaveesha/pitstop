@@ -20,8 +20,9 @@ import logging
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
-from drive_constants import DOCS_API_BASE, EXPORT_FORMATS, SHEETS_API_BASE, SLIDES_API_BASE
-from google_drive import DriveFileInfo, _request_with_retry
+from drive_constants import EXPORT_FORMATS
+from drive_service import get_structure
+from google_drive import DriveFileInfo
 
 logger = logging.getLogger("smart-search-service")
 
@@ -43,47 +44,6 @@ def build_video_timestamp_links(video_link: str, unit_timestamps: list[Optional[
         return [None] * len(unit_timestamps)
 
     return [with_timestamp(video_link, seconds) if seconds else None for seconds in unit_timestamps]
-
-
-def _get_slide_ids(presentation_id: str) -> list[str]:
-    """Slide ids in order - Google picks them, so they can't be guessed."""
-    response = _request_with_retry(
-        "GET", f"{SLIDES_API_BASE}/{presentation_id}", params={"fields": "slides.objectId"}
-    )
-    return [slide["objectId"] for slide in response.json().get("slides", [])]
-
-
-def _get_sheet_gids(spreadsheet_id: str) -> list[int]:
-    """Tab ids, left to right."""
-    response = _request_with_retry(
-        "GET",
-        f"{SHEETS_API_BASE}/{spreadsheet_id}",
-        params={"fields": "sheets.properties(sheetId,index)"},
-    )
-    sheets = response.json().get("sheets", [])
-    sheets.sort(key=lambda s: s["properties"]["index"])
-    return [s["properties"]["sheetId"] for s in sheets]
-
-
-def _get_heading_ids(document_id: str) -> list[tuple[str, str]]:
-    """(heading text, heading id) pairs in document order."""
-    response = _request_with_retry("GET", f"{DOCS_API_BASE}/{document_id}")
-    content = response.json().get("body", {}).get("content", [])
-
-    heading_ids: list[tuple[str, str]] = []
-    for element in content:
-        paragraph = element.get("paragraph")
-        if not paragraph:
-            continue
-        heading_id = paragraph.get("paragraphStyle", {}).get("headingId")
-        if not heading_id:
-            continue
-        text = "".join(
-            run.get("textRun", {}).get("content", "") for run in paragraph.get("elements", [])
-        ).strip()
-        if text:
-            heading_ids.append((text, heading_id))
-    return heading_ids
 
 
 def _match_heading_links(
@@ -115,19 +75,22 @@ def build_native_links(info: DriveFileInfo, unit_headings: list[Optional[str]]) 
 
     file_id = info.file_id
     try:
+        structure = get_structure(file_id)
+
         if info.extension == "pptx":
             return [
                 f"https://docs.google.com/presentation/d/{file_id}/present?slide=id.{slide_id}"
-                for slide_id in _get_slide_ids(file_id)
+                for slide_id in structure["slideIds"]
             ]
 
         if info.extension == "xlsx":
             return [
                 f"https://docs.google.com/spreadsheets/d/{file_id}/edit#gid={gid}"
-                for gid in _get_sheet_gids(file_id)
+                for gid in structure["sheetIds"]
             ]
 
-        return _match_heading_links(file_id, unit_headings, _get_heading_ids(file_id))
+        doc_headings = [(heading["text"], heading["id"]) for heading in structure["headings"]]
+        return _match_heading_links(file_id, unit_headings, doc_headings)
     except Exception:  # noqa: BLE001 - deep links must never block indexing
         logger.exception("Could not build deep links for '%s' - using the plain Drive link", info.drive_title)
         return none_links
