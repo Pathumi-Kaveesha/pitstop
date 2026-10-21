@@ -18,36 +18,18 @@
 
 from __future__ import annotations
 
-import logging
-import threading
-import time
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional
 from urllib.parse import urlparse
 
-import requests
-
-from config import (
-    GOOGLE_DRIVE_CLIENT_ID,
-    GOOGLE_DRIVE_CLIENT_SECRET,
-    GOOGLE_DRIVE_MAX_RETRIES,
-    GOOGLE_DRIVE_REFRESH_TOKEN,
-    GOOGLE_DRIVE_RETRY_DELAY_SECONDS,
-    MAX_DRIVE_FILE_SIZE_BYTES,
-)
+from config import MAX_DRIVE_FILE_SIZE_BYTES
 from drive_constants import (
     ALLOWED_DRIVE_HOSTS,
-    DRIVE_API_BASE,
     EXPORT_FORMATS,
-    EXPORT_TOO_LARGE,
     FILE_ID_PATTERNS,
     MIME_TYPE_EXTENSIONS,
-    TOKEN_URL,
-    WEB_EXPORT_BASE,
-    WEB_EXPORT_PATHS,
 )
-
-logger = logging.getLogger("smart-search-service")
+from drive_service import download_file, get_file_info
 
 
 @dataclass
@@ -77,133 +59,16 @@ def extract_file_id(drive_link: str) -> str:
     raise ValueError(_NOT_A_DRIVE_LINK_ERROR)
 
 
-# Access token cache.
-_cached_access_token: Optional[str] = None
-_cached_token_expires_at: float = 0.0
-_token_refresh_lock = threading.Lock()
-
-
-def _get_access_token() -> str:
-    global _cached_access_token, _cached_token_expires_at
-
-    if _cached_access_token and time.time() < _cached_token_expires_at - 60:
-        return _cached_access_token
-
-    # Multiple threads can hit this at once - only one should refresh.
-    with _token_refresh_lock:
-        if _cached_access_token and time.time() < _cached_token_expires_at - 60:
-            return _cached_access_token
-
-        response = requests.post(
-            TOKEN_URL,
-            data={
-                "client_id": GOOGLE_DRIVE_CLIENT_ID,
-                "client_secret": GOOGLE_DRIVE_CLIENT_SECRET,
-                "refresh_token": GOOGLE_DRIVE_REFRESH_TOKEN,
-                "grant_type": "refresh_token",
-            },
-            timeout=30,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        _cached_access_token = data["access_token"]
-        _cached_token_expires_at = time.time() + data.get("expires_in", 3600)
-        return _cached_access_token
-
-
-def _request_with_retry(method: str, url: str, max_bytes: Optional[int] = None,
-        **kwargs) -> Union[requests.Response, bytes]:
-    """Retries a request. With max_bytes, streams and aborts early if
-    oversized, returning bytes directly."""
-    last_error: Exception | None = None
-    last_detail: str = ""
-    extra_headers = kwargs.pop("headers", {})
-    for attempt in range(GOOGLE_DRIVE_MAX_RETRIES + 1):
-        try:
-            headers = {**extra_headers, "Authorization": f"Bearer {_get_access_token()}"}
-            kwargs.setdefault("timeout", (30, 300))  # (connect, read)
-            if max_bytes is not None:
-                response = requests.request(method, url, headers=headers, stream=True, **kwargs)
-                response.raise_for_status()
-                buffer = bytearray()
-                for chunk in response.iter_content(chunk_size=1_048_576):
-                    buffer.extend(chunk)
-                    if len(buffer) > max_bytes:
-                        response.close()
-                        raise ValueError(
-                            f"File is over the {max_bytes / 1_048_576:.0f} MB limit Smart "
-                            "Search can index."
-                        )
-                response.close()
-                return bytes(buffer)
-            response = requests.request(method, url, headers=headers, **kwargs)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.HTTPError as error:
-            last_error = error
-            if error.response is not None:
-                last_detail = error.response.text[:500]
-            if error.response is not None and error.response.status_code == 401:
-                global _cached_access_token
-                _cached_access_token = None
-            elif error.response is not None and error.response.status_code < 500:
-                break
-        except requests.exceptions.RequestException as error:
-            last_error = error
-
-        if attempt < GOOGLE_DRIVE_MAX_RETRIES:
-            logger.warning(
-                "Google Drive request failed (attempt %d of %d), retrying: %s",
-                attempt + 1,
-                GOOGLE_DRIVE_MAX_RETRIES + 1,
-                last_error,
-            )
-            time.sleep(GOOGLE_DRIVE_RETRY_DELAY_SECONDS)
-
-    raise RuntimeError(
-        f"Failed to reach Google Drive: {last_error}{' - ' + last_detail if last_detail else ''}"
-    ) from last_error
-
-
-def _export_native_file(file_id: str, mime_type: str, export_mime_type: str, extension: str,
-        max_bytes: int) -> bytes:
-    """Exports a native Google file, falling back to the web-UI endpoint
-    on exportSizeLimitExceeded."""
-    try:
-        return _request_with_retry(
-            "GET",
-            f"{DRIVE_API_BASE}/files/{file_id}/export",
-            max_bytes=max_bytes,
-            params={"mimeType": export_mime_type, "supportsAllDrives": "true"},
-        )
-    except RuntimeError as api_error:
-        web_path = WEB_EXPORT_PATHS.get(mime_type)
-        if web_path is None or EXPORT_TOO_LARGE not in str(api_error):
-            raise
-        return _request_with_retry(
-            "GET",
-            f"{WEB_EXPORT_BASE}/{web_path}/d/{file_id}/export",
-            max_bytes=max_bytes,
-            params={"format": extension},
-        )
-
-
 def resolve_drive_file(drive_link: str) -> DriveFileInfo:
     """Resolves what a link points at, without downloading it."""
     file_id = extract_file_id(drive_link)
 
-    metadata_response = _request_with_retry(
-        "GET",
-        f"{DRIVE_API_BASE}/files/{file_id}",
-        params={"fields": "name,mimeType,size", "supportsAllDrives": "true"},
-    )
-    metadata = metadata_response.json()
+    metadata = get_file_info(file_id)
     mime_type = metadata.get("mimeType", "")
     drive_title = metadata.get("name", "Untitled")
 
-    # Native Google files report no size.
-    size_bytes = int(metadata["size"]) if metadata.get("size") else None
+    # A file Google reports no size for.
+    size_bytes = int(metadata["size"]) if metadata.get("size") is not None else None
 
     if mime_type in EXPORT_FORMATS:
         extension, _ = EXPORT_FORMATS[mime_type]
@@ -237,15 +102,6 @@ def resolve_drive_file(drive_link: str) -> DriveFileInfo:
 def download_drive_file(info: DriveFileInfo, max_bytes: int = MAX_DRIVE_FILE_SIZE_BYTES) -> bytes:
     """Fetches the actual bytes of an already-resolved file, bounded to
     max_bytes (MAX_DRIVE_FILE_SIZE_BYTES by default)."""
-    if info.mime_type in EXPORT_FORMATS:
-        _, export_mime_type = EXPORT_FORMATS[info.mime_type]
-        return _export_native_file(
-            info.file_id, info.mime_type, export_mime_type, info.extension, max_bytes
-        )
-
-    return _request_with_retry(
-        "GET",
-        f"{DRIVE_API_BASE}/files/{info.file_id}",
-        max_bytes=max_bytes,
-        params={"alt": "media", "supportsAllDrives": "true"},
-    )
+    # A native Google file is exported to its Office format; any other file is downloaded as it is.
+    export_as = info.extension if info.mime_type in EXPORT_FORMATS else None
+    return download_file(info.file_id, max_bytes, export_as)

@@ -34,6 +34,7 @@ from auth import verify_caller
 from chunking import Chunk, UNIT_LABELS, chunk_document
 from compose import compose_message, split_subject, strip_frame
 from deep_links import build_native_links, build_video_timestamp_links
+from drive_service import DriveServiceError
 from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
 from web_page import fetch_web_page_text, is_web_page_link
 from config import (
@@ -95,10 +96,28 @@ _index_errors: dict[str, tuple[float, str]] = {}
 _index_errors_lock = threading.Lock()
 
 
+# What an admin is told when a Drive file can't be read, by why: plain words, and what to do about it.
+_DRIVE_FAILURE_MESSAGES = {
+    "unavailable": "Pitstop doesn't have access to read this file.",
+    "busy": "Google Drive is busy right now. Please try again in a few minutes.",
+    "timeout": "This file is taking too long to open. Please try again in a few minutes.",
+    "unreachable": "Pitstop couldn't connect to Google Drive. Please try again in a few minutes.",
+    "auth": "Pitstop can't read Google Drive files right now. Please let the team know.",
+    "other": "Something went wrong while opening this file. Please try again, and let the team know if it keeps "
+             "happening.",
+}
+
+
+def _drive_failure_message(error: Exception) -> str:
+    return _DRIVE_FAILURE_MESSAGES.get(getattr(error, "kind", ""), _DRIVE_FAILURE_MESSAGES["other"])
+
+
 def _friendly_index_error(error: Exception) -> str:
     """Turns a raised error into something a non-technical admin can read."""
     if isinstance(error, ValueError):
         return str(error) or "This content can't be indexed."
+    if isinstance(error, DriveServiceError):
+        return _drive_failure_message(error)
 
     message = str(error)
     lowered = message.lower()
@@ -456,8 +475,9 @@ async def ingest_drive_link(body: IngestDriveLinkRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
         logger.exception("Could not read Drive link for indexing")
-        await _record_ingest_rejection(body.contentId, "Could not read that file from Google Drive.")
-        raise HTTPException(status_code=502, detail="Could not read that file from Google Drive.") from error
+        message = _drive_failure_message(error)
+        await _record_ingest_rejection(body.contentId, message)
+        raise HTTPException(status_code=502, detail=message) from error
 
     title = body.title.strip() if body.title and body.title.strip() else info.drive_title
     document_id = body.contentId if body.contentId else info.file_id

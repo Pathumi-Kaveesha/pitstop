@@ -14,15 +14,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Fixed values for talking to Google - API addresses and file-type tables."""
+"""Fixed values for reading Drive links: which links count, and the file-type tables."""
 
 import re
-
-TOKEN_URL = "https://oauth2.googleapis.com/token"
-DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
-SHEETS_API_BASE = "https://sheets.googleapis.com/v4/spreadsheets"
-DOCS_API_BASE = "https://docs.googleapis.com/v1/documents"
-SLIDES_API_BASE = "https://slides.googleapis.com/v1/presentations"
 
 ALLOWED_DRIVE_HOSTS = {"drive.google.com", "docs.google.com"}
 
@@ -55,14 +49,3 @@ FILE_ID_PATTERNS = [
     re.compile(r"/d/([a-zA-Z0-9_-]{10,})"),
     re.compile(r"[?&]id=([a-zA-Z0-9_-]{10,})"),
 ]
-
-# Drive's web export endpoint, the fallback when the API export is too large.
-WEB_EXPORT_BASE = "https://docs.google.com"
-WEB_EXPORT_PATHS = {
-    "application/vnd.google-apps.document": "document",
-    "application/vnd.google-apps.spreadsheet": "spreadsheets",
-    "application/vnd.google-apps.presentation": "presentation",
-}
-
-# Google's size-limit error string.
-EXPORT_TOO_LARGE = "exportSizeLimitExceeded"
