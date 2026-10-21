@@ -24,7 +24,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
@@ -32,6 +32,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from auth import verify_caller
 from chunking import Chunk, UNIT_LABELS, chunk_document
+from compose import compose_message, split_subject, strip_frame
 from deep_links import build_native_links, build_video_timestamp_links
 from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
 from web_page import fetch_web_page_text, is_web_page_link
@@ -582,3 +583,41 @@ def search_endpoint(
         answer = None
 
     return {"answer": answer, "sources": sources}
+
+
+class ComposePassage(BaseModel):
+    # The document the text comes from
+    title: str = Field(min_length=1, max_length=300)
+    # Where in it, such as "Slide 7"
+    label: str = Field(max_length=100)
+    text: str = Field(max_length=4000)
+
+
+class ComposeRequest(BaseModel):
+    intent: Literal["email", "chat", "plain", "explain", "custom"]
+    query: str = Field(min_length=1, max_length=300)
+    # What the salesperson typed when none of the ready-made kinds fits; required for "custom", ignored otherwise
+    purpose: Optional[str] = Field(default=None, max_length=500)
+    # The excerpts of every source the search found (it finds 10 at most), best first. They come from the backend,
+    # which has already checked the caller may see all of them
+    passages: list[ComposePassage] = Field(min_length=1, max_length=10)
+
+
+@app.post("/compose")
+def compose_endpoint(body: ComposeRequest) -> dict:
+    """Writes a short email, chat message, plain summary, explanation or something the salesperson describes
+    themselves, from the excerpts of all the sources the backend sends. It never reads the index itself."""
+    if body.intent == "custom" and not (body.purpose and body.purpose.strip()):
+        raise HTTPException(status_code=400, detail="Say what the message is for.")
+    try:
+        text = compose_message(
+            body.intent, body.query, [(p.title, p.label, p.text) for p in body.passages], body.purpose
+        )
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 502
+        logger.exception("Writing a %s failed", body.intent)
+        raise HTTPException(status_code=502, detail="Could not write the message.") from error
+    # An email starts with its subject line, which the page shows on its own
+    subject, text = split_subject(text) if body.intent == "email" else (None, text)
+    if body.intent == "email":
+        text = strip_frame(text)
+    return {"text": text, "subject": subject}
