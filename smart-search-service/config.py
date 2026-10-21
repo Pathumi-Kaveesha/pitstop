@@ -52,13 +52,14 @@ if ANTHROPIC_BASE_URL and not ANTHROPIC_BASE_URL.startswith("https://"):
 DRIVE_SERVICE_URL = os.environ["DRIVE_SERVICE_URL"].strip().rstrip("/")
 _drive_service = urlparse(DRIVE_SERVICE_URL)
 _is_local = _drive_service.scheme == "http" and _drive_service.hostname in ("localhost", "127.0.0.1")
-if not (_drive_service.scheme == "https" or _is_local):
+if not ((_drive_service.scheme == "https" and _drive_service.hostname) or _is_local):
     raise ValueError("DRIVE_SERVICE_URL must use https:// - a token is sent to this host.")
 
 # Authentication to the Drive Service: client credentials (the Choreo connection), or a fixed token for local runs only.
 DRIVE_SERVICE_TOKEN_URL = (os.environ.get("DRIVE_SERVICE_TOKEN_URL") or "").strip() or None
 if DRIVE_SERVICE_TOKEN_URL:
-    if not DRIVE_SERVICE_TOKEN_URL.startswith("https://"):
+    _token_url = urlparse(DRIVE_SERVICE_TOKEN_URL)
+    if not (_token_url.scheme == "https" and _token_url.hostname):
         raise ValueError("DRIVE_SERVICE_TOKEN_URL must use https:// - the client secret is sent to this host.")
     DRIVE_SERVICE_CLIENT_ID = os.environ["DRIVE_SERVICE_CLIENT_ID"]
     DRIVE_SERVICE_CLIENT_SECRET = os.environ["DRIVE_SERVICE_CLIENT_SECRET"]

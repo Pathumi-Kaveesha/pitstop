@@ -57,6 +57,14 @@ _cached_token_expires_at: float = 0.0
 _token_lock = threading.Lock()
 
 
+class DriveServiceError(RuntimeError):
+    """A failed read through the Drive Service. kind: unavailable, busy, timeout, unreachable, auth or other."""
+
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
+
+
 def _service_token() -> Optional[str]:
     """The token for calling the Drive Service: from the token endpoint if set, else the fixed local one, else none."""
     global _cached_token, _cached_token_expires_at
@@ -84,7 +92,7 @@ def _service_token() -> Optional[str]:
             _cached_token = data["access_token"]
             _cached_token_expires_at = time.time() + float(data.get("expires_in", 3600))
         except (KeyError, ValueError, TypeError, AttributeError) as error:
-            raise RuntimeError("The token endpoint sent an answer that could not be read.") from error
+            raise DriveServiceError("auth", "Unreadable answer from the token endpoint.") from error
         return _cached_token
 
 
@@ -112,31 +120,39 @@ def _call(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = N
     """Calls the Drive Service, retrying busy answers and dropped connections. ValueError if over the size limit."""
     url = f"{DRIVE_SERVICE_URL}{path}"
     last_error = "no answer"
+    last_kind = "unreachable"
     for attempt in range(DRIVE_SERVICE_MAX_RETRIES + 1):
         delay: float = DRIVE_SERVICE_RETRY_DELAY_SECONDS
+        kind = ""  # why this attempt failed, set where it fails
         try:
-            token = _service_token()
+            try:
+                token = _service_token()
+            except requests.exceptions.RequestException:
+                kind = "auth"
+                raise
             headers = {"Authorization": f"Bearer {token}"} if token else {}
             response = _session.get(url, headers=headers, params=params, stream=max_bytes is not None, timeout=_TIMEOUT)
             try:
                 status = response.status_code
-                if status == 401 and DRIVE_SERVICE_TOKEN_URL is not None:
+                if status == 401:
+                    if DRIVE_SERVICE_TOKEN_URL is None:
+                        raise DriveServiceError("auth", "Drive Service rejected the token.")
                     _forget_token()
-                    last_error = "the Drive Service did not accept the token"
+                    kind = "auth"
+                    last_error = "Drive Service rejected the token"
                 elif status == 413:
                     limit = max_bytes if max_bytes is not None else 0
                     raise ValueError(f"File is over the {limit / 1_048_576:.0f} MB limit Smart Search can index.")
                 elif status in _RETRY_STATUSES:
-                    last_error = (
-                        f"the Drive Service is busy or unavailable (status {status}, too many requests): "
-                        f"{_detail(response)}"
-                    )
+                    kind = "busy"
+                    last_error = f"Drive Service busy (status {status}): {_detail(response)}"
                     delay = _retry_after(response) or delay
+                elif status in (403, 404):
+                    # Missing, or the Pitstop Google account cannot open it: asking again changes nothing.
+                    detail = _detail(response)
+                    raise DriveServiceError("unavailable", f"File not found or not accessible ({status}): {detail}")
                 elif status != 200:
-                    # A missing file, a refusal, a bad request: asking again changes nothing.
-                    raise RuntimeError(
-                        f"The Drive Service could not read the file (status {status}): {_detail(response)}"
-                    )
+                    raise DriveServiceError("other", f"Drive Service error (status {status}): {_detail(response)}")
                 elif max_bytes is None:
                     return response
                 else:
@@ -146,6 +162,12 @@ def _call(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = N
         except requests.exceptions.RequestException as error:
             last_error = f"{type(error).__name__}: {error}"
             delay = DRIVE_SERVICE_RETRY_DELAY_SECONDS
+            if not kind:
+                took_too_long = isinstance(error, requests.exceptions.Timeout) and not isinstance(
+                    error, requests.exceptions.ConnectTimeout
+                )
+                kind = "timeout" if took_too_long else "unreachable"
+        last_kind = kind or last_kind
 
         if attempt < DRIVE_SERVICE_MAX_RETRIES:
             logger.warning(
@@ -154,7 +176,7 @@ def _call(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = N
             )
             time.sleep(delay)
 
-    raise RuntimeError(f"Failed to reach the Drive Service: {last_error}")
+    raise DriveServiceError(last_kind, f"Drive Service request failed: {last_error}")
 
 
 def _read_limited(response: requests.Response, max_bytes: int) -> bytes:
@@ -180,7 +202,7 @@ def _json(path: str) -> dict:
     try:
         return response.json()
     except ValueError as error:
-        raise RuntimeError("The Drive Service sent an answer that could not be read.") from error
+        raise DriveServiceError("other", "Unreadable answer from the Drive Service.") from error
 
 
 def get_file_info(file_id: str) -> dict:
