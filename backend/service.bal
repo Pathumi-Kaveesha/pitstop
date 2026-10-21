@@ -1903,16 +1903,13 @@ service http:InterceptableService / on new http:Listener(9090) {
         return http:OK;
     }
 
-    # Search contents. Not available once Smart Search is on, which replaces it.
+    # Search contents.
     #
     # + userInput - User input
     # + return - Success or error responses
     resource function post search\-content(http:RequestContext ctx, string userInput)
-        returns types:ContentResponse[]|http:NotFound|http:InternalServerError {
+        returns types:ContentResponse[]|http:InternalServerError {
 
-        if smartsearch:isSmartSearchEnabled() {
-            return http:NOT_FOUND;
-        }
         string|error userEmail = ctx.getWithType(authorization:REQUESTED_BY_USER_EMAIL);
         string customEmailError = "Error while fetching user email.";
         if userEmail is error {
