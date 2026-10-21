@@ -18,6 +18,7 @@ import pitstop.types;
 
 import ballerina/http;
 import ballerina/lang.regexp;
+import ballerina/url;
 
 // Writing a short message (email, chat message, summary, explanation or something the seller describes) from the
 // results of a search. Its types, limits and client are in types.bal, constants.bal and client.bal.
@@ -55,6 +56,17 @@ isolated function finishCompose() {
     lock {
         composesInFlight = int:max(0, composesInFlight - 1);
     }
+}
+
+# The page's search, but with a short timeout and no retry.
+#
+# + query - What the user searched for
+# + userJwt - The caller's login token
+# + return - The sources found, or an error
+isolated function searchForCompose(string query, string? userJwt) returns SmartSearchResponse|error {
+    string encodedQuery = check url:encode(query, "UTF-8");
+    http:Client searchClient = check getComposeSearchClient();
+    return searchClient->get(string `/search?userQuery=${encodedQuery}&includeAnswer=false`, userJwtHeaders(userJwt));
 }
 
 # Writes a short message from the sources a search found, but only while there is room: with too many being written
@@ -110,7 +122,7 @@ isolated function writeComposedMessage(http:RequestContext ctx, ComposeRequest r
         return http:BAD_REQUEST;
     }
 
-    SmartSearchResponse allowed = filterToAuthorizedSources(ctx, check searchDocuments(query, false, userJwt));
+    SmartSearchResponse allowed = filterToAuthorizedSources(ctx, check searchForCompose(query, userJwt));
     map<string> titles = {};
     foreach types:ContentResponse content in allowed.contents {
         if content.description.trim() != "" {
