@@ -142,8 +142,9 @@ isolated function writeComposedMessage(http:RequestContext ctx, ComposeRequest r
             continue;
         }
         int? page = hit.page;
+        string title = titles[hit.documentId] ?: hit.title;
         passages.push({
-            title: titles[hit.documentId] ?: hit.title,
+            title: title.length() > MAX_COMPOSE_TITLE_LENGTH ? title.substring(0, MAX_COMPOSE_TITLE_LENGTH) : title,
             label: page is int ? string `${hit.unitLabel} ${page}` : "Excerpt",
             text: text.length() > MAX_COMPOSE_PASSAGE_LENGTH ? text.substring(0, MAX_COMPOSE_PASSAGE_LENGTH) : text
         });

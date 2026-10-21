@@ -100,6 +100,9 @@ const int MAX_COMPOSE_PASSAGES = 10;
 
 const int MAX_COMPOSE_PASSAGE_LENGTH = 1500;
 
+// The Smart Search service rejects a longer title.
+const int MAX_COMPOSE_TITLE_LENGTH = 300;
+
 // The longest "what do you need it for" a user may type.
 const int MAX_COMPOSE_PURPOSE_LENGTH = 500;
 
