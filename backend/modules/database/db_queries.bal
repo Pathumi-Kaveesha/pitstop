@@ -369,7 +369,20 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
     int tzOffset = getValidatedTzOffset(filter.timezoneOffsetMinutes);
 
     sql:ParameterizedQuery query = `
-        WITH BaseContentLogs AS (
+        WITH RECURSIVE LiveRoutes AS (
+            -- A page is live only if it and every page above it is neither deleted nor hidden.
+            -- The top-level pages sit under the home page, whose own visibility does not hide them.
+            SELECT route_id
+            FROM route
+            WHERE COALESCE(is_deleted, 0) = 0 AND COALESCE(isRouteVisible, 1) = 1
+              AND (parent_id IS NULL OR parent_id IN (SELECT route_id FROM route WHERE parent_id IS NULL))
+            UNION
+            SELECT child.route_id
+            FROM route child
+            JOIN LiveRoutes lr ON child.parent_id = lr.route_id
+            WHERE COALESCE(child.is_deleted, 0) = 0 AND COALESCE(child.isRouteVisible, 1) = 1
+        ),
+        BaseContentLogs AS (
             SELECT 
                 CAST(l.content_id AS SIGNED) as contentId,
                 COALESCE(c.description, CONCAT('Content #', l.content_id)) as title,
@@ -378,13 +391,19 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
                 l.event_type,
                 l.metadata
             FROM user_activity_logs l
-            LEFT JOIN content c ON c.content_id = l.content_id
+            JOIN content c ON c.content_id = l.content_id
             LEFT JOIN section s ON s.section_id = c.section_id
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
             WHERE UPPER(l.event_type) IN ('VIEW', 'PREVIEW', 'CARD_VIEW', 'COMPLETION', 'ENGAGEMENT')
               AND l.content_id IS NOT NULL
+              -- Only content that still exists, is not deleted or hidden, and sits on a live section and page
               AND COALESCE(c.is_deleted, 0) = 0
+              AND COALESCE(c.is_visible, 1) = 1
+              AND (c.section_id IS NOT NULL OR c.route_id IS NOT NULL)
+              AND (c.section_id IS NULL OR (s.section_id IS NOT NULL AND COALESCE(s.is_deleted, 0) = 0
+                   AND s.route_id IN (SELECT route_id FROM LiveRoutes)))
+              AND (c.route_id IS NULL OR c.route_id IN (SELECT route_id FROM LiveRoutes))
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
@@ -452,7 +471,7 @@ isolated function getTopContentQuery(types:AnalyticsFilter filter) returns sql:P
 }
 
 # Dynamic query to fetch top 10 users for the leaderboard ranked by total actions, visits, or average time spent.
-# Excludes admin users dynamically via the isAdmin flag stored in JSON metadata.
+# Excludes admin and analytics viewer users dynamically via the isAdmin and isAnalyticsViewer flags stored in JSON metadata.
 #
 # + filter - Analytics filter parameters including dates, region, user email, page route, and sortBy
 # + return - Constructed SQL parameterized query
@@ -484,6 +503,7 @@ isolated function getUserLeaderboardQuery(types:AnalyticsFilter filter) returns 
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
             WHERE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isAdmin')), 'false') != 'true'
+                AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.isAnalyticsViewer')), 'false') != 'true'
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
@@ -581,7 +601,7 @@ isolated function getRegionalTimeSpentQuery(types:AnalyticsFilter filter) return
             LEFT JOIN section s ON s.section_id = c.section_id
             LEFT JOIN route r ON r.route_id = s.route_id
             LEFT JOIN route parent_r ON parent_r.route_id = r.parent_id
-            WHERE UPPER(l.region) IN ('NA', 'ME', 'APAC', 'AFRICA', 'LATAM', 'EU', 'UK', 'SALES DEVELOPMENT', 'UK & EU')
+            WHERE UPPER(l.region) IN ('NA', 'ME', 'APAC', 'AFRICA', 'LATAM', 'LATAM REGION', 'EU', 'UK', 'SALES DEVELOPMENT', 'UK & EU')
     `;
 
     query = sql:queryConcat(query, buildDateRangePredicates(filter.startDate, filter.endDate, tzOffset));
