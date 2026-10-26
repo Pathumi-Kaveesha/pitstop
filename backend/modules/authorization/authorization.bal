@@ -90,7 +90,8 @@ public isolated service class JwtInterceptor {
         }
 
         // Authorization check
-        foreach anydata role in authorizedRoles.toArray() {
+        // The analytics viewer role only adds dashboard access, so it is left out of the login check.
+        foreach string role in [authorizedRoles.adminRole, authorizedRoles.employeeRole] {
             if userInfo.groups.some(r => r === role) {
                 ctx.set(REQUESTED_BY_USER_EMAIL, userInfo.email);
                 ctx.set(REQUESTED_BY_USER_ROLES, userInfo.groups);

@@ -74,6 +74,9 @@ service http:InterceptableService / on new http:Listener(9090) {
         if authorization:hasPermission([authorization:authorizedRoles.adminRole], userGroups) {
             privileges.push(authorization:SALES_ADMIN_PRIVILEGE);
         }
+        if authorization:hasPermission([authorization:authorizedRoles.analyticsViewerRole], userGroups) {
+            privileges.push(authorization:ANALYTICS_VIEWER_PRIVILEGE);
+        }
         return privileges;
     }
 
@@ -291,7 +294,7 @@ service http:InterceptableService / on new http:Listener(9090) {
     resource function get analytics/routes(http:RequestContext ctx) 
         returns types:Route[]|http:Forbidden|http:InternalServerError {
 
-        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAnalyticsAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
         }
@@ -667,6 +670,13 @@ service http:InterceptableService / on new http:Listener(9090) {
             return <http:BadRequest> { body: customError };
         }
 
+        // Refuse unknown event types, impossible time spent values and oversized details
+        string? invalidReason = validateAnalyticsEvent(eventPayload);
+        if invalidReason is string {
+            log:printWarn(string `Refused an analytics event from ${eventPayload.userEmail}: ${invalidReason}`);
+            return <http:BadRequest> { body: invalidReason };
+        }
+
         // Retrieve user profile details from request context
         authorization:UserProfile|error userProfile = ctx.getWithType(authorization:REQUESTED_BY_USER_PROFILE);
         if userProfile is error {
@@ -674,18 +684,11 @@ service http:InterceptableService / on new http:Listener(9090) {
             return <http:InternalServerError> { body: constants:USER_PROFILE_READ_ERROR };
         }
 
-        // Populate missing identity fields directly from user profile
-        if eventPayload.userName is () || eventPayload.userName == "" {
-            eventPayload.userName = string `${userProfile.firstName} ${userProfile.lastName}`.trim();
-        }
-
-        if eventPayload.department is () || eventPayload.department == "" {
-            eventPayload.department = userProfile.department;
-        }
-
-        if eventPayload.region is () || eventPayload.region == "" {
-            eventPayload.region = userProfile.team;
-        }
+        // Identity fields always come from the login token, never from what the browser sent
+        eventPayload.userName = truncateText(
+            string `${userProfile.firstName} ${userProfile.lastName}`.trim(), MAX_ANALYTICS_USER_NAME_LENGTH);
+        eventPayload.department = truncateText(userProfile.department, MAX_ANALYTICS_DEPARTMENT_LENGTH);
+        eventPayload.region = truncateText(userProfile.team, MAX_ANALYTICS_REGION_LENGTH);
 
         // Safely extract metadata object or initialize a new map
         map<json> meta = {};
@@ -693,11 +696,14 @@ service http:InterceptableService / on new http:Listener(9090) {
             meta = <map<json>>eventPayload.metadata;
         }
 
-        // Validate admin role via JWT context and explicitly overwrite `isAdmin`
+        // Validate admin and analytics viewer roles via JWT context and explicitly overwrite both flags
         string[]|error userRoles = ctx.getWithType(authorization:REQUESTED_BY_USER_ROLES);
         boolean isAdminUser = userRoles is string[] && authorization:hasPermission([authorization:authorizedRoles.adminRole], userRoles);
+        boolean isAnalyticsViewerUser = userRoles is string[] &&
+            authorization:hasPermission([authorization:authorizedRoles.analyticsViewerRole], userRoles);
 
         meta["isAdmin"] = isAdminUser;
+        meta["isAnalyticsViewer"] = isAnalyticsViewerUser;
         eventPayload.metadata = meta;
         error? result = database:logUserActivity(eventPayload);
         if result is error {
@@ -733,7 +739,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         int? timezoneOffsetMinutes
     ) returns types:ComprehensiveAnalyticsSummary|http:Forbidden|http:InternalServerError {
 
-        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAnalyticsAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
         }
@@ -780,7 +786,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         int? timezoneOffsetMinutes
     ) returns types:DailyTrendMetric[]|http:Forbidden|http:InternalServerError {
 
-        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAnalyticsAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
         }
@@ -826,7 +832,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         int? timezoneOffsetMinutes
     ) returns types:ContentPerformanceMetric[]|http:Forbidden|http:InternalServerError {
 
-        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAnalyticsAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
         }
@@ -875,7 +881,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         int? timezoneOffsetMinutes
     ) returns types:UserLeaderboardEntry[]|http:Forbidden|http:InternalServerError {
 
-        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAnalyticsAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
         }
@@ -921,7 +927,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         int? timezoneOffsetMinutes
     ) returns types:RegionalTimeMetric[]|http:Forbidden|http:InternalServerError {
 
-        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAnalyticsAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
         }
@@ -965,7 +971,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         int? timezoneOffsetMinutes
     ) returns types:TrafficPeakMetric[]|http:Forbidden|http:InternalServerError {
 
-        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAnalyticsAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
         }
@@ -1008,7 +1014,7 @@ service http:InterceptableService / on new http:Listener(9090) {
         int? timezoneOffsetMinutes
     ) returns types:SearchMetric[]|http:Forbidden|http:InternalServerError {
 
-        http:Forbidden|http:InternalServerError? authError = authorization:checkAdminAccess(ctx);
+        http:Forbidden|http:InternalServerError? authError = authorization:checkAnalyticsAccess(ctx);
         if authError is http:Forbidden|http:InternalServerError {
             return authError;
         }
