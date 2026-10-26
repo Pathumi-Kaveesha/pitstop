@@ -26,6 +26,61 @@ final cache:Cache emailValidationCache = new ({
     cleanupInterval: 86400.0
 });
 
+# Checks an analytics event sent by the browser and tidies it before it is saved.
+# The event type is changed to upper case, and a time spent above one day is lowered to one day.
+#
+# + event - Analytics event from the browser
+# + return - The reason the event is refused, or () when it can be saved
+isolated function validateAnalyticsEvent(types:AnalyticsEvent event) returns string? {
+    string eventType = event.eventType.trim().toUpperAscii();
+    if ANALYTICS_EVENT_TYPES.indexOf(eventType) is () {
+        return "Unknown event type";
+    }
+    event.eventType = eventType;
+
+    string? sessionId = event.sessionId;
+    if sessionId is string && sessionId.length() > MAX_ANALYTICS_SESSION_ID_LENGTH {
+        return "Session id is too long";
+    }
+
+    json metadata = event.metadata;
+    if metadata.toJsonString().length() > MAX_ANALYTICS_METADATA_LENGTH {
+        return "Event details are too large";
+    }
+
+    if eventType == "SESSION_TIME" {
+        if metadata !is map<json> {
+            return "Time spent details are missing";
+        }
+        json duration = metadata["durationSeconds"];
+        decimal seconds;
+        if duration is int {
+            seconds = <decimal>duration;
+        } else if duration is float {
+            seconds = <decimal>duration;
+        } else if duration is decimal {
+            seconds = duration;
+        } else {
+            return "Time spent must be a number";
+        }
+        if seconds < 0d {
+            return "Time spent cannot be negative";
+        }
+        if seconds > <decimal>MAX_SESSION_TIME_SECONDS {
+            metadata["durationSeconds"] = MAX_SESSION_TIME_SECONDS;
+        }
+    }
+    return ();
+}
+
+# Cuts a text down to the given length so it fits its database column.
+#
+# + value - Text to shorten
+# + maxLength - Longest allowed length
+# + return - The text, shortened when it was too long
+isolated function truncateText(string value, int maxLength) returns string =>
+    value.length() > maxLength ? value.substring(0, maxLength) : value;
+
 # Replace hyphens with spaces, trim the string, and make it lowercase..
 #
 # + input - string to replace with hyphens

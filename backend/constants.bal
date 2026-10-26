@@ -26,3 +26,13 @@ const RECENT_CONTENT_SECTION_TYPE = "recent_content";
 
 const DEFAULT_CONTENTS_LIMIT = 50;
 const DEFAULT_CONTENTS_OFFSET = 0;
+
+// Analytics events sent by the browser
+final string[] & readonly ANALYTICS_EVENT_TYPES = ["VIEW", "SEARCH", "COMPLETION", "SESSION_TIME", "ENGAGEMENT"];
+const MAX_ANALYTICS_METADATA_LENGTH = 10000;
+const MAX_ANALYTICS_SESSION_ID_LENGTH = 100;
+const MAX_ANALYTICS_USER_NAME_LENGTH = 255;
+const MAX_ANALYTICS_DEPARTMENT_LENGTH = 100;
+const MAX_ANALYTICS_REGION_LENGTH = 100;
+// A single page visit can never be longer than a day
+const MAX_SESSION_TIME_SECONDS = 86400;
