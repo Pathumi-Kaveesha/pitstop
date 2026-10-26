@@ -544,6 +544,8 @@ const AnalyticsAdminDashboard: React.FC = () => {
 
   const timezoneOffsetMinutes = useMemo(() => -new Date().getTimezoneOffset(), []);
 
+  // Only admins can export; analytics viewers can look at the dashboard but not download it
+  const isAdmin = useAppSelector((state) => state.auth.roles?.includes(Role.SALES_ADMIN) ?? false);
   const canToggleTimeMetrics = useAppSelector(
     (state) =>
       state.auth.roles?.some((role) => role === Role.SALES_ADMIN || role === Role.ANALYTICS_VIEWER) ?? false
@@ -1174,7 +1176,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   };
 
   const handleExport = () => {
-    if (isExporting) return;
+    if (isExporting || !isAdmin) return;
 
     const statuses = [status, trendsStatus, topContentStatus, leaderboardStatus, regionalStatus, peakStatus, searchesStatus];
     if (statuses.includes("loading")) {
@@ -1323,17 +1325,19 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 label="Show time metrics"
               />
             )}
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={isExporting ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
-              onClick={handleExport}
-              disabled={isExporting}
-              data-export-hide="true"
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
-            >
-              {isExporting ? "Exporting…" : "Export PDF"}
-            </Button>
+            {isAdmin && (
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={isExporting ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+                onClick={handleExport}
+                disabled={isExporting}
+                data-export-hide="true"
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+              >
+                {isExporting ? "Exporting…" : "Export PDF"}
+              </Button>
+            )}
           </Box>
         </Box>
 
