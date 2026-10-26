@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   Box,
   Container,
@@ -62,6 +62,7 @@ import PeopleIcon from "@mui/icons-material/People";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import TouchAppIcon from "@mui/icons-material/TouchApp";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import DownloadIcon from "@mui/icons-material/Download";
 import { purple } from "@mui/material/colors";
 import { useAppDispatch, useAppSelector } from "@slices/store";
 import {
@@ -86,6 +87,17 @@ import {
   RouteOption,
 } from "../analytics/CascadingPageRouteSelector";
 import { UniqueVisitorsHover } from "./UniqueVisitorsHover";
+import { ExportDetails, ExportHeader, ExportMarker } from "./ExportDetails";
+import {
+  ALL_METRIC_OPTIONS,
+  ExportSection,
+  describeFilters,
+  formatTimezone,
+  normalizeVisitors,
+  sameFilters,
+  toChartPoints,
+} from "./analyticsHelpers";
+import { exportDashboardPdf } from "./exportDashboard";
 
 export type TrendGranularity = "daily" | "weekly" | "monthly" | "quarterly";
 
@@ -95,6 +107,7 @@ const AVAILABLE_REGIONS = [
   "APAC",
   "AFRICA",
   "LATAM",
+  "LATAM region",
   "EU",
   "UK",
   "UK & EU",
@@ -103,7 +116,51 @@ const AVAILABLE_REGIONS = [
 
 const AVAILABLE_TEAMS = ["SALES", "Sales Engineering"];
 
+const uniqueVisitorsLabel = (count: number) => `${count} unique visitor${count === 1 ? "" : "s"}`;
+
+const RANK_LABELS: Record<string, string> = {
+  totalViews: "Total Views",
+  uniqueViews: "Unique Views",
+  actions: "Actions",
+  visits: "Visits",
+  avgTimeSpentSeconds: "Average Time Spent",
+  totalVisits: "Total Visits",
+  uniqueVisits: "Unique Visitors",
+};
+
 const TIME_METRICS_STORAGE_KEY = "pitstop_analytics_show_time_metrics";
+
+// Explanation texts shown in the info tooltips and repeated in the PDF export.
+const INFO_TEXT = {
+  totalViews:
+    "Total page view duration events recorded on the platform matching your selected filters.",
+  uniqueVisitors:
+    "Number of distinct team members who logged into and accessed the platform within the selected filters.",
+  timeSpent:
+    "Total cumulative active session time spent browsing, reading, or navigating the platform.",
+  totalActions:
+    "Total user interactions performed (including opening previews, clicking external outlinks, or searching). Opening a preview and then clicking its outlink counts as 2 actions.",
+  avgActions:
+    "Average number of actions per visit (Total Actions ÷ Total Visits). A visit ends after 30 minutes without any activity.",
+  topContent:
+    "Breaks down engagement per material. Preview Clicks requires successful embedding and 10s+ view time. Outlinks tracks direct external opens. Total Views counts modal openings once.",
+  previewClicks:
+    "Counted ONLY when content renders successfully in preview AND is viewed for at least 10 seconds. Broken or restricted links do NOT increment preview clicks.",
+  outlinks:
+    "Counted when opened in a new window/tab (including clicking 'Open in New Window' on restricted or broken preview screens).",
+  contentTotalViews:
+    "Total times this content modal was opened. Opening a preview counts as 1 view, even if an outlink is also clicked inside that modal.",
+  contentUniqueViews:
+    "Number of distinct team members who viewed or opened this content.",
+  leaderboard:
+    "Team members ranked by your selected metric (actions or visits).",
+  regional:
+    "Platform activity broken down by regional teams, comparing unique visitors, total visits, and total actions.",
+  peak:
+    "The busiest 1-hour time slot on the platform for each day of the week, based on how many content views happened in that hour.",
+  searches:
+    "Top search queries submitted in the global search bar, showing total search attempts vs unique users who searched.",
+};
 
 const PROD_LAUNCH_DATE = new Date(2026, 7, 21);
 PROD_LAUNCH_DATE.setHours(0, 0, 0, 0);
@@ -454,13 +511,43 @@ const SortableHeaderCell = <T extends string>({
   );
 };
 
+// A sortable number: an orange ball when its column is the one being sorted, plain text otherwise.
+const MetricValue = ({
+  value,
+  active,
+  showPeopleIcon = false,
+}: {
+  value: React.ReactNode;
+  active: boolean;
+  showPeopleIcon?: boolean;
+}) =>
+  active ? (
+    <Chip
+      icon={showPeopleIcon ? <PeopleIcon sx={{ fontSize: "14px !important" }} /> : undefined}
+      label={value}
+      size="small"
+      color="primary"
+      sx={{ fontWeight: 700 }}
+    />
+  ) : (
+    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.5 }}>
+      {showPeopleIcon && <PeopleIcon sx={{ fontSize: 16, color: "text.secondary" }} />}
+      <Typography variant="body2" fontWeight={600}>
+        {value}
+      </Typography>
+    </Box>
+  );
+
 const AnalyticsAdminDashboard: React.FC = () => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
 
   const timezoneOffsetMinutes = useMemo(() => -new Date().getTimezoneOffset(), []);
 
-  const isAdmin = useAppSelector((state) => state.auth.roles?.includes(Role.SALES_ADMIN) ?? false);
+  const canToggleTimeMetrics = useAppSelector(
+    (state) =>
+      state.auth.roles?.some((role) => role === Role.SALES_ADMIN || role === Role.ANALYTICS_VIEWER) ?? false
+  );
   const [adminShowTime, setAdminShowTime] = useState<boolean>(() => {
     try {
       return localStorage.getItem(TIME_METRICS_STORAGE_KEY) === "true";
@@ -468,7 +555,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
       return false;
     }
   });
-  const showTimeMetrics = isAdmin && adminShowTime;
+  const showTimeMetrics = canToggleTimeMetrics && adminShowTime;
   const kpiCardColumns = showTimeMetrics ? 2.4 : 3;
 
   const [globalRegions, setGlobalRegions] = useState<string[]>([]);
@@ -495,6 +582,21 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const [leaderboardSortBy, setLeaderboardSortBy] = useState<"actions" | "visits" | "avgTimeSpentSeconds">("actions");
   const [regionalSortBy, setRegionalSortBy] = useState<"totalVisits" | "uniqueVisits" | "actions" | "avgTimeSpentSeconds">("totalVisits");
   const [mainRoutes, setMainRoutes] = useState<RouteOption[]>([]);
+  const [cardTopContentFilters, setCardTopContentFilters] = useState<AnalyticsFilterParams | null>(null);
+  const [cardPeakFilters, setCardPeakFilters] = useState<AnalyticsFilterParams | null>(null);
+  const [cardSearchesFilters, setCardSearchesFilters] = useState<AnalyticsFilterParams | null>(null);
+  const [trendMetricIds, setTrendMetricIds] = useState<string[]>(["totalViews", "uniqueViews"]);
+  // Everything the PDF needs is frozen at click time, so the user can keep using the page meanwhile.
+  const [exportJob, setExportJob] = useState<{
+    startedAt: Date;
+    background: string;
+    exportedAtLabel: string;
+    filterLines: string[];
+    sections: ExportSection[];
+  } | null>(null);
+  const isExporting = exportJob !== null;
+  const dashboardRef = useRef<HTMLDivElement | null>(null);
+  const detailsRef = useRef<HTMLDivElement | null>(null);
 
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
@@ -519,6 +621,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
   const regionalTimeSpent = useAppSelector((state) => state.analytics.regionalTimeSpent);
   const peakActivityTimes = useAppSelector((state) => state.analytics.peakActivityTimes);
   const topSearches = useAppSelector((state) => state.analytics.topSearches);
+  const trendsStatus = useAppSelector((state) => state.analytics.trendsStatus);
+  const topContentStatus = useAppSelector((state) => state.analytics.topContentStatus);
+  const leaderboardStatus = useAppSelector((state) => state.analytics.leaderboardStatus);
+  const regionalStatus = useAppSelector((state) => state.analytics.regionalStatus);
+  const peakStatus = useAppSelector((state) => state.analytics.peakStatus);
+  const searchesStatus = useAppSelector((state) => state.analytics.searchesStatus);
+  const userInfo = useAppSelector((state) => state.auth.userInfo);
+  const decodedIdToken = useAppSelector((state) => state.auth.decodedIdToken);
 
   const handleApplyGlobalFilters = () => {
     if (globalStartDate && globalEndDate && new Date(globalEndDate) < new Date(globalStartDate)) {
@@ -542,6 +652,9 @@ const AnalyticsAdminDashboard: React.FC = () => {
     setTrendFilters(null);
     setCardLeaderboardFilters(null);
     setCardRegionalFilters(null);
+    setCardTopContentFilters(null);
+    setCardPeakFilters(null);
+    setCardSearchesFilters(null);
     setIsGranularityManuallySet(false);
     dispatch(clearTrendsOverride());
     dispatch(fetchAnalyticsSummary(newApplied)).then(() => {
@@ -577,6 +690,9 @@ const AnalyticsAdminDashboard: React.FC = () => {
     setTrendFilters(null);
     setCardLeaderboardFilters(null);
     setCardRegionalFilters(null);
+    setCardTopContentFilters(null);
+    setCardPeakFilters(null);
+    setCardSearchesFilters(null);
     dispatch(clearTrendsOverride());
     dispatch(fetchAnalyticsSummary(resetApplied));
   };
@@ -587,7 +703,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
   ) => {
     if (newSortBy !== null) {
       setTopContentSortBy(newSortBy);
-      dispatch(fetchTopContent({ ...appliedFilters, sortBy: newSortBy }));
+      dispatch(fetchTopContent({ ...(cardTopContentFilters || appliedFilters), sortBy: newSortBy }));
     }
   };
 
@@ -920,6 +1036,234 @@ const AnalyticsAdminDashboard: React.FC = () => {
     }));
   }, [trends, trendsOverridden, summary, trendFilters, appliedFilters, granularity]);
 
+  const markerIds = [
+    "totalViews",
+    "uniqueVisitors",
+    ...(showTimeMetrics ? ["timeSpent"] : []),
+    "totalActions",
+    "avgActions",
+    "trends",
+    "topContent",
+    "leaderboard",
+    "regional",
+    "peak",
+    "searches",
+  ];
+  const markerOf = (id: string) => markerIds.indexOf(id) + 1;
+
+  const exporterEmail = userInfo?.email || "";
+  const tokenClaims = (decodedIdToken || {}) as Record<string, unknown>;
+  const exporterName =
+    [tokenClaims.given_name, tokenClaims.family_name]
+      .filter((part): part is string => typeof part === "string" && part.trim() !== "")
+      .join(" ") ||
+    userInfo?.displayName ||
+    userInfo?.username ||
+    exporterEmail ||
+    "Unknown user";
+
+  const cardFilterLines = (cardFilters: AnalyticsFilterParams | null) =>
+    cardFilters && !sameFilters(cardFilters, appliedFilters) ? describeFilters(cardFilters, mainRoutes) : undefined;
+
+  const buildExportSections = (): ExportSection[] => {
+    const totalVisitors = normalizeVisitors(summary?.totalUniqueVisitorDetails);
+    const chartMetrics = ALL_METRIC_OPTIONS.filter(
+      (m) => (showTimeMetrics || m.id !== "timeSpentSeconds") && trendMetricIds.includes(m.id)
+    );
+    const chartPoints = toChartPoints(realTrendData, false);
+
+    const sections: ExportSection[] = [
+      { marker: markerOf("totalViews"), title: "Total Views", lines: [INFO_TEXT.totalViews] },
+      {
+        marker: markerOf("uniqueVisitors"),
+        title: "Unique Visitors",
+        lines: [INFO_TEXT.uniqueVisitors],
+        visitorGroups: [{ label: uniqueVisitorsLabel(totalVisitors.length), visitors: totalVisitors }],
+      },
+    ];
+    if (showTimeMetrics) {
+      sections.push({ marker: markerOf("timeSpent"), title: "Time Spent on Platform", lines: [INFO_TEXT.timeSpent] });
+    }
+    sections.push(
+      { marker: markerOf("totalActions"), title: "Total Actions Taken", lines: [INFO_TEXT.totalActions] },
+      { marker: markerOf("avgActions"), title: "Avg Actions Per Visit", lines: [INFO_TEXT.avgActions] },
+      {
+        marker: markerOf("trends"),
+        title: "Metrics Over Time",
+        lines: [
+          `Grouped by: ${granularity.charAt(0).toUpperCase()}${granularity.slice(1)}`,
+          `Metrics shown: ${chartMetrics.map((m) => m.label).join(", ")}`,
+          chartPoints.length > 0
+            ? "The exact values behind each point on the chart (what the hover box shows):"
+            : "No analytics trend data recorded for the selected filter.",
+        ],
+        cardFilters: cardFilterLines(trendFilters),
+        table:
+          chartPoints.length > 0
+            ? {
+                columns: ["Date", ...chartMetrics.map((m) => m.label)],
+                rows: chartPoints.map((pt) => [
+                  pt.formattedDate || pt.date,
+                  ...chartMetrics.map((m) => m.formatValue(Number(pt[m.id] ?? 0))),
+                ]),
+              }
+            : undefined,
+      },
+      {
+        marker: markerOf("topContent"),
+        title: "Top Performing Content Breakdown",
+        lines: [
+          INFO_TEXT.topContent,
+          `Preview Clicks: ${INFO_TEXT.previewClicks}`,
+          `Outlinks: ${INFO_TEXT.outlinks}`,
+          `Total Views: ${INFO_TEXT.contentTotalViews}`,
+          `Unique Views: ${INFO_TEXT.contentUniqueViews}`,
+          `Ranked by: ${RANK_LABELS[topContentSortBy]}`,
+          (topContent || []).length > 0
+            ? "Full content titles and the people who viewed each one:"
+            : "No content analytics found for the selected route/filter.",
+        ],
+        cardFilters: cardFilterLines(cardTopContentFilters),
+        visitorGroups: (topContent || []).map((c, idx) => {
+          const visitors = normalizeVisitors(c.uniqueVisitorDetails);
+          return { label: `${idx + 1}. ${c.title} – ${uniqueVisitorsLabel(visitors.length)}`, visitors };
+        }),
+      },
+      {
+        marker: markerOf("leaderboard"),
+        title: "User Activity Leaderboard",
+        lines: [
+          INFO_TEXT.leaderboard,
+          "Admins and members of the analytics viewer group are not counted in this list.",
+          `Ranked by: ${RANK_LABELS[leaderboardSortBy]}`,
+        ],
+        cardFilters: cardFilterLines(cardLeaderboardFilters),
+      },
+      {
+        marker: markerOf("regional"),
+        title: "Global Team Performance",
+        lines: [
+          INFO_TEXT.regional,
+          `Ranked by: ${RANK_LABELS[regionalSortBy]}`,
+          (regionalTimeSpent || []).length > 0 ? "Unique visitors in each region / team:" : "No team metrics found.",
+        ],
+        cardFilters: cardFilterLines(cardRegionalFilters),
+        visitorGroups: (regionalTimeSpent || []).map((r) => {
+          const visitors = normalizeVisitors(r.uniqueVisitorDetails);
+          return { label: `${r.region} – ${uniqueVisitorsLabel(visitors.length)}`, visitors };
+        }),
+      },
+      {
+        marker: markerOf("peak"),
+        title: "Peak Activity Windows",
+        lines: [INFO_TEXT.peak],
+        cardFilters: cardFilterLines(cardPeakFilters),
+      },
+      {
+        marker: markerOf("searches"),
+        title: "Most Searched Terms",
+        lines: [INFO_TEXT.searches],
+        cardFilters: cardFilterLines(cardSearchesFilters),
+      }
+    );
+    return sections;
+  };
+
+  const showExportProblem = (message: string) => {
+    setSnackbar({ open: true, message, severity: "warning" });
+  };
+
+  const handleExport = () => {
+    if (isExporting) return;
+
+    const statuses = [status, trendsStatus, topContentStatus, leaderboardStatus, regionalStatus, peakStatus, searchesStatus];
+    if (statuses.includes("loading")) {
+      showExportProblem("Please wait until every card has finished loading, then export again.");
+      return;
+    }
+    if (statuses.includes("failed")) {
+      showExportProblem("Some cards could not be loaded. Reload the page and try again, so the file shows real numbers.");
+      return;
+    }
+
+    const pendingFilters = {
+      startDate: globalStartDate,
+      endDate: globalEndDate,
+      region: globalRegions.join(","),
+      team: globalTeams.join(","),
+      userEmail: globalUserEmails.join(","),
+      pageRoute: globalPageRoute,
+    };
+    if (!sameFilters(pendingFilters, appliedFilters)) {
+      showExportProblem(
+        "You changed the global filters but did not apply them. Click Apply Filters (or Reset) first, so the file matches the numbers."
+      );
+      return;
+    }
+
+    const tables = Array.from(
+      dashboardRef.current?.querySelectorAll<HTMLElement>(".MuiTableContainer-root") ?? []
+    );
+    if (tables.some((table) => table.scrollWidth > table.clientWidth + 1)) {
+      showExportProblem(
+        "Some tables are cut off because the window is too narrow. Make the window wider (or zoom out), then export again."
+      );
+      return;
+    }
+
+    const startedAt = new Date();
+    setSnackbar((prev) => ({ ...prev, open: false }));
+    setExportJob({
+      startedAt,
+      background: theme.palette.mode === "dark" ? theme.palette.background.default : theme.palette.common.white,
+      exportedAtLabel: `${startedAt.toLocaleString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })} (${formatTimezone(timezoneOffsetMinutes)})`,
+      filterLines: describeFilters(appliedFilters, mainRoutes),
+      sections: buildExportSections(),
+    });
+  };
+
+  useEffect(() => {
+    if (!exportJob) return;
+    let active = true;
+
+    const run = async () => {
+      try {
+        const dashboard = dashboardRef.current;
+        if (!dashboard) throw new Error("The dashboard is not on the page.");
+        const at = exportJob.startedAt;
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const fileName = `pitstop-analytics-${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}-${pad(
+          at.getHours()
+        )}${pad(at.getMinutes())}.pdf`;
+        await exportDashboardPdf({
+          dashboard,
+          details: detailsRef.current,
+          backgroundColor: exportJob.background,
+          fileName,
+        });
+        if (active) setSnackbar({ open: true, message: "PDF downloaded.", severity: "success" });
+      } catch (err) {
+        console.error("Failed to export the analytics dashboard", err);
+        if (active) {
+          setSnackbar({ open: true, message: "Could not create the PDF. Please try again.", severity: "error" });
+        }
+      } finally {
+        if (active) setExportJob(null);
+      }
+    };
+
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [exportJob]);
+
   return (
     <Box
       sx={{
@@ -933,7 +1277,17 @@ const AnalyticsAdminDashboard: React.FC = () => {
             : theme.palette.common.white,
       }}
     >
-      <Container maxWidth="xl">
+      {/* flow-root keeps child margins inside, so the export measures the full height */}
+      <Container maxWidth="xl" ref={dashboardRef} sx={{ display: "flow-root" }}>
+        {exportJob && (
+          <ExportHeader
+            exporterName={exporterName}
+            exporterEmail={exporterEmail}
+            exportedAtLabel={exportJob.exportedAtLabel}
+            filterLines={exportJob.filterLines}
+          />
+        )}
+
         {/* Header */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 4, mt: 6 }}>
           <Box
@@ -957,18 +1311,30 @@ const AnalyticsAdminDashboard: React.FC = () => {
               Deep content performance, regional metrics, and user engagement leaderboards
             </Typography>
           </Box>
-          {isAdmin && (
-            <FormControlLabel
-              sx={{ ml: "auto" }}
-              control={
-                <Switch
-                  checked={adminShowTime}
-                  onChange={(e) => handleTimeMetricsToggle(e.target.checked)}
-                />
-              }
-              label="Show time metrics"
-            />
-          )}
+          <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 2 }}>
+            {canToggleTimeMetrics && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={adminShowTime}
+                    onChange={(e) => handleTimeMetricsToggle(e.target.checked)}
+                  />
+                }
+                label="Show time metrics"
+              />
+            )}
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={isExporting ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+              onClick={handleExport}
+              disabled={isExporting}
+              data-export-hide="true"
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+            >
+              {isExporting ? "Exporting…" : "Export PDF"}
+            </Button>
+          </Box>
         </Box>
 
         {/* Global Dynamic Filters Panel */}
@@ -1271,6 +1637,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -1310,13 +1677,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     </Box>
                   </Box>
                   <Tooltip
-                    title="Total page view duration events recorded on the platform matching your selected filters."
+                    title={INFO_TEXT.totalViews}
                     arrow
                   >
                     <IconButton size="small" aria-label="Total Views info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
+                  <ExportMarker n={markerOf("totalViews")} />
                 </Paper>
               </Grid>
 
@@ -1326,6 +1694,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -1369,13 +1738,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   </UniqueVisitorsHover>
 
                   <Tooltip
-                    title="Number of distinct team members who logged into and accessed the platform within the selected filters."
+                    title={INFO_TEXT.uniqueVisitors}
                     arrow
                   >
                     <IconButton size="small" aria-label="Unique Visitors info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
+                  <ExportMarker n={markerOf("uniqueVisitors")} />
                 </Paper>
               </Grid>
 
@@ -1386,6 +1756,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -1425,13 +1796,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     </Box>
                   </Box>
                   <Tooltip
-                    title="Total cumulative active session time spent browsing, reading, or navigating the platform."
+                    title={INFO_TEXT.timeSpent}
                     arrow
                   >
                     <IconButton size="small" aria-label="Time Spent on Platform info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
+                  <ExportMarker n={markerOf("timeSpent")} />
                 </Paper>
               </Grid>
               )}
@@ -1442,6 +1814,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -1481,13 +1854,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     </Box>
                   </Box>
                   <Tooltip
-                    title="Total user interactions performed (including opening previews, clicking external outlinks, or searching). Opening a preview and then clicking its outlink counts as 2 actions."
+                    title={INFO_TEXT.totalActions}
                     arrow
                   >
                     <IconButton size="small" aria-label="Total Actions Taken info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
+                  <ExportMarker n={markerOf("totalActions")} />
                 </Paper>
               </Grid>
 
@@ -1497,6 +1871,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   elevation={0}
                   sx={{
                     p: 2.5,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -1539,13 +1914,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     </Box>
                   </Box>
                   <Tooltip
-                    title="Average number of actions per visit (Total Actions ÷ Total Visits). A visit ends after 30 minutes without any activity."
+                    title={INFO_TEXT.avgActions}
                     arrow
                   >
                     <IconButton size="small" aria-label="Average Actions Per Visit info">
                       <InfoOutlinedIcon fontSize="small" sx={{ color: "text.secondary", opacity: 0.7 }} />
                     </IconButton>
                   </Tooltip>
+                  <ExportMarker n={markerOf("avgActions")} />
                 </Paper>
               </Grid>
             </Grid>
@@ -1605,7 +1981,13 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   }}
                 />
               </Box>
-              <AnalyticsTrendsChart trendData={realTrendData} showTimeMetrics={showTimeMetrics} />
+              <AnalyticsTrendsChart
+                trendData={realTrendData}
+                showTimeMetrics={showTimeMetrics}
+                onSelectedMetricsChange={setTrendMetricIds}
+                animate={!isExporting}
+              />
+              <ExportMarker n={markerOf("trends")} />
             </Box>
 
             {/* Content Performance & Leaderboard Grid */}
@@ -1615,6 +1997,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <Box
                   sx={{
                     p: 3,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -1647,7 +2030,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                           Top Performing Content Breakdown
                         </Typography>
                         <Tooltip
-                          title="Breaks down engagement per material. Preview Clicks requires successful embedding and 10s+ view time. Outlinks tracks direct external opens. Total Views counts modal openings once."
+                          title={INFO_TEXT.topContent}
                           arrow
                         >
                           <IconButton size="small" aria-label="Top Performing Content info">
@@ -1676,12 +2059,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       <CardFilterPopover
                         globalFilters={appliedFilters}
                         mainRoutes={mainRoutes}
-                        onApply={(filters) =>
-                          dispatch(fetchTopContent({ ...filters, sortBy: topContentSortBy }))
-                        }
-                        onReset={() =>
-                          dispatch(fetchTopContent({ ...appliedFilters, sortBy: topContentSortBy }))
-                        }
+                        onApply={(filters) => {
+                          setCardTopContentFilters(filters);
+                          dispatch(fetchTopContent({ ...filters, sortBy: topContentSortBy }));
+                        }}
+                        onReset={() => {
+                          setCardTopContentFilters(null);
+                          dispatch(fetchTopContent({ ...appliedFilters, sortBy: topContentSortBy }));
+                        }}
                       />
                     </Box>
                   </Box>
@@ -1703,7 +2088,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                           <TableCell>Content Title</TableCell>
                           <TableCell align="center">
                             <Tooltip
-                              title="Counted ONLY when content renders successfully in preview AND is viewed for at least 10 seconds. Broken or restricted links do NOT increment preview clicks."
+                              title={INFO_TEXT.previewClicks}
                               arrow
                             >
                               <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
@@ -1714,7 +2099,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                           </TableCell>
                           <TableCell align="center">
                             <Tooltip
-                              title="Counted when opened in a new window/tab (including clicking 'Open in New Window' on restricted or broken preview screens)."
+                              title={INFO_TEXT.outlinks}
                               arrow
                             >
                               <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
@@ -1728,14 +2113,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                             activeMetric={topContentSortBy}
                             label="Total Views"
                             onSort={(m) => handleSortChange(null, m)}
-                            tooltipTitle="Total times this content modal was opened. Opening a preview counts as 1 view, even if an outlink is also clicked inside that modal."
+                            tooltipTitle={INFO_TEXT.contentTotalViews}
                           />
                           <SortableHeaderCell
                             metric="uniqueViews"
                             activeMetric={topContentSortBy}
                             label="Unique Views"
                             onSort={(m) => handleSortChange(null, m)}
-                            tooltipTitle="Number of distinct team members who viewed or opened this content."
+                            tooltipTitle={INFO_TEXT.contentUniqueViews}
                           />
                         </TableRow>
                       </TableHead>
@@ -1772,40 +2157,13 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               </TableCell>
 
                               <TableCell align="center">
-                                <Typography
-                                  variant="body2"
-                                  fontWeight={topContentSortBy === "totalViews" ? 800 : 600}
-                                  color={topContentSortBy === "totalViews" ? "primary.main" : "text.primary"}
-                                >
-                                  {c.totalViews}
-                                </Typography>
+                                <MetricValue value={c.totalViews} active={topContentSortBy === "totalViews"} />
                               </TableCell>
 
                               {/* Unique Views with Paginated Hover Popover */}
                               <TableCell align="center">
                                 <UniqueVisitorsHover visitors={c.uniqueVisitorDetails || []}>
-                                  <Box
-                                    sx={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      gap: 0.5,
-                                    }}
-                                  >
-                                    <PeopleIcon
-                                      sx={{
-                                        fontSize: 16,
-                                        color: topContentSortBy === "uniqueViews" ? "primary.main" : "text.secondary",
-                                      }}
-                                    />
-                                    <Typography
-                                      variant="body2"
-                                      fontWeight={topContentSortBy === "uniqueViews" ? 800 : 600}
-                                      color={topContentSortBy === "uniqueViews" ? "primary.main" : "text.primary"}
-                                    >
-                                      {c.uniqueViews}
-                                    </Typography>
-                                  </Box>
+                                  <MetricValue value={c.uniqueViews} active={topContentSortBy === "uniqueViews"} showPeopleIcon />
                                 </UniqueVisitorsHover>
                               </TableCell>
                             </TableRow>
@@ -1822,6 +2180,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  <ExportMarker n={markerOf("topContent")} />
                 </Box>
               </Grid>
 
@@ -1830,6 +2189,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <Box
                   sx={{
                     p: 3,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -1863,7 +2223,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                           User Activity Leaderboard
                         </Typography>
                         <Tooltip
-                          title="Team members ranked by your selected metric (actions or visits)."
+                          title={INFO_TEXT.leaderboard}
                           arrow
                         >
                           <IconButton size="small" aria-label="User Activity Leaderboard info">
@@ -1959,13 +2319,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                                 </Typography>
                               </TableCell>
                               <TableCell align="center">
-                                <Typography
-                                  variant="body2"
-                                  fontWeight={leaderboardSortBy === "visits" ? 800 : 600}
-                                  color={leaderboardSortBy === "visits" ? "primary.main" : "text.primary"}
-                                >
-                                  {u.visits}
-                                </Typography>
+                                <MetricValue value={u.visits} active={leaderboardSortBy === "visits"} />
                               </TableCell>
                               <TableCell align="center">
                                 <Chip
@@ -1978,13 +2332,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               </TableCell>
                               {showTimeMetrics && (
                                 <TableCell align="center">
-                                  <Typography
-                                    variant="body2"
-                                    fontWeight={leaderboardSortBy === "avgTimeSpentSeconds" ? 800 : 500}
-                                    color={leaderboardSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.primary"}
-                                  >
-                                    {formatTime(u.avgTimeSpentSeconds)}
-                                  </Typography>
+                                  <MetricValue value={formatTime(u.avgTimeSpentSeconds)} active={leaderboardSortBy === "avgTimeSpentSeconds"} />
                                 </TableCell>
                               )}
                             </TableRow>
@@ -2001,6 +2349,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  <ExportMarker n={markerOf("leaderboard")} />
                 </Box>
               </Grid>
             </Grid>
@@ -2012,6 +2361,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <Box
                   sx={{
                     p: 3,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -2045,7 +2395,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                           Global Team Performance
                         </Typography>
                         <Tooltip
-                          title="Platform activity broken down by regional teams, comparing unique visitors, total visits, and total actions."
+                          title={INFO_TEXT.regional}
                           arrow
                         >
                           <IconButton size="small" aria-label="Global Team Performance info">
@@ -2147,24 +2497,12 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               {/* Unique Visitors with Paginated Hover Popover */}
                               <TableCell align="center">
                                 <UniqueVisitorsHover visitors={r.uniqueVisitorDetails || []}>
-                                  <Typography
-                                    variant="body2"
-                                    fontWeight={regionalSortBy === "uniqueVisits" ? 800 : 500}
-                                    color={regionalSortBy === "uniqueVisits" ? "primary.main" : "text.primary"}
-                                  >
-                                    {r.uniqueVisits}
-                                  </Typography>
+                                  <MetricValue value={r.uniqueVisits} active={regionalSortBy === "uniqueVisits"} />
                                 </UniqueVisitorsHover>
                               </TableCell>
 
                               <TableCell align="center">
-                                <Typography
-                                  variant="body2"
-                                  fontWeight={regionalSortBy === "totalVisits" ? 800 : 600}
-                                  color={regionalSortBy === "totalVisits" ? "primary.main" : "text.primary"}
-                                >
-                                  {r.totalVisits}
-                                </Typography>
+                                <MetricValue value={r.totalVisits} active={regionalSortBy === "totalVisits"} />
                               </TableCell>
                               <TableCell align="center">
                                 <Chip
@@ -2177,13 +2515,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                               </TableCell>
                               {showTimeMetrics && (
                                 <TableCell align="center">
-                                  <Typography
-                                    variant="body2"
-                                    fontWeight={regionalSortBy === "avgTimeSpentSeconds" ? 800 : 500}
-                                    color={regionalSortBy === "avgTimeSpentSeconds" ? "primary.main" : "text.primary"}
-                                  >
-                                    {formatTime(r.avgTimeSpentSeconds)}
-                                  </Typography>
+                                  <MetricValue value={formatTime(r.avgTimeSpentSeconds)} active={regionalSortBy === "avgTimeSpentSeconds"} />
                                 </TableCell>
                               )}
                             </TableRow>
@@ -2200,6 +2532,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  <ExportMarker n={markerOf("regional")} />
                 </Box>
               </Grid>
 
@@ -2208,6 +2541,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <Box
                   sx={{
                     p: 3,
+                    position: "relative",
                     borderRadius: 4,
                     border: `1px solid ${theme.palette.divider}`,
                     backgroundColor: theme.palette.background.paper,
@@ -2232,7 +2566,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                         Peak Activity Windows
                       </Typography>
                       <Tooltip
-                        title="The busiest 1-hour time slot on the platform for each day of the week, based on how many content views happened in that hour."
+                        title={INFO_TEXT.peak}
                         arrow
                       >
                         <IconButton size="small" aria-label="Peak Activity Windows info">
@@ -2243,8 +2577,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     <CardFilterPopover
                       globalFilters={appliedFilters}
                       mainRoutes={mainRoutes}
-                      onApply={(filters) => dispatch(fetchPeakActivityTimes(filters))}
-                      onReset={() => dispatch(fetchPeakActivityTimes(appliedFilters))}
+                      onApply={(filters) => {
+                        setCardPeakFilters(filters);
+                        dispatch(fetchPeakActivityTimes(filters));
+                      }}
+                      onReset={() => {
+                        setCardPeakFilters(null);
+                        dispatch(fetchPeakActivityTimes(appliedFilters));
+                      }}
                     />
                   </Box>
                   <TableContainer sx={{ overflowX: "auto", flexGrow: 1, width: "100%" }}>
@@ -2292,6 +2632,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  <ExportMarker n={markerOf("peak")} />
                 </Box>
               </Grid>
             </Grid>
@@ -2300,6 +2641,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
             <Box
               sx={{
                 p: 3,
+                position: "relative",
                 borderRadius: 4,
                 border: `1px solid ${theme.palette.divider}`,
                 backgroundColor: theme.palette.background.paper,
@@ -2320,7 +2662,7 @@ const AnalyticsAdminDashboard: React.FC = () => {
                     Most Searched Terms
                   </Typography>
                   <Tooltip
-                    title="Top search queries submitted in the global search bar, showing total search attempts vs unique users who searched."
+                    title={INFO_TEXT.searches}
                     arrow
                   >
                     <IconButton size="small" aria-label="Most Searched Terms info">
@@ -2331,8 +2673,14 @@ const AnalyticsAdminDashboard: React.FC = () => {
                 <CardFilterPopover
                   globalFilters={appliedFilters}
                   mainRoutes={mainRoutes}
-                  onApply={(filters) => dispatch(fetchTopSearches(filters))}
-                  onReset={() => dispatch(fetchTopSearches(appliedFilters))}
+                  onApply={(filters) => {
+                    setCardSearchesFilters(filters);
+                    dispatch(fetchTopSearches(filters));
+                  }}
+                  onReset={() => {
+                    setCardSearchesFilters(null);
+                    dispatch(fetchTopSearches(appliedFilters));
+                  }}
                 />
               </Box>
               <TableContainer sx={{ overflowX: "auto", width: "100%" }}>
@@ -2391,10 +2739,17 @@ const AnalyticsAdminDashboard: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+              <ExportMarker n={markerOf("searches")} />
             </Box>
           </Box>
         )}
       </Container>
+
+      {exportJob && (
+        <Container maxWidth="xl" ref={detailsRef} data-export-only="block" sx={{ display: "none" }}>
+          <ExportDetails sections={exportJob.sections} />
+        </Container>
+      )}
 
       {/* Snackbar for error feedback */}
       <Snackbar

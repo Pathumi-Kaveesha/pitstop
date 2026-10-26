@@ -39,98 +39,22 @@ import {
   Tooltip as RechartsTooltip,
 } from "recharts";
 
-export interface TrendDataPoint {
-  date: string;
-  startDate?: string;
-  formattedDate?: string;
-  totalViews: number;
-  uniqueViews: number;
-  timeSpentSeconds: number;
-  totalEngagements: number;
-  avgActionsPerVisit: number;
-}
+import { ALL_METRIC_OPTIONS, toChartPoints, type TrendDataPoint } from "./analyticsHelpers";
 
-interface MetricConfig {
-  id: keyof Omit<TrendDataPoint, "date" | "startDate" | "formattedDate">;
-  label: string;
-  color: string;
-  yAxisId: "left" | "right";
-  formatValue: (val: number) => string;
-}
-
-const ALL_METRIC_OPTIONS: MetricConfig[] = [
-  {
-    id: "totalViews",
-    label: "Total Views",
-    color: "#0288d1", // Bright Sky Blue
-    yAxisId: "left",
-    formatValue: (v) => `${v}`,
-  },
-  {
-    id: "uniqueViews",
-    label: "Unique Visitors",
-    color: "#e91e63", // High-Contrast Magenta Pink
-    yAxisId: "left",
-    formatValue: (v) => `${v}`,
-  },
-  {
-    id: "timeSpentSeconds",
-    label: "Time Spent on Platform",
-    color: "#ed6c02", // Deep Orange
-    yAxisId: "right", // Mapped to Right Y-Axis
-    formatValue: (seconds) => {
-      const hours = Math.floor(seconds / 3600);
-      const mins = Math.floor((seconds % 3600) / 60);
-      return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-    },
-  },
-  {
-    id: "totalEngagements",
-    label: "Total Actions Taken",
-    color: "#2e7d32", // Forest Green
-    yAxisId: "left",
-    formatValue: (v) => `${v}`,
-  },
-  {
-    id: "avgActionsPerVisit",
-    label: "Avg Actions Per Visit",
-    color: "#9c27b0", // Deep Purple
-    yAxisId: "left",
-    formatValue: (v) => Number(v || 0).toFixed(1),
-  },
-];
+export type { TrendDataPoint } from "./analyticsHelpers";
 
 interface AnalyticsTrendsChartProps {
   trendData: TrendDataPoint[];
   showTimeMetrics?: boolean;
+  onSelectedMetricsChange?: (metricIds: string[]) => void;
+  animate?: boolean;
 }
-
-// Prod launch date threshold (Aug 21, 2026)
-const PROD_LAUNCH_STR = "2026-08-21";
-
-/**
- * Validates that a string is strictly formatted as YYYY-MM-DD and represents a real calendar date.
- * Rejects out-of-range dates (e.g. 2026-08-32, 2026-02-29) before Date constructor normalization.
- */
-const isValidCalendarDate = (dateStr: string): boolean => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return false;
-  }
-  const [year, month, day] = dateStr.split("-").map(Number);
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
-    return false;
-  }
-  const dateObj = new Date(year, month - 1, day);
-  return (
-    dateObj.getFullYear() === year &&
-    dateObj.getMonth() === month - 1 &&
-    dateObj.getDate() === day
-  );
-};
 
 export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
   trendData = [],
   showTimeMetrics = false,
+  onSelectedMetricsChange,
+  animate = true,
 }) => {
   const METRIC_OPTIONS = useMemo(
     () => ALL_METRIC_OPTIONS.filter((m) => showTimeMetrics || m.id !== "timeSpentSeconds"),
@@ -145,6 +69,10 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
     "uniqueViews",
   ]);
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    onSelectedMetricsChange?.(selectedMetrics);
+  }, [selectedMetrics, onSelectedMetricsChange]);
 
   const handleOpenPopover = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -177,61 +105,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
 
   const open = Boolean(anchorEl);
 
-  // Timezone-safe local date parser with strict Prod Launch Cutoff (Aug 21, 2026)
-  const formattedChartData = useMemo(() => {
-    const filteredTrendData = trendData.filter((item) => {
-      if (!item.date || typeof item.date !== "string" || item.date.trim() === "") {
-        return false;
-      }
-      const checkDate = (item.startDate || item.date).trim().split("T")[0];
-
-      if (isValidCalendarDate(checkDate)) {
-        return checkDate >= PROD_LAUNCH_STR;
-      }
-      return false;
-    });
-
-    const isWideRange = filteredTrendData.length > 14;
-
-    return filteredTrendData.map((item) => {
-      if (!item.date) return { ...item, displayDate: "N/A", formattedDate: "N/A" };
-
-      const cleanDateStr = (item.startDate || item.date).split("T")[0];
-      const parts = cleanDateStr.split("-").map(Number);
-
-      // Only parse YYYY-MM-DD daily date strings
-      let parsedDate: Date | null = null;
-      if (parts.length === 3 && !parts.some(isNaN) && isValidCalendarDate(cleanDateStr)) {
-        parsedDate = new Date(parts[0], parts[1] - 1, parts[2]);
-      }
-
-      if (parsedDate && !isNaN(parsedDate.getTime()) && isValidCalendarDate(cleanDateStr)) {
-        return {
-          ...item,
-          displayDate: parsedDate.toLocaleDateString("en-US", {
-            weekday: isWideRange || isMobile ? undefined : "short",
-            month: "short",
-            day: "numeric",
-          }),
-          formattedDate:
-            item.formattedDate ||
-            parsedDate.toLocaleDateString("en-US", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            }),
-        };
-      }
-
-      // Pre-formatted aggregation strings (weekly, monthly, quarterly)
-      return {
-        ...item,
-        displayDate: item.date,
-        formattedDate: item.formattedDate || item.date,
-      };
-    });
-  }, [trendData, isMobile]);
+  const formattedChartData = useMemo(() => toChartPoints(trendData, isMobile), [trendData, isMobile]);
 
   // Smart calculation for X-Axis tick label sampling based on total range size
   const xAxisInterval = useMemo(() => {
@@ -410,7 +284,7 @@ export const AnalyticsTrendsChart: React.FC<AnalyticsTrendsChartProps> = ({
                             }
                       }
                       activeDot={{ r: 6, stroke: "#fff", strokeWidth: 2 }}
-                      isAnimationActive={true}
+                      isAnimationActive={animate}
                     />
                   );
                 })}

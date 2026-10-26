@@ -32,6 +32,7 @@ import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PeopleIcon from "@mui/icons-material/People";
 import { VisitorUser } from "@slices/analyticsSlice/analytics";
+import { normalizeVisitors } from "./analyticsHelpers";
 
 interface UniqueVisitorsHoverProps {
   visitors?: VisitorUser[] | any;
@@ -53,27 +54,7 @@ export const UniqueVisitorsHover: React.FC<UniqueVisitorsHoverProps> = ({
   const triggerRef = useRef<HTMLSpanElement | null>(null);
   const paperRef = useRef<HTMLDivElement | null>(null);
 
-  const safeVisitors: VisitorUser[] = useMemo(() => {
-    let parsedVisitors = visitors;
-    if (typeof parsedVisitors === "string") {
-      try {
-        parsedVisitors = JSON.parse(parsedVisitors);
-      } catch {
-        parsedVisitors = [];
-      }
-    }
-
-    if (!Array.isArray(parsedVisitors)) return [];
-
-    return parsedVisitors
-      .map((v) => {
-        if (typeof v === "string") {
-          return { email: v, name: v.split("@")[0] };
-        }
-        return { email: v?.email || "", name: v?.name || v?.email?.split("@")[0] || "" };
-      })
-      .filter((v) => Boolean(v.email));
-  }, [visitors]);
+  const safeVisitors: VisitorUser[] = useMemo(() => normalizeVisitors(visitors), [visitors]);
 
   const open = Boolean(anchorEl);
   const totalPages = Math.ceil(safeVisitors.length / PAGE_SIZE);
