@@ -203,7 +203,8 @@ export const logAnalyticsEvent = createAsyncThunk(
         AppConfig.serviceUrls.logAnalyticsEvent(),
         payload
       );
-      return response.data;
+      // The server answers a saved event with an empty body; callers treat a falsy result as a failure
+      return response.data || true;
     } catch (error: any) {
       return rejectWithValue(
         error?.response?.data?.message || "Failed to log event"

@@ -63,6 +63,8 @@ public type AppRoles record {|
     string adminRole;
     # Employee role name
     string employeeRole;
+    # Analytics viewer role name
+    string analyticsViewerRole;
 |};
 
 # User profile details extracted from the JWT token.

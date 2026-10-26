@@ -260,6 +260,22 @@ const Header = (props: HeaderProps) => {
       } else {
         finalRoutes.push(adminPanelItem);
       }
+    } else if (authorizedRoles.includes(Role.ANALYTICS_VIEWER)) {
+      const analyticsItem: RouteResponse = {
+        menuItem: "Analytics Dashboard",
+        path: "/analytics-dashboard",
+        routeId: ROUTE_ID_ANALYTICS_DASHBOARD,
+        routeOrder: 999,
+        children: [],
+        isRouteVisible: true,
+      };
+
+      const moreIndex = finalRoutes.findIndex((r) => r.menuItem?.toLowerCase() === "more");
+      if (moreIndex >= 0) {
+        finalRoutes.splice(moreIndex + 1, 0, analyticsItem);
+      } else {
+        finalRoutes.push(analyticsItem);
+      }
     }
 
     return finalRoutes;

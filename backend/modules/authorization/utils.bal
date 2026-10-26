@@ -51,6 +51,25 @@ public isolated function checkAdminAccess(http:RequestContext ctx) returns http:
     return ();
 }
 
+# Check if the requesting user can view the analytics dashboard (admins and analytics viewers).
+#
+# + ctx - Request context
+# + return - () if user is authorized, or http:Forbidden/http:InternalServerError on failure
+public isolated function checkAnalyticsAccess(http:RequestContext ctx) returns http:Forbidden|http:InternalServerError? {
+    string[]|error userGroups = ctx.getWithType(REQUESTED_BY_USER_ROLES);
+    if userGroups is error {
+        log:printError(constants:GET_USER_ROLE_ERROR, userGroups);
+        return <http:InternalServerError> { body: constants:GET_USER_ROLE_ERROR };
+    }
+
+    if !hasPermission([authorizedRoles.adminRole], userGroups) && !hasPermission([authorizedRoles.analyticsViewerRole], userGroups) {
+        log:printError(constants:UNAUTHORIZED_ACCESS_ERROR);
+        return http:FORBIDDEN;
+    }
+
+    return ();
+}
+
 # Converts a single string or an array of strings into a single consolidated string.
 #
 # + value - The dynamic claim value from the JWT

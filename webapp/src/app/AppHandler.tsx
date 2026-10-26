@@ -29,13 +29,15 @@ import { IS_SMART_SEARCH_ENABLED } from "@config/constant";
 import LibrarySearchButton from "@view/smartSearch/LibrarySearchButton";
 import UnindexedContent from "@view/smartSearch/UnindexedContent";
 import BackfillContent from "@view/smartSearch/BackfillContent";
-import { Navigate, Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
+import { Navigate, Outlet, RouterProvider, createBrowserRouter, useLocation } from "react-router-dom";
 import { useMemo, useEffect } from "react";
 import Summary from "@view/summary/index";
 import VerticalTemplate from "@layout/pages/VerticalTemplate";
 import React from "react";
 import { View } from "@root/src/view";
 import { Role } from "@utils/types";
+import { useCrashRecovery } from "../hooks/useCrashRecovery";
+import { usePageTimeTracker } from "../hooks/useTimeTracker";
 
 // For matomo integration
 export declare let _paq: unknown[];
@@ -73,13 +75,19 @@ const GlobalSnackbarListener = () => {
   return null;
 };
 
-// Wraps every route so the search shortcut is available on every page.
-const AppShell = () => (
-  <>
-    <Outlet />
-    {IS_SMART_SEARCH_ENABLED && <LibrarySearchButton />}
-  </>
-);
+// Wraps every route so the search shortcut and the time tracking work on every page.
+const AppShell = () => {
+  const location = useLocation();
+  usePageTimeTracker(location.pathname);
+  useCrashRecovery();
+
+  return (
+    <>
+      <Outlet />
+      {IS_SMART_SEARCH_ENABLED && <LibrarySearchButton />}
+    </>
+  );
+};
 
 const AppHandler = () => {
   const auth = useAppSelector((state: RootState) => state.auth);
@@ -110,7 +118,8 @@ const AppHandler = () => {
               },
               {
                 path: "/analytics-dashboard",
-                element: authorizedRoles.includes(Role.SALES_ADMIN) ? (
+                element: authorizedRoles.includes(Role.SALES_ADMIN) ||
+                  authorizedRoles.includes(Role.ANALYTICS_VIEWER) ? (
                   React.createElement(View.AnalyticsAdminDashboard)
                 ) : (
                   <Error />

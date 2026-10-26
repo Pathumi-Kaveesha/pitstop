@@ -54,8 +54,9 @@
 
 # Authorization Configurations.
 [sample_app.authorization.authorizedRoles]
+    adminRole = "<Asgardeo role mapped to this application role>"
     employeeRole  = "<Asgardeo role mapped to this application role>"
-    headPeopleOperationsRole = "<Asgardeo role mapped to this application role>"
+    analyticsViewerRole = "<Asgardeo role that can only view the analytics dashboard>"
 ```
 
 ## Execute

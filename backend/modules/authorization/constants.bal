@@ -26,3 +26,4 @@ public const REQUESTED_BY_USER_PROFILE = "requestedByUserProfile";
 // Application Privileges.
 public const EMPLOYEE_PRIVILEGE = 987;
 public const SALES_ADMIN_PRIVILEGE = 537;
+public const ANALYTICS_VIEWER_PRIVILEGE = 612;

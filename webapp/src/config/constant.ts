@@ -45,6 +45,7 @@ export const UIEditStyles = {
 
 export const EMPLOYEE_PRIVILEGE_ID = 987;
 export const SALES_ADMIN_PRIVILEGE_ID = 537;
+export const ANALYTICS_VIEWER_PRIVILEGE_ID = 612;
 
 export const SIDEBAR_WIDTH = 350;
 export const SECTION_LIMIT = 15;

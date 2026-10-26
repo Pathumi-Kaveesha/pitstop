@@ -18,7 +18,7 @@ import { RootState } from "../store";
 import { Role, AuthState, AuthData } from "@utils/types";
 import { getUserPrivileges } from "@utils/auth";
 import { createSlice, PayloadAction, createAsyncThunk } from "@reduxjs/toolkit";
-import { EMPLOYEE_PRIVILEGE_ID, SALES_ADMIN_PRIVILEGE_ID } from "@config/constant";
+import { ANALYTICS_VIEWER_PRIVILEGE_ID, EMPLOYEE_PRIVILEGE_ID, SALES_ADMIN_PRIVILEGE_ID } from "@config/constant";
 
 interface ExtendedAuthState extends AuthState {
   department: string | null;
@@ -92,6 +92,9 @@ export const authSlice = createSlice({
         }
         if (action.payload.includes(SALES_ADMIN_PRIVILEGE_ID)) {
           roles.push(Role.SALES_ADMIN);
+        }
+        if (action.payload.includes(ANALYTICS_VIEWER_PRIVILEGE_ID)) {
+          roles.push(Role.ANALYTICS_VIEWER);
         }
         state.roles = roles;
         state.authFlowState = "end";

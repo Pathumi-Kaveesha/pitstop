@@ -21,6 +21,7 @@ export enum Role {
   SALES_ADMIN = "SALES_ADMIN",
   EMPLOYEE = "EMPLOYEE",
   SALES_MASTER = "SALES_MASTER",
+  ANALYTICS_VIEWER = "ANALYTICS_VIEWER",
 }
 
 export interface EmployeeInfo {
