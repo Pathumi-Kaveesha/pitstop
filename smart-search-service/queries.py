@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS index_jobs (
     generation BIGINT NOT NULL,
     heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Which version of a document's file or page is indexed, so a later check can tell it has changed.
+CREATE TABLE IF NOT EXISTS document_sources (
+    document_id TEXT PRIMARY KEY,
+    link TEXT NOT NULL,
+    version TEXT NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 CLAIM_GENERATION = """
@@ -122,3 +130,18 @@ LIST_DOCUMENT_IDS = "SELECT DISTINCT document_id FROM chunks"
 DELETE_STALE_CHUNKS = "DELETE FROM chunks WHERE document_id = %s AND id <> ALL(%s::text[])"
 
 DELETE_BY_DOCUMENT_ID = "DELETE FROM chunks WHERE document_id = %s"
+
+UPSERT_DOCUMENT_SOURCE = """
+INSERT INTO document_sources (document_id, link, version, recorded_at) VALUES (%s, %s, %s, now())
+ON CONFLICT (document_id) DO UPDATE SET link = EXCLUDED.link, version = EXCLUDED.version, recorded_at = now()
+"""
+
+# Only fills in a version that isn't known yet, so it never overwrites one an index job just stored.
+INSERT_DOCUMENT_SOURCE_IF_ABSENT = """
+INSERT INTO document_sources (document_id, link, version, recorded_at) VALUES (%s, %s, %s, now())
+ON CONFLICT (document_id) DO NOTHING
+"""
+
+GET_DOCUMENT_SOURCE = "SELECT link, version FROM document_sources WHERE document_id = %s"
+
+DELETE_DOCUMENT_SOURCE = "DELETE FROM document_sources WHERE document_id = %s"

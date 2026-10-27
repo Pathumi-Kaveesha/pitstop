@@ -295,6 +295,9 @@ AFTER content_link;
 ALTER TABLE content
 ADD COLUMN `smart_search_indexed_at` timestamp NULL DEFAULT NULL COMMENT 'When Smart Search last confirmed this content is indexed - NULL until then, and cleared again whenever its indexed link changes';
 
+ALTER TABLE content
+ADD COLUMN `smart_search_checked_at` timestamp NULL DEFAULT NULL COMMENT 'When Smart Search last checked this content''s file or page for changes - NULL until its first check';
+
 CREATE TABLE `custom_buttons` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `content_id` INT NOT NULL,

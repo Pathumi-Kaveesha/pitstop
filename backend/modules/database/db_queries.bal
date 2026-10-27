@@ -1172,7 +1172,8 @@ isolated function setSmartSearchIndexFailureQuery(int contentId, string errorMes
     ON DUPLICATE KEY UPDATE error_message = ${errorMessage}, updated_on = CURRENT_TIMESTAMP
 `;
 
-# Query to get recently added or edited content not yet recorded as failed.
+# Query to get recently added or edited content that isn't confirmed indexed yet and isn't recorded as failed. Content
+# that is confirmed isn't asked about again: that answer doesn't change, and asking would keep refreshing its updated_on.
 #
 # + recheckWindowHours - How far back "recently added or edited" reaches
 # + return - SQL parameterized query
@@ -1190,10 +1191,97 @@ isolated function getUncheckedIndexCandidatesQuery(int recheckWindowHours) retur
     WHERE
         c.is_deleted = false
         AND s.content_id IS NULL
+        AND c.smart_search_indexed_at IS NULL
         AND (
             c.created_on >= DATE_SUB(NOW(), INTERVAL ${recheckWindowHours} HOUR)
             OR c.updated_on >= DATE_SUB(NOW(), INTERVAL ${recheckWindowHours} HOUR)
         )
+`;
+
+# Query to get indexed content whose file or page is due a check for changes, least recently checked first.
+#
+# + recheckHours - How long after a check an item is due again
+# + 'limit - The most to return
+# + return - SQL parameterized query
+isolated function getSourceCheckCandidatesQuery(int recheckHours, int 'limit) returns sql:ParameterizedQuery => `
+    SELECT
+        c.content_id,
+        c.content_type,
+        c.content_sub_type,
+        c.content_link,
+        c.transcript_link,
+        CAST(UNIX_TIMESTAMP(c.smart_search_indexed_at) AS SIGNED) AS indexed_at
+    FROM
+        content c
+    LEFT JOIN
+        smart_search_index_failure s ON s.content_id = c.content_id
+    WHERE
+        c.is_deleted = false
+        AND s.content_id IS NULL
+        AND c.smart_search_indexed_at IS NOT NULL
+        AND (
+            c.smart_search_checked_at IS NULL
+            OR c.smart_search_checked_at < DATE_SUB(NOW(), INTERVAL ${recheckHours} HOUR)
+        )
+    ORDER BY
+        c.smart_search_checked_at,
+        c.content_id
+    LIMIT ${'limit}
+`;
+
+# Query to get indexed content to use as a test that the Drive connection works, most recently checked first. Any kind of
+# link comes back; the caller keeps the Google Drive ones.
+#
+# + 'limit - The most to return
+# + return - SQL parameterized query
+isolated function getDriveCanariesQuery(int 'limit) returns sql:ParameterizedQuery => `
+    SELECT
+        c.content_id,
+        c.content_type,
+        c.content_sub_type,
+        c.content_link,
+        c.transcript_link,
+        CAST(UNIX_TIMESTAMP(c.smart_search_indexed_at) AS SIGNED) AS indexed_at
+    FROM
+        content c
+    LEFT JOIN
+        smart_search_index_failure s ON s.content_id = c.content_id
+    WHERE
+        c.is_deleted = false
+        AND s.content_id IS NULL
+        AND c.smart_search_indexed_at IS NOT NULL
+    ORDER BY
+        c.smart_search_checked_at DESC,
+        c.content_id
+    LIMIT ${'limit}
+`;
+
+# Query to claim one content item's change check, so only one copy of the backend checks it each period.
+# updated_on is set to itself, since this isn't an edit and must not look like one.
+#
+# + contentId - The content's id
+# + recheckHours - How long after a check an item is due again
+# + return - SQL parameterized query
+isolated function claimSourceCheckQuery(int contentId, int recheckHours) returns sql:ParameterizedQuery => `
+    UPDATE content
+    SET smart_search_checked_at = CURRENT_TIMESTAMP, updated_on = updated_on
+    WHERE
+        content_id = ${contentId}
+        AND (
+            smart_search_checked_at IS NULL
+            OR smart_search_checked_at < DATE_SUB(NOW(), INTERVAL ${recheckHours} HOUR)
+        )
+`;
+
+# Query to mark a content item's change check as done this many hours ago, so it's due again sooner than a full period.
+#
+# + contentId - The content's id
+# + hoursAgo - How long ago to count the check as done
+# + return - SQL parameterized query
+isolated function backdateSourceCheckQuery(int contentId, int hoursAgo) returns sql:ParameterizedQuery => `
+    UPDATE content
+    SET smart_search_checked_at = DATE_SUB(NOW(), INTERVAL ${hoursAgo} HOUR), updated_on = updated_on
+    WHERE content_id = ${contentId}
 `;
 
 # Query for the id of every content item not deleted - a missing flag counts as live, so a sweep never removes on doubt.

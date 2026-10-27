@@ -44,6 +44,7 @@ USER_JWT_HEADER = "x-user-jwt"
 _ADMIN_ROUTES = (
     ("GET", re.compile(r"^/documents$")),
     ("GET", re.compile(r"^/documents/[0-9]+/status$")),
+    ("POST", re.compile(r"^/documents/[0-9]+/source-check$")),
     ("DELETE", re.compile(r"^/documents/[0-9]+$")),
     ("POST", re.compile(r"^/ingest-drive-link$")),
 )

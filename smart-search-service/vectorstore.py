@@ -196,11 +196,16 @@ def store_chunks_if_current(
     drive_link: str,
     native_links: list[Optional[str]],
     moments: Optional[list[Optional[list[tuple[str, str]]]]] = None,
+    source_link: Optional[str] = None,
+    source_version: Optional[str] = None,
 ) -> bool:
     """Stores each (vector, text, metadata) triple in PostgreSQL, and clears leftover chunks from an
     earlier, longer version - but only if no newer job or delete has claimed this document meanwhile.
     The check and the write share one transaction holding the document's row lock, so they can't be
-    interleaved by another copy of the service. Returns False when it was superseded and wrote nothing."""
+    interleaved by another copy of the service. Returns False when it was superseded and wrote nothing.
+
+    source_link and source_version record which version of the file or page was indexed, in the same
+    transaction - without a version, any earlier one is dropped, since it no longer describes what's stored."""
     if len({len(vectors), len(texts), len(pages), len(native_links)}) > 1:
         raise ValueError(
             f"Vector/text/page/native_link length mismatch: vectors={len(vectors)}, "
@@ -242,6 +247,10 @@ def store_chunks_if_current(
                     cur.executemany(queries.UPSERT_CHUNK, rows)
                     expected = [f"{document_id}#{index}" for index in range(len(rows))]
                     cur.execute(queries.DELETE_STALE_CHUNKS, (document_id, expected))
+                    if source_link and source_version:
+                        cur.execute(queries.UPSERT_DOCUMENT_SOURCE, (document_id, source_link, source_version))
+                    else:
+                        cur.execute(queries.DELETE_DOCUMENT_SOURCE, (document_id,))
             return True
         except psycopg.Error as error:
             last_error = error
@@ -318,6 +327,21 @@ def document_exists(document_id: str) -> bool:
         return cur.fetchone() is not None
 
 
+def get_document_source(document_id: str) -> Optional[tuple[str, str]]:
+    """The link and version of the file or page last indexed for this document - None when none was recorded."""
+    _ensure_schema()
+    with _pool.connection() as conn:
+        row = conn.execute(queries.GET_DOCUMENT_SOURCE, (document_id,)).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def record_document_source_if_absent(document_id: str, link: str, version: str) -> None:
+    """Records the version of a document indexed before versions were kept, unless one is already known."""
+    _ensure_schema()
+    with _pool.connection() as conn:
+        conn.execute(queries.INSERT_DOCUMENT_SOURCE_IF_ABSENT, (document_id, link, version))
+
+
 def list_document_ids() -> list[str]:
     """The id of every document with at least one indexed chunk - lets the backend find
     chunks whose Pitstop content no longer exists."""
@@ -341,6 +365,7 @@ def delete_document(document_id: str) -> bool:
             with _pool.connection() as conn:
                 conn.execute(queries.CLAIM_GENERATION, (document_id,))
                 conn.execute(queries.CLEAR_INDEX_JOB, (document_id,))
+                conn.execute(queries.DELETE_DOCUMENT_SOURCE, (document_id,))
                 return conn.execute(queries.DELETE_BY_DOCUMENT_ID, (document_id,)).rowcount > 0
         except psycopg.Error as error:
             last_error = error

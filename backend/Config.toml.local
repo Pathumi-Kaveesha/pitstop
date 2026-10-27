@@ -33,6 +33,12 @@ maxWaitInterval =
 
 [sample_app.smartsearch]
 smartSearchEnabled =
+# Optional: how often each indexed content is checked for changes, in days (1 to 365, default 7), and how often the
+# backend looks for what is due, in minutes (1 to 1440, default 60)
+# sourceRecheckDays = 7
+# sourceCheckIntervalMinutes = 60
+# Optional: when content indexed before change checking existed was indexed (or a little before), for example
+# sourceBaselineDate = "2026-10-26T00:00:00+05:30"
 
 [sample_app.smartsearch.smartSearchServiceConfig]
 apiEndpoint =

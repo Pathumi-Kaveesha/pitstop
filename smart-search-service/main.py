@@ -23,6 +23,7 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from typing import Literal, Optional
 
@@ -35,8 +36,8 @@ from chunking import Chunk, UNIT_LABELS, chunk_document
 from compose import compose_message, split_subject, strip_frame
 from deep_links import build_native_links, build_video_timestamp_links
 from drive_service import DriveServiceError
-from google_drive import DriveFileInfo, download_drive_file, resolve_drive_file
-from web_page import fetch_web_page_text, is_web_page_link
+from google_drive import DriveFileInfo, FileTrashedError, UnindexableDriveFile, download_drive_file, resolve_drive_file
+from web_page import WebPageGoneError, fetch_web_page_text, is_web_page_link
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     INDEX_ERROR_TTL_SECONDS,
@@ -48,6 +49,7 @@ from config import (
     EMBED_REQUEST_SPACING_SECONDS,
     SEARCH_CACHE_MAX_ENTRIES,
     SEARCH_CACHE_TTL_SECONDS,
+    SOURCE_FIRST_CHECK_MARGIN_SECONDS,
 )
 from embeddings import embed_chunks, embed_text, format_query_text
 from generation import generate_answer
@@ -58,9 +60,11 @@ from vectorstore import (
     document_exists,
     clear_stale_index_job,
     finish_index_job,
+    get_document_source,
     is_current_generation,
     is_index_job_stale,
     list_document_ids,
+    record_document_source_if_absent,
     search,
     start_index_job,
     store_chunks_if_current,
@@ -330,6 +334,7 @@ def _index_drive_file_in_background(
             chunks, title, document_id, generation,
             UNIT_LABELS[extraction_extension], "reference" if display_link else info.extension,
             "drive", display_link or drive_link, chunk_native_links,
+            source_link=drive_link, source_version=_drive_source_version(info),
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to return an error to
         logger.exception("Background indexing failed for '%s' (id %s)", _safe_log_value(title), document_id)
@@ -339,6 +344,7 @@ def _index_drive_file_in_background(
 def _embed_and_store(
     chunks: list[Chunk], title: str, document_id: str, generation: int,
     unit_label: str, file_extension: str, source: str, link: str, native_links: list[Optional[str]],
+    source_link: Optional[str] = None, source_version: Optional[str] = None,
 ) -> None:
     """Shared tail of every background indexing job: embed, then store - unless the content was
     deleted, or re-indexed again by a newer job, while this was running."""
@@ -357,7 +363,7 @@ def _embed_and_store(
     stored = store_chunks_if_current(
         vectors, [c.text for c in chunks], title, [c.page for c in chunks],
         document_id, generation, unit_label, file_extension, source, link, native_links,
-        [c.moments for c in chunks],
+        [c.moments for c in chunks], source_link=source_link, source_version=source_version,
     )
     if not stored:
         logger.info("Content %s was deleted or re-indexed while this job was embedding - discarding this attempt.", document_id)
@@ -392,10 +398,36 @@ def _index_webpage_in_background(
         _embed_and_store(
             chunks, title, document_id, generation,
             UNIT_LABELS["webpage"], "webpage", "web", url, [None] * len(chunks),
+            source_link=url, source_version=_web_page_version(text),
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to report an error to
         logger.exception("Background indexing failed for '%s' (id %s)", _safe_log_value(title), document_id)
         _set_index_error(document_id, _friendly_index_error(error))
+
+
+def _drive_source_version_of(modified_time: Optional[str]) -> Optional[str]:
+    """What a Drive file's version is recorded as - None when the Drive Service doesn't report when it last changed."""
+    return f"drive:{modified_time}" if modified_time else None
+
+
+def _drive_source_version(info: DriveFileInfo) -> Optional[str]:
+    return _drive_source_version_of(info.modified_time)
+
+
+def _web_page_version(text: str) -> str:
+    """What a webpage's version is recorded as - a fingerprint of its text, since pages rarely say when they changed."""
+    return "web:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _unix_seconds(timestamp: Optional[str]) -> Optional[float]:
+    """An RFC 3339 time as Unix seconds - None when it is missing or unreadable."""
+    if not timestamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.timestamp() if parsed.tzinfo is not None else None
 
 
 def _safe_log_value(value: object) -> str:
@@ -557,6 +589,114 @@ def get_document_status(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> di
         error_message = INTERRUPTED_INDEX_MESSAGE
 
     return {"indexed": indexed, "errorMessage": error_message}
+
+
+SourceCheckResult = Literal["changed", "unchanged", "gone", "unindexable", "unavailable", "unknown"]
+
+
+class SourceCheckRequest(BaseModel):
+    # The link indexing reads - the driveLink /ingest-drive-link was given
+    link: str = Field(min_length=1, max_length=2048)
+    # When the backend confirmed this document indexed, in Unix seconds - only used before a version is recorded
+    indexedAt: Optional[int] = Field(default=None, ge=0)
+
+
+def _current_source_version(link: str) -> tuple[Optional[str], Optional[float]]:
+    """The version of what a link points at now, and when it last changed in Unix seconds, when known.
+    WebPageGoneError, FileTrashedError or a DriveServiceError with file_missing when it's gone, ValueError when it can
+    no longer be indexed, another DriveServiceError or RuntimeError when that can't be told right now."""
+    if is_web_page_link(link):
+        page = fetch_web_page_text(link)
+        return _web_page_version(page.text), None
+    info = resolve_drive_file(link)
+    if info.trashed:
+        raise FileTrashedError("The file is in the trash.")
+    return _drive_source_version(info), _unix_seconds(info.modified_time)
+
+
+def _is_unchanged(
+    document_id: str, link: str, version: str, modified_at: Optional[float], indexed_at: Optional[int]
+) -> bool:
+    """Whether the file or page still is what was indexed. A document indexed before versions were kept is trusted only
+    if its file clearly hadn't changed since then - and its version is recorded, so the next check compares normally."""
+    recorded = get_document_source(document_id)
+    if recorded is not None:
+        return recorded == (link, version)
+    if not document_exists(document_id):
+        return False
+    if (modified_at is not None and indexed_at is not None
+            and modified_at < indexed_at - SOURCE_FIRST_CHECK_MARGIN_SECONDS):
+        record_document_source_if_absent(document_id, link, version)
+        return True
+    return False
+
+
+def _check_document_source(
+    document_id: str, link: str, indexed_at: Optional[int]
+) -> tuple[SourceCheckResult, Optional[str]]:
+    """The check's answer, and for "unindexable" the reason the file can't be indexed now."""
+    try:
+        version, modified_at = _current_source_version(link)
+    except WebPageGoneError:
+        logger.info("Source of document %s no longer exists", _safe_log_value(document_id))
+        return "gone", None
+    except FileTrashedError:
+        logger.info("Source of document %s is in the trash", _safe_log_value(document_id))
+        return "gone", None
+    except UnindexableDriveFile as error:
+        if error.trashed:
+            logger.info("Source of document %s is in the trash", _safe_log_value(document_id))
+            return "gone", None
+        # Still there, so only a file that changed since it was indexed is a problem: the indexed text describes an
+        # older version of it. One that hasn't changed keeps its text, whatever the rules say today.
+        version = _drive_source_version_of(error.modified_time)
+        if version is None:
+            return "unavailable", None
+        if _is_unchanged(document_id, link, version, _unix_seconds(error.modified_time), indexed_at):
+            logger.info("Source of document %s can't be indexed now, but hasn't changed", _safe_log_value(document_id))
+            return "unavailable", None
+        logger.info(
+            "Source of document %s changed and can't be indexed any more: %s",
+            _safe_log_value(document_id), _safe_log_value(error),
+        )
+        return "unindexable", str(error)
+    except ValueError as error:
+        logger.info(
+            "Source of document %s can't be indexed any more: %s", _safe_log_value(document_id), _safe_log_value(error)
+        )
+        return "unavailable", None
+    except DriveServiceError as error:
+        if error.file_missing:
+            logger.info("Source of document %s is gone or no longer shared with Pitstop", _safe_log_value(document_id))
+            return "gone", None
+        logger.warning(
+            "Could not check the source of document %s: %s", _safe_log_value(document_id), _safe_log_value(error)
+        )
+        return "unknown", None
+    except RuntimeError as error:
+        logger.warning(
+            "Could not check the source of document %s: %s", _safe_log_value(document_id), _safe_log_value(error)
+        )
+        return "unknown", None
+    if version is None:
+        return "unknown", None
+    return ("unchanged" if _is_unchanged(document_id, link, version, modified_at, indexed_at) else "changed"), None
+
+
+@app.post("/documents/{document_id}/source-check")
+def check_document_source(body: SourceCheckRequest, document_id: str = Path(..., pattern=r"^[0-9]+$")) -> dict:
+    """Whether the file or page behind an indexed document has changed since it was indexed: "changed" (index it
+    again), "unchanged", "gone" (deleted, in the trash, or no longer shared with Pitstop), "unindexable" (it changed
+    and can't be indexed any more - with the reason), "unavailable" (still there and unchanged, but the rules no
+    longer allow indexing it) or "unknown" (couldn't tell - check again later)."""
+    try:
+        result, reason = _check_document_source(document_id, body.link, body.indexedAt)
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+        logger.exception("Failed to check the source of document %s", _safe_log_value(document_id))
+        raise HTTPException(status_code=500, detail="Could not check this document's source.") from error
+    if result == "changed":
+        logger.info("Source of document %s has changed since it was indexed", _safe_log_value(document_id))
+    return {"result": result, "reason": reason} if reason else {"result": result}
 
 
 @app.get("/search")

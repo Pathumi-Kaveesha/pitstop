@@ -401,9 +401,10 @@ public isolated function recordUnindexableLink(int contentId, string contentType
 # + requestedBy - Email of the admin whose action triggered this, for the logs
 # + recordUnreachable - Save a failure when the request can't be sent, so a retry never leaves the item with no reason
 # + userJwt - The admin's login token, forwarded so the service can check it
+# + recordTemporaryRejection - Save a failure when the service turns it away for a reason that may pass (a 5xx)
 public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title,
         string? displayLink = (), string? requestedBy = (), boolean recordUnreachable = false,
-        string? userJwt = ()) {
+        string? userJwt = (), boolean recordTemporaryRejection = true) {
     DriveLinkIngestRequest payload = {
         driveLink,
         title,
@@ -448,7 +449,9 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
     }
     log:printWarn(string `Smart Search: skipped indexing content ${contentId}`,
             link = driveLink, status = response.statusCode, reason = reason);
-    recordIndexFailure(contentId, reason);
+    if recordTemporaryRejection || response.statusCode < 500 {
+        recordIndexFailure(contentId, reason);
+    }
     releaseBackfillReservation(contentId);
 }
 
@@ -1599,7 +1602,7 @@ public isolated function startBulkIndex(http:RequestContext ctx, string? content
     return {started: true};
 }
 
-# Live-checks content added or edited within the recheck window and not already a known failure.
+# Live-checks content added or edited within the recheck window that isn't confirmed indexed yet or a known failure.
 #
 # + return - False if unreachable partway through, or an error if the candidates couldn't be listed
 isolated function reconcileUncheckedCandidates() returns boolean|error {
@@ -1769,9 +1772,380 @@ class ReservationReconciliationJob {
     }
 }
 
+// Whether this copy of the backend is already running a change check, so a slow run is never joined by the next one.
+isolated boolean sourceRefreshRunning = false;
+
+isolated function tryStartSourceRefresh() returns boolean {
+    lock {
+        if sourceRefreshRunning {
+            return false;
+        }
+        sourceRefreshRunning = true;
+        return true;
+    }
+}
+
+isolated function finishSourceRefresh() {
+    lock {
+        sourceRefreshRunning = false;
+    }
+}
+
+# Asks the search service whether the file or page behind an indexed content item has changed.
+#
+# + contentId - The content to check
+# + link - The link indexing reads
+# + indexedAt - When it was confirmed indexed, in Unix seconds
+# + return - The answer, or an error if the service couldn't be asked
+isolated function checkSource(int contentId, string link, int? indexedAt) returns SourceCheckResponse|error {
+    http:Client serviceClient = check getSearchClient();
+    SourceCheckRequest payload = {link, indexedAt: indexedReference(indexedAt)};
+    return serviceClient->post(string `/documents/${contentId}/source-check`, payload);
+}
+
+# The sourceBaselineDate setting as Unix seconds, or nothing when it isn't set or isn't a valid time.
+#
+# + return - The seconds
+isolated function readSourceBaseline() returns int? {
+    string? configured = sourceBaselineDate;
+    if configured is () || configured.trim() == "" {
+        return ();
+    }
+    time:Utc|error parsed = time:utcFromString(configured.trim());
+    if parsed is error {
+        log:printWarn("Smart Search: sourceBaselineDate is not a time like 2026-10-26T00:00:00+05:30, so it is ignored",
+                value = configured);
+        return ();
+    }
+    return parsed[0];
+}
+
+final int? sourceBaselineEpoch = readSourceBaseline();
+
+# The time to count as when old content was indexed: the earlier of its confirmed date and the baseline, so a confirmed
+# date that has moved forward can't hide an edit.
+#
+# + indexedAt - The content's confirmed date, in Unix seconds
+# + return - The time to compare the file's last edit with
+isolated function indexedReference(int? indexedAt) returns int? {
+    int? baseline = sourceBaselineEpoch;
+    if baseline is () {
+        return indexedAt;
+    }
+    return indexedAt is int ? int:min(indexedAt, baseline) : baseline;
+}
+
+# How long an item waits between checks for changes, in hours: the sourceRecheckDays setting, or 7 days when it is not
+# from 1 to 365.
+#
+# + return - The hours
+isolated function sourceRecheckHours() returns int {
+    boolean valid = sourceRecheckDays >= 1 && sourceRecheckDays <= MAX_SOURCE_RECHECK_DAYS;
+    return (valid ? sourceRecheckDays : DEFAULT_SOURCE_RECHECK_DAYS) * 24;
+}
+
+# How often the change check looks for items that are due, in seconds: the sourceCheckIntervalMinutes setting, or 60
+# minutes when it is not from 1 to 1440.
+#
+# + return - The seconds
+isolated function sourceCheckIntervalSeconds() returns decimal {
+    boolean valid = sourceCheckIntervalMinutes >= 1 && sourceCheckIntervalMinutes <= MAX_SOURCE_CHECK_INTERVAL_MINUTES;
+    return <decimal>(valid ? sourceCheckIntervalMinutes : DEFAULT_SOURCE_CHECK_INTERVAL_MINUTES) * 60;
+}
+
+# Counts a content item's check as done long enough ago that it's due again after the given hours.
+#
+# + contentId - The content whose check to bring forward
+# + dueInHours - How soon it should be due again
+isolated function bringSourceCheckForward(int contentId, int dueInHours) {
+    error? backdateError = database:backdateSourceCheck(contentId, sourceRecheckHours() - dueInHours);
+    if backdateError is error {
+        log:printWarn("Smart Search: could not reschedule a change check", backdateError, contentId = contentId);
+    }
+}
+
+# Indexes a content item again because its file or page changed. Nothing is cleared first, unlike a retry or a link
+# change: the current version stays searchable until the new one is stored, and stays if indexing fails.
+#
+# + contentId - The content whose file or page changed
+# + checkedLink - The link that was checked
+# + return - True if indexing was sent
+isolated function refreshIndexedContent(int contentId, string checkedLink) returns boolean {
+    // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent, so this never overlaps an admin's edit or retry.
+    lock {
+        reindexRuns += 1;
+
+        database:IndexingInfo?|error current = database:getIndexingInfo(contentId);
+        if current is error {
+            log:printWarn("Smart Search: could not look up content to refresh", current, contentId = contentId);
+            return false;
+        }
+        if current is () {
+            return false;
+        }
+        // Edited since the check - that edit indexes it again itself
+        if indexingLinkFor(current.contentType, current.contentSubtype, current.contentLink,
+                current.transcriptLink) != checkedLink {
+            return false;
+        }
+        // A temporary refusal isn't saved as a failure: the old version is still searchable, and the next check retries
+        indexContentForSmartSearch(contentId, checkedLink, current.description,
+                displayLinkFor(current.contentType, current.contentSubtype, current.contentLink), SOURCE_REFRESH_REQUESTER,
+                recordTemporaryRejection = false);
+        return true;
+    }
+}
+
+# Removes a content item from Smart Search because its file or page is gone, or changed and can't be indexed any more, and
+# records why, so it shows with the failed ones. A retry indexes it again once the file is back, shared again or small
+# enough.
+#
+# + contentId - The content whose file or page is gone
+# + checkedLink - The link that was checked
+# + reason - Why it can't be indexed, when the search service said
+# + return - True if it was removed
+isolated function removeGoneContent(int contentId, string checkedLink, string? reason = ()) returns boolean {
+    // Shares reindexRuns with reindexAfterLinkChange/retryIndexContent, so this never overlaps an admin's edit or retry.
+    lock {
+        reindexRuns += 1;
+
+        database:IndexingInfo?|error current = database:getIndexingInfo(contentId);
+        if current is error {
+            log:printWarn("Smart Search: could not look up content whose file is gone", current, contentId = contentId);
+            return false;
+        }
+        if current is () {
+            return false;
+        }
+        // Edited since the check - the new link is indexed on its own
+        if indexingLinkFor(current.contentType, current.contentSubtype, current.contentLink,
+                current.transcriptLink) != checkedLink {
+            return false;
+        }
+        if !clearIndexedEntries(contentId) {
+            return false;
+        }
+        error? clearIndexedAtError = database:clearSmartSearchIndexedAt(contentId);
+        if clearIndexedAtError is error {
+            log:printWarn("Smart Search: could not clear the confirmed-indexed marker of removed content",
+                    clearIndexedAtError, contentId = contentId);
+        }
+        string failureReason = isWebPageLink(checkedLink) ? GONE_PAGE_REASON : GONE_FILE_REASON;
+        if reason is string {
+            failureReason = reason + CHANGED_UNINDEXABLE_SUFFIX;
+        }
+        recordIndexFailure(contentId, failureReason);
+        log:printInfo("Smart Search: removed content whose file or page is gone or can't be indexed any more",
+                contentId = contentId);
+        return true;
+    }
+}
+
+# Whether a check's answer means the file's details were read, which no other kind of failure gives.
+#
+# + result - The answer of the search service
+# + return - True if the file's details were read
+isolated function fileDetailsRead(string result) returns boolean =>
+    result == SOURCE_CHANGED || result == SOURCE_UNCHANGED || result == SOURCE_UNINDEXABLE
+    || result == SOURCE_UNAVAILABLE;
+
+# Whether the Drive connection works: reads a few other indexed Drive files, and is satisfied by one that answers with
+# its details. A deleted file says nothing about that, but a connection to the wrong account makes every file look gone.
+#
+# + skipIds - Content that must not be used, because it looks gone itself
+# + return - True if one of them could be read
+isolated function driveConnectionWorks(int[] skipIds) returns boolean {
+    database:SourceCheckCandidate[]|error canaries = database:getDriveCanaries(DRIVE_CANARY_POOL);
+    if canaries is error {
+        log:printWarn("Smart Search: could not pick files to test the Drive connection with", canaries);
+        return false;
+    }
+    int tried = 0;
+    foreach database:SourceCheckCandidate canary in canaries {
+        if skipIds.indexOf(canary.contentId) is int {
+            continue;
+        }
+        string? link = indexingLinkFor(canary.contentType, canary.contentSubtype, canary.contentLink,
+                canary.transcriptLink);
+        if link is () || isWebPageLink(link) || !isContentLinkIndexable(canary.contentType, canary.contentSubtype, link) {
+            continue;
+        }
+        if tried >= MAX_DRIVE_CANARIES {
+            break;
+        }
+        tried += 1;
+        SourceCheckResponse|error answer = checkSource(canary.contentId, link, canary.indexedAt);
+        if answer is error {
+            // The search service can't be reached - nothing is proven
+            return false;
+        }
+        if fileDetailsRead(answer.result) {
+            return true;
+        }
+    }
+    return false;
+}
+
+# Checks a batch of indexed content for changes to its file or page, indexes again what has changed, and removes what is
+# gone. Every copy of the backend runs this; each item is claimed before it's checked, so only one copy checks it each
+# period.
+isolated function refreshChangedSources() {
+    // A bulk run is already sending work to the search service
+    if isBulkIndexRunning() {
+        return;
+    }
+    database:SourceCheckCandidate[]|error candidates =
+        database:getSourceCheckCandidates(sourceRecheckHours(), MAX_SOURCE_CHECKS_PER_RUN);
+    if candidates is error {
+        log:printWarn("Smart Search: could not list content due a change check", candidates);
+        return;
+    }
+
+    int checked = 0;
+    int refreshed = 0;
+    // A Drive file is only removed when another one was read fine in the same run, proving the Drive connection works
+    boolean driveReadable = false;
+    [int, string, string?][] gone = [];
+    foreach database:SourceCheckCandidate candidate in candidates {
+        // The rest wait for the next run, unclaimed, rather than being checked now and again then
+        if refreshed >= MAX_SOURCE_REFRESHES_PER_RUN {
+            break;
+        }
+        boolean|error claimed = database:claimSourceCheck(candidate.contentId, sourceRecheckHours());
+        if claimed is error {
+            log:printWarn("Smart Search: could not claim a change check", claimed, contentId = candidate.contentId);
+            break;
+        }
+        if !claimed {
+            continue;
+        }
+        string? link = indexingLinkFor(candidate.contentType, candidate.contentSubtype, candidate.contentLink,
+                candidate.transcriptLink);
+        if link is () || !isContentLinkIndexable(candidate.contentType, candidate.contentSubtype, link) {
+            continue;
+        }
+
+        SourceCheckResponse|error answer = checkSource(candidate.contentId, link, candidate.indexedAt);
+        if answer is error {
+            log:printWarn("Smart Search: could not check content for changes", answer, contentId = candidate.contentId);
+            bringSourceCheckForward(candidate.contentId, SOURCE_CHECK_RETRY_HOURS);
+            // The rest would most likely fail the same way - try again next run
+            break;
+        }
+        string result = answer.result;
+        checked += 1;
+        // The file's details were read, so the Drive connection works
+        if fileDetailsRead(result) && !isWebPageLink(link) {
+            driveReadable = true;
+        }
+        if result == SOURCE_CHANGED {
+            if refreshIndexedContent(candidate.contentId, link) {
+                refreshed += 1;
+                // If the new version doesn't get stored (the search service can't read it right now), the next check
+                // finds it changed again and retries it, instead of that waiting a week. Not for a webpage, whose
+                // text can differ at every look, which would refresh it every day.
+                if !isWebPageLink(link) {
+                    bringSourceCheckForward(candidate.contentId, SOURCE_CHECK_RETRY_HOURS);
+                }
+            }
+        } else if result == SOURCE_GONE {
+            gone.push([candidate.contentId, link, ()]);
+        } else if result == SOURCE_UNINDEXABLE {
+            string? reason = answer?.reason;
+            if reason is string && reason.trim() != "" {
+                gone.push([candidate.contentId, link, reason.trim()]);
+            } else {
+                // No reason to show - not certain enough to remove, tried again tomorrow
+                bringSourceCheckForward(candidate.contentId, SOURCE_CHECK_RETRY_HOURS);
+            }
+        } else if result == SOURCE_UNAVAILABLE {
+            // Still there, so people can still open it - its last indexed text stays searchable
+            log:printInfo("Smart Search: an indexed content's file or page can no longer be indexed",
+                    contentId = candidate.contentId);
+        } else if result != SOURCE_UNCHANGED {
+            bringSourceCheckForward(candidate.contentId, SOURCE_CHECK_RETRY_HOURS);
+        }
+    }
+
+    // A Drive file is only removed once the Drive connection is known to work. Other files read in this run prove it;
+    // when there are none (a lone item is due), other indexed Drive files are tried.
+    boolean driveProven = driveReadable;
+    if !driveProven {
+        boolean anyDriveFile = false;
+        int[] goneIds = [];
+        foreach [int, string, string?] [contentId, link, _] in gone {
+            goneIds.push(contentId);
+            anyDriveFile = anyDriveFile || !isWebPageLink(link);
+        }
+        if anyDriveFile {
+            driveProven = driveConnectionWorks(goneIds);
+        }
+    }
+    int removed = 0;
+    int heldBack = 0;
+    foreach [int, string, string?] [contentId, link, reason] in gone {
+        if removed >= MAX_SOURCE_REMOVALS_PER_RUN {
+            // Over this run's limit, not in doubt - first in line at the next run
+            bringSourceCheckForward(contentId, 0);
+        } else if !driveProven && !isWebPageLink(link) {
+            // The Drive connection isn't proven - looked at again a day later
+            bringSourceCheckForward(contentId, SOURCE_CHECK_RETRY_HOURS);
+            heldBack += 1;
+        } else if removeGoneContent(contentId, link, reason) {
+            removed += 1;
+        } else {
+            bringSourceCheckForward(contentId, SOURCE_CHECK_RETRY_HOURS);
+        }
+    }
+    if heldBack > 0 {
+        log:printWarn(string `Smart Search: ${heldBack} content items look gone but were not removed yet - ` +
+                string `looking again in ${SOURCE_CHECK_RETRY_HOURS} hours`);
+    }
+    if gone.length() > MAX_SOURCE_REMOVALS_PER_RUN {
+        log:printWarn(string `Smart Search: ${gone.length()} content items look gone or unindexable at once - removed at `
+                + string `most ${MAX_SOURCE_REMOVALS_PER_RUN}, check the Drive Service settings if this keeps happening`);
+    }
+    if checked > 0 {
+        log:printInfo(string `Smart Search: checked ${checked} content items for changes, refreshed ${refreshed}, `
+                + string `removed ${removed}`);
+    }
+}
+
+class SourceRefreshJob {
+    *task:Job;
+
+    public function execute() {
+        if !tryStartSourceRefresh() {
+            return;
+        }
+        // Whatever happens inside, the flag is cleared - otherwise one crash would stop every later run
+        error? outcome = trap refreshChangedSources();
+        finishSourceRefresh();
+        if outcome is error {
+            log:printError("Smart Search: the change check stopped unexpectedly", outcome);
+        }
+    }
+}
+
 function init() {
     if !smartSearchEnabled {
         return;
+    }
+    if sourceRecheckDays < 1 || sourceRecheckDays > MAX_SOURCE_RECHECK_DAYS {
+        log:printWarn(string `Smart Search: sourceRecheckDays must be from 1 to ${MAX_SOURCE_RECHECK_DAYS}, using `
+                + string `${DEFAULT_SOURCE_RECHECK_DAYS} days instead of ${sourceRecheckDays}`);
+    }
+    if sourceCheckIntervalMinutes < 1 || sourceCheckIntervalMinutes > MAX_SOURCE_CHECK_INTERVAL_MINUTES {
+        log:printWarn(string `Smart Search: sourceCheckIntervalMinutes must be from 1 to `
+                + string `${MAX_SOURCE_CHECK_INTERVAL_MINUTES}, using ${DEFAULT_SOURCE_CHECK_INTERVAL_MINUTES} `
+                + string `minutes instead of ${sourceCheckIntervalMinutes}`);
+    }
+    log:printInfo(string `Smart Search: indexed content is checked for changes every ${sourceRecheckHours() / 24} `
+            + string `days, looking for what is due every ${sourceCheckIntervalSeconds() / 60} minutes`);
+    int? baseline = sourceBaselineEpoch;
+    if baseline is int {
+        log:printInfo(string `Smart Search: content indexed before change checking is counted as indexed at or `
+                + string `before ${time:utcToString([baseline, 0.0d])}`);
     }
     // A scheduling failure must not stop the backend from starting
     task:JobId|task:Error scheduled =
@@ -1788,5 +2162,10 @@ function init() {
         task:scheduleJobRecurByFrequency(new OrphanSweepJob(), ORPHAN_SWEEP_INTERVAL_SECONDS);
     if sweepScheduled is task:Error {
         log:printError("Smart Search: could not schedule the orphan sweep job", sweepScheduled);
+    }
+    task:JobId|task:Error refreshScheduled =
+        task:scheduleJobRecurByFrequency(new SourceRefreshJob(), sourceCheckIntervalSeconds());
+    if refreshScheduled is task:Error {
+        log:printError("Smart Search: could not schedule the change check job", refreshScheduled);
     }
 }

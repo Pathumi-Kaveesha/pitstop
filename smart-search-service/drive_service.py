@@ -51,6 +51,13 @@ _MAX_RETRY_AFTER_SECONDS = 30
 # Statuses worth asking again about.
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
 
+# The Drive Service's own words for a file that's gone or that the Pitstop Google account can no longer open. A 403 or
+# 404 without them came from somewhere else (a missing route, the gateway), so it says nothing about the file.
+_FILE_MISSING_DETAILS = {
+    "the file was not found, or this service cannot read it",
+    "this service is not allowed to read the file",
+}
+
 # Access token cache, for the client credentials grant.
 _cached_token: Optional[str] = None
 _cached_token_expires_at: float = 0.0
@@ -58,11 +65,13 @@ _token_lock = threading.Lock()
 
 
 class DriveServiceError(RuntimeError):
-    """A failed read through the Drive Service. kind: unavailable, busy, timeout, unreachable, auth or other."""
+    """A failed read through the Drive Service. kind: unavailable, busy, timeout, unreachable, auth or other.
+    file_missing: the Drive Service itself said the file is gone or can't be opened, not just some 403 or 404."""
 
-    def __init__(self, kind: str, message: str):
+    def __init__(self, kind: str, message: str, file_missing: bool = False):
         super().__init__(message)
         self.kind = kind
+        self.file_missing = file_missing
 
 
 def _service_token() -> Optional[str]:
@@ -150,7 +159,10 @@ def _call(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = N
                 elif status in (403, 404):
                     # Missing, or the Pitstop Google account cannot open it: asking again changes nothing.
                     detail = _detail(response)
-                    raise DriveServiceError("unavailable", f"File not found or not accessible ({status}): {detail}")
+                    raise DriveServiceError(
+                        "unavailable", f"File not found or not accessible ({status}): {detail}",
+                        file_missing=detail in _FILE_MISSING_DETAILS,
+                    )
                 elif status != 200:
                     raise DriveServiceError("other", f"Drive Service error (status {status}): {_detail(response)}")
                 elif max_bytes is None:
@@ -206,7 +218,7 @@ def _json(path: str) -> dict:
 
 
 def get_file_info(file_id: str) -> dict:
-    """The file's name, type and size (size is missing when Google reports none)."""
+    """The file's name, type, size and last-modified time (size and modifiedTime are missing if Google reports none)."""
     return _json(f"/files/{quote(file_id, safe='')}/info")
 
 

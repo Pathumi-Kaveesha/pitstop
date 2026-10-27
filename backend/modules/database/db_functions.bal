@@ -187,6 +187,47 @@ public isolated function getUncheckedIndexCandidates(int recheckWindowHours)
         select result;
 }
 
+# Get indexed content whose file or page is due a check for changes, least recently checked first.
+#
+# + recheckHours - How long after a check an item is due again
+# + 'limit - The most to return
+# + return - The content, or an error
+public isolated function getSourceCheckCandidates(int recheckHours, int 'limit) returns SourceCheckCandidate[]|error {
+    stream<SourceCheckCandidate, sql:Error?> resultStream =
+        dbClient->query(getSourceCheckCandidatesQuery(recheckHours, 'limit));
+    return from SourceCheckCandidate result in resultStream
+        select result;
+}
+
+# Get indexed content to use as a test that the Drive connection works, most recently checked first.
+#
+# + 'limit - The most to return
+# + return - The content, or an error
+public isolated function getDriveCanaries(int 'limit) returns SourceCheckCandidate[]|error {
+    stream<SourceCheckCandidate, sql:Error?> resultStream = dbClient->query(getDriveCanariesQuery('limit));
+    return from SourceCheckCandidate result in resultStream
+        select result;
+}
+
+# Claim one content item's change check for this period, so only one copy of the backend checks it.
+#
+# + contentId - The content's id
+# + recheckHours - How long after a check an item is due again
+# + return - True if this call claimed it, false if it was already checked this period, or an error
+public isolated function claimSourceCheck(int contentId, int recheckHours) returns boolean|error {
+    sql:ExecutionResult result = check dbClient->execute(claimSourceCheckQuery(contentId, recheckHours));
+    return result.affectedRowCount == 1;
+}
+
+# Count a content item's change check as done this many hours ago, so it's due again sooner than a full period.
+#
+# + contentId - The content's id
+# + hoursAgo - How long ago to count the check as done
+# + return - Error, if any
+public isolated function backdateSourceCheck(int contentId, int hoursAgo) returns error? {
+    _ = check dbClient->execute(backdateSourceCheckQuery(contentId, hoursAgo));
+}
+
 # Get one content item's transcript link, for editing - admin only.
 #
 # + contentId - The content's id
