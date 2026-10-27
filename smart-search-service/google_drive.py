@@ -41,6 +41,24 @@ class DriveFileInfo:
     drive_title: str
     extension: str
     size_bytes: Optional[int] = None
+    # When the file last changed, as Google reports it - None when the Drive Service doesn't say.
+    modified_time: Optional[str] = None
+    # In the trash. Google only shows a trashed file to its owner.
+    trashed: bool = False
+
+
+class FileTrashedError(RuntimeError):
+    """A Drive file that is in the trash, found by a change check. Indexing still reads such a file, as before."""
+
+
+class UnindexableDriveFile(ValueError):
+    """A Drive file that exists but can't be indexed (too big, a video, an unsupported type). A ValueError, so indexing
+    reports it as before; modified_time is when the file last changed, when Google says."""
+
+    def __init__(self, message: str, modified_time: Optional[str] = None, trashed: bool = False):
+        super().__init__(message)
+        self.modified_time = modified_time
+        self.trashed = trashed
 
 
 _NOT_A_DRIVE_LINK_ERROR = "That doesn't look like a Google Drive link - couldn't find a file id in it."
@@ -69,6 +87,10 @@ def resolve_drive_file(drive_link: str) -> DriveFileInfo:
 
     # A file Google reports no size for.
     size_bytes = int(metadata["size"]) if metadata.get("size") is not None else None
+    modified_time = metadata.get("modifiedTime")
+    if not isinstance(modified_time, str) or not modified_time.strip():
+        modified_time = None
+    trashed = metadata.get("trashed") is True
 
     if mime_type in EXPORT_FORMATS:
         extension, _ = EXPORT_FORMATS[mime_type]
@@ -77,25 +99,28 @@ def resolve_drive_file(drive_link: str) -> DriveFileInfo:
         if extension is None and "." in drive_title:
             extension = drive_title.rsplit(".", 1)[-1].lower()
         if mime_type.startswith("video/"):
-            raise ValueError(
+            raise UnindexableDriveFile(
                 f"'{drive_title}' is a video file, which Smart Search can't read - "
-                "set this content's subtype to Video and add a Google Doc transcript link instead."
+                "set this content's subtype to Video and add a Google Doc transcript link instead.",
+                modified_time, trashed,
             )
         if extension not in ("pdf", "docx", "pptx", "xlsx"):
-            raise ValueError(
+            raise UnindexableDriveFile(
                 f"'{drive_title}' isn't a file type Smart Search can read "
-                "(supported: PDF, Word, PowerPoint, Excel, and native Google Docs/Sheets/Slides)."
+                "(supported: PDF, Word, PowerPoint, Excel, and native Google Docs/Sheets/Slides).",
+                modified_time, trashed,
             )
 
     if size_bytes is not None and size_bytes > MAX_DRIVE_FILE_SIZE_BYTES:
-        raise ValueError(
+        raise UnindexableDriveFile(
             f"'{drive_title}' is {size_bytes / 1_048_576:.0f} MB, over the "
-            f"{MAX_DRIVE_FILE_SIZE_BYTES / 1_048_576:.0f} MB limit Smart Search can index."
+            f"{MAX_DRIVE_FILE_SIZE_BYTES / 1_048_576:.0f} MB limit Smart Search can index.",
+            modified_time, trashed,
         )
 
     return DriveFileInfo(
         file_id=file_id, mime_type=mime_type, drive_title=drive_title, extension=extension,
-        size_bytes=size_bytes,
+        size_bytes=size_bytes, modified_time=modified_time, trashed=trashed,
     )
 
 

@@ -107,6 +107,10 @@ EMBED_REQUEST_SPACING_SECONDS = 1
 # Each running job holds its whole file in memory, so this bounds peak memory use.
 MAX_CONCURRENT_INDEX_JOBS = 3
 
+# The first change check of a document indexed before versions were kept trusts it as unchanged only when its file was
+# last modified this long before the backend confirmed it indexed - that confirmation can lag the real indexing.
+SOURCE_FIRST_CHECK_MARGIN_SECONDS = 24 * 60 * 60
+
 # How long an indexing failure reason is remembered
 INDEX_ERROR_TTL_SECONDS = 24 * 60 * 60
 

@@ -212,6 +212,26 @@ public type DriveLinkIngestRequest record {|
     string? adminEmail = ();
 |};
 
+# Asks whether the file or page behind an indexed document has changed.
+#
+# + link - The link indexing reads - the same one sent as driveLink
+# + indexedAt - When the content was confirmed indexed, in Unix seconds
+type SourceCheckRequest record {|
+    string link;
+    int? indexedAt;
+|};
+
+# Whether the file or page behind an indexed document has changed.
+#
+# + result - "changed", "unchanged", "gone" (deleted, or no longer shared with Pitstop), "unindexable" (it changed and
+# can't be indexed any more), "unavailable" (still there and unchanged, but the rules no longer allow indexing it) or
+# "unknown" (couldn't tell right now)
+# + reason - Why it can't be indexed, for "unindexable"
+type SourceCheckResponse record {
+    string result;
+    string reason?;
+};
+
 # Auth configurations, same shape the email module uses.
 #
 # + tokenUrl - The URL of the token endpoint

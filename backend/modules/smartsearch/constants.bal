@@ -52,6 +52,59 @@ const decimal RESERVATION_RECONCILE_INTERVAL_SECONDS = 60;
 // How long after a single retry or edit to confirm its indexing outcome - long enough for a typical job to finish.
 const decimal INDEX_CONFIRMATION_DELAY_SECONDS = 65;
 
+// How often each indexed item is checked for changes to its file or page, in days (the sourceRecheckDays setting).
+const int DEFAULT_SOURCE_RECHECK_DAYS = 7;
+
+const int MAX_SOURCE_RECHECK_DAYS = 365;
+
+// How often the backend looks for items that are due a check, in minutes (the sourceCheckIntervalMinutes setting).
+const int DEFAULT_SOURCE_CHECK_INTERVAL_MINUTES = 60;
+
+const int MAX_SOURCE_CHECK_INTERVAL_MINUTES = 24 * 60;
+
+// A check that couldn't tell is tried again after this long, rather than a full period later.
+const int SOURCE_CHECK_RETRY_HOURS = 24;
+
+// Bounds one run's checks, and how many changed items it sends for indexing, so a week of many edits never floods the
+// search service. 50 an hour covers about 8,000 items a week.
+const int MAX_SOURCE_CHECKS_PER_RUN = 50;
+
+const int MAX_SOURCE_REFRESHES_PER_RUN = 5;
+
+// A brake for when many items look gone at once (most likely a settings problem, not deleted files): at most this many
+// are removed from search in one run, and the rest go first in the next run.
+const int MAX_SOURCE_REMOVALS_PER_RUN = 3;
+
+// To tell a deleted file from a broken Drive connection, other indexed Drive files are read: at most this many are tried,
+// picked from this many indexed items.
+const int MAX_DRIVE_CANARIES = 3;
+
+const int DRIVE_CANARY_POOL = 20;
+
+// Shown in the failed list for content removed from search because its file or page is gone.
+const string GONE_FILE_REASON = "Pitstop can't open this file any more, so it was removed from Smart Search. "
+    + "If it still exists, share it with Pitstop and retry.";
+
+const string GONE_PAGE_REASON = "This page no longer exists, so it was removed from Smart Search. "
+    + "If it has moved, update the link.";
+
+// Added after the reason a changed file can't be indexed any more.
+const string CHANGED_UNINDEXABLE_SUFFIX = " It changed after it was indexed, so it was removed from Smart Search.";
+
+// Shown in the search service's logs as who asked for a refresh.
+const string SOURCE_REFRESH_REQUESTER = "scheduled change check";
+
+// What the search service answers when asked whether the file or page behind an indexed item has changed.
+const string SOURCE_CHANGED = "changed";
+
+const string SOURCE_UNCHANGED = "unchanged";
+
+const string SOURCE_GONE = "gone";
+
+const string SOURCE_UNINDEXABLE = "unindexable";
+
+const string SOURCE_UNAVAILABLE = "unavailable";
+
 // How often the backend looks for indexed chunks whose Pitstop content no longer exists.
 const decimal ORPHAN_SWEEP_INTERVAL_SECONDS = 24 * 60 * 60;
 

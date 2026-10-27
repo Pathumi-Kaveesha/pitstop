@@ -152,6 +152,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /documents/{document_id}/source-check:
+    post:
+      summary: Check Document Source
+      description: 'Whether the file or page behind an indexed document has changed since
+        it was indexed: "changed" (index it again), "unchanged", "gone" (deleted, in the
+        trash, or no longer shared with Pitstop), "unindexable" (it changed and can''t be indexed any
+        more - with the reason), "unavailable" (still there and unchanged, but the rules no
+        longer allow indexing it) or "unknown" (couldn''t tell - check again later).'
+      operationId: check_document_source_documents__document_id__source_check_post
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9]+$
+          title: Document Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceCheckRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Check Document Source Documents  Document Id  Source Check
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /search:
     get:
       summary: Search Endpoint
@@ -331,6 +370,23 @@ components:
       required:
       - driveLink
       title: IngestDriveLinkRequest
+    SourceCheckRequest:
+      properties:
+        link:
+          type: string
+          maxLength: 2048
+          minLength: 1
+          title: Link
+        indexedAt:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+          title: Indexedat
+      type: object
+      required:
+      - link
+      title: SourceCheckRequest
     ValidationError:
       properties:
         loc:

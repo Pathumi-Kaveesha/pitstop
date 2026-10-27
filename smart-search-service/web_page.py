@@ -162,12 +162,19 @@ def _markdown_to_plain_text(markdown: str) -> str:
     return "\n".join(blocks)
 
 
+class WebPageGoneError(RuntimeError):
+    """The site says the page no longer exists (404 or 410). A RuntimeError, so indexing reports it as before."""
+
+
 def fetch_web_page_text(url: str) -> WebPageInfo:
-    """Fetches a public webpage and extracts its title and text - ValueError if unsafe/unreadable, RuntimeError on a network failure."""
+    """Fetches a public webpage and extracts its title and text - ValueError if unsafe/unreadable, RuntimeError on a
+    network failure, WebPageGoneError when the site says the page no longer exists."""
     _require_safe_https_url(url)
 
     try:
         with _fetch_following_safe_redirects(url) as response:
+            if response.status_code in (404, 410):
+                raise WebPageGoneError(f"The page no longer exists ({response.status_code}).")
             response.raise_for_status()
 
             content_type = response.headers.get("Content-Type", "")
@@ -178,7 +185,7 @@ def fetch_web_page_text(url: str) -> WebPageInfo:
             if len(raw) > MAX_WEB_PAGE_BYTES:
                 raise ValueError(f"This page is too large to index (over {MAX_WEB_PAGE_BYTES // 1_048_576} MB).")
             encoding = response.encoding
-    except ValueError:
+    except (ValueError, WebPageGoneError):
         raise
     except Exception as error:  # noqa: BLE001 - any network failure is reported the same way
         raise RuntimeError("Could not read that page.") from error

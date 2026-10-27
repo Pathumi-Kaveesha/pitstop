@@ -22,6 +22,18 @@ public configurable SmartSearchServiceConfig? smartSearchServiceConfig = ();
 
 configurable boolean smartSearchEnabled = false;
 
+// How often each indexed content item is checked for changes to its file or page, in days (1 to 365). Anything else
+// uses 7.
+configurable int sourceRecheckDays = DEFAULT_SOURCE_RECHECK_DAYS;
+
+// How often the backend looks for items that are due a check, in minutes (1 to 1440). Anything else uses 60.
+configurable int sourceCheckIntervalMinutes = DEFAULT_SOURCE_CHECK_INTERVAL_MINUTES;
+
+// Optional. When the content that was indexed before change checking existed was indexed (or a little before), as a
+// time like "2026-10-26T00:00:00+05:30". Such content has no saved version, and its confirmed date keeps moving forward,
+// so an edit made after it was indexed could look older than that date. This fixed time stops that.
+configurable string? sourceBaselineDate = ();
+
 // Used for search and delete - safe to retry, neither has a side effect
 // that duplicates on a second attempt.
 final http:Client? smartSearchServiceClient = smartSearchEnabled ? check initSmartSearchClient(true) : ();

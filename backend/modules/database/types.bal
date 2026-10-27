@@ -209,6 +209,29 @@ public type ContentResponse record {|
     boolean isReused;
 |};
 
+# Indexed content due a check for changes to its file or page.
+#
+# + contentId - Id of the content
+# + contentType - Type of the content
+# + contentSubtype - Subtype of the content, when set
+# + contentLink - The content's link
+# + transcriptLink - The content's transcript or info link, video/LMS/Salesforce content only
+# + indexedAt - When it was confirmed indexed, in Unix seconds
+public type SourceCheckCandidate record {|
+    @sql:Column {name: "content_id"}
+    int contentId;
+    @sql:Column {name: "content_type"}
+    string contentType;
+    @sql:Column {name: "content_sub_type"}
+    string? contentSubtype;
+    @sql:Column {name: "content_link"}
+    string contentLink;
+    @sql:Column {name: "transcript_link"}
+    string? transcriptLink;
+    @sql:Column {name: "indexed_at"}
+    int? indexedAt;
+|};
+
 # Recently added or edited content to check for an indexing failure.
 #
 # + contentId - Id of the content
