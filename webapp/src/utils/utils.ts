@@ -122,6 +122,32 @@ export const extractPlaylistIdFromURL = (link: string): string | null => {
   }
 };
 
+// A Google Drive file link as the address Drive allows in a frame: /view is the full Drive page, which it won't show there.
+const toDriveFilePreviewUrl = (link: string): string | null => {
+  let parsed: URL;
+  try {
+    parsed = new URL(link);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== GOOGLE_DRIVE_DOMAIN) {
+    return null;
+  }
+  const match = parsed.pathname.match(
+    /^\/(?:a\/[^/]+\/)?file\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)(?:\/|$)/,
+  );
+  if (!match) {
+    return null;
+  }
+  const preview = new URL(`https://${GOOGLE_DRIVE_DOMAIN}/file/d/${match[1]}/preview`);
+  // Older files shared by link need their key to open
+  const resourceKey = parsed.searchParams.get("resourcekey");
+  if (resourceKey) {
+    preview.searchParams.set("resourcekey", resourceKey);
+  }
+  return preview.toString();
+};
+
 export const getEmbedUrl = (
   type: FILETYPE,
   link: string,
@@ -163,7 +189,7 @@ export const getEmbedUrl = (
         break;
       case CONTENT_SUBTYPE.Generic:
       default:
-        updatedLink = link;
+        updatedLink = toDriveFilePreviewUrl(link) ?? link;
         break;
     }
   }

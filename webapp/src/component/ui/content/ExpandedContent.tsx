@@ -32,6 +32,7 @@ import {
 } from "@mui/material";
 import { CustomButton, CustomTheme, CommentsResponse } from "@/types/types";
 import { RootState, useAppSelector } from "@slices/store";
+import { CONTENT_SUBTYPE } from "@utils/types";
 
 
 interface ComponentCardProps {
@@ -41,7 +42,7 @@ interface ComponentCardProps {
   contentLink: string;
   originalContentLink: string;
   contentType: string;
-  contentSubtype?: string;
+  contentSubtype?: CONTENT_SUBTYPE;
   description: string;
   likesCount: number;
   sectionId: number;
@@ -123,8 +124,9 @@ const ExpandedContentCard: React.FC<ComponentCardProps> = ({
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <ComponentCard
               contentId={contentId}
-              contentLink={contentLink}
+              contentLink={originalContentLink}
               contentType={contentType}
+              contentSubtype={contentSubtype}
               description={description}
               likesCount={likesCount}
               sectionId={sectionId}
