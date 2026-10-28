@@ -1844,8 +1844,14 @@ isolated function sourceRecheckHours() returns int {
     return (valid ? sourceRecheckDays : DEFAULT_SOURCE_RECHECK_DAYS) * 24;
 }
 
-# How often the change check looks for items that are due, in seconds: the sourceCheckIntervalMinutes setting, or 60
-# minutes when it is not from 1 to 1440.
+# How long after a check an item counts as due again, in hours: its period less a little slack, so a once-a-day run
+# doesn't miss it by minutes.
+#
+# + return - The hours
+isolated function sourceDueAfterHours() returns int => sourceRecheckHours() - SOURCE_DUE_SLACK_HOURS;
+
+# How often the change check looks for items that are due, in seconds: the sourceCheckIntervalMinutes setting, or 1440
+# minutes (once a day) when it is not from 1 to 1440.
 #
 # + return - The seconds
 isolated function sourceCheckIntervalSeconds() returns decimal {
@@ -1995,7 +2001,7 @@ isolated function refreshChangedSources() {
         return;
     }
     database:SourceCheckCandidate[]|error candidates =
-        database:getSourceCheckCandidates(sourceRecheckHours(), MAX_SOURCE_CHECKS_PER_RUN);
+        database:getSourceCheckCandidates(sourceDueAfterHours(), MAX_SOURCE_CHECKS_PER_RUN);
     if candidates is error {
         log:printWarn("Smart Search: could not list content due a change check", candidates);
         return;
@@ -2011,7 +2017,7 @@ isolated function refreshChangedSources() {
         if refreshed >= MAX_SOURCE_REFRESHES_PER_RUN {
             break;
         }
-        boolean|error claimed = database:claimSourceCheck(candidate.contentId, sourceRecheckHours());
+        boolean|error claimed = database:claimSourceCheck(candidate.contentId, sourceDueAfterHours());
         if claimed is error {
             log:printWarn("Smart Search: could not claim a change check", claimed, contentId = candidate.contentId);
             break;

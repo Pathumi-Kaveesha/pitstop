@@ -26,7 +26,7 @@ configurable boolean smartSearchEnabled = false;
 // uses 7.
 configurable int sourceRecheckDays = DEFAULT_SOURCE_RECHECK_DAYS;
 
-// How often the backend looks for items that are due a check, in minutes (1 to 1440). Anything else uses 60.
+// How often the backend looks for items that are due a check, in minutes (1 to 1440). Anything else uses 1440, once a day.
 configurable int sourceCheckIntervalMinutes = DEFAULT_SOURCE_CHECK_INTERVAL_MINUTES;
 
 // Optional. When the content that was indexed before change checking existed was indexed (or a little before), as a
