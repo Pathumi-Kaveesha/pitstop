@@ -57,23 +57,27 @@ const int DEFAULT_SOURCE_RECHECK_DAYS = 7;
 
 const int MAX_SOURCE_RECHECK_DAYS = 365;
 
-// How often the backend looks for items that are due a check, in minutes (the sourceCheckIntervalMinutes setting).
-const int DEFAULT_SOURCE_CHECK_INTERVAL_MINUTES = 60;
+// How often the backend looks for items that are due a check, in minutes (the sourceCheckIntervalMinutes setting): once a day.
+const int DEFAULT_SOURCE_CHECK_INTERVAL_MINUTES = 24 * 60;
 
 const int MAX_SOURCE_CHECK_INTERVAL_MINUTES = 24 * 60;
 
 // A check that couldn't tell is tried again after this long, rather than a full period later.
 const int SOURCE_CHECK_RETRY_HOURS = 24;
 
-// Bounds one run's checks, and how many changed items it sends for indexing, so a week of many edits never floods the
-// search service. 50 an hour covers about 8,000 items a week.
-const int MAX_SOURCE_CHECKS_PER_RUN = 50;
+// An item counts as due this long before its period ends, so a once-a-day run, which comes a little earlier or later each
+// day, doesn't miss it by minutes and leave it waiting a whole extra day.
+const int SOURCE_DUE_SLACK_HOURS = 2;
 
-const int MAX_SOURCE_REFRESHES_PER_RUN = 5;
+// Bounds one run's checks, and how many changed items it sends for indexing, so a week of many edits never floods the
+// search service. 300 a day covers about 2,000 items a week.
+const int MAX_SOURCE_CHECKS_PER_RUN = 300;
+
+const int MAX_SOURCE_REFRESHES_PER_RUN = 50;
 
 // A brake for when many items look gone at once (most likely a settings problem, not deleted files): at most this many
 // are removed from search in one run, and the rest go first in the next run.
-const int MAX_SOURCE_REMOVALS_PER_RUN = 3;
+const int MAX_SOURCE_REMOVALS_PER_RUN = 10;
 
 // To tell a deleted file from a broken Drive connection, other indexed Drive files are read: at most this many are tried,
 // picked from this many indexed items.
