@@ -128,6 +128,7 @@ export default function VerticalTemplate() {
                 <ComponentCard
                   contentLink={contentLink.contentLink}
                   contentType={contentLink.contentType}
+                  contentSubtype={contentLink.contentSubtype}
                   description={contentLink.description}
                   note={contentLink.note}
                   likesCount={contentLink.likesCount}

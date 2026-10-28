@@ -365,6 +365,7 @@ const MyBoard: React.FC = () => {
                   <ComponentCard
                     contentLink={content.contentLink}
                     contentType={content.contentType}
+                    contentSubtype={content.contentSubtype}
                     description={content.description}
                     thumbnail={content.thumbnail}
                     note={content.note}
