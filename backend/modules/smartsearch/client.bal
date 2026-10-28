@@ -101,8 +101,8 @@ isolated function initSmartSearchClient(boolean withRetry) returns http:Client|e
         });
 }
 
-// Used only for writing a message. No retry - a second attempt would pay for the same message twice - and a shorter
-// timeout than the others, so a slow service is reported to the user rather than waited on.
+// Used for writing a message, and for writing an answer again. No retry - a second attempt would pay for the same text
+// twice - and a shorter timeout than the others, so a slow service is reported to the user rather than waited on.
 final http:Client? smartSearchComposeClient =
     smartSearchEnabled ? check initSmartSearchComposeClient(COMPOSE_TIMEOUT_SECONDS) : ();
 

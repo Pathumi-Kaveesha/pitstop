@@ -745,6 +745,36 @@ def search_endpoint(
     return {"answer": answer, "sources": sources}
 
 
+class AnswerRequest(BaseModel):
+    # What was searched for - the same words /search was given
+    userQuery: str = Field(min_length=1)
+    # The only documents the answer may be written from. They come from the backend, which has already checked the
+    # caller may see them
+    documentIds: list[str] = Field(min_length=1, max_length=50)
+
+
+@app.post("/answer")
+def answer_endpoint(body: AnswerRequest) -> dict:
+    """Writes the answer to a search again, from only the documents the backend names. /search writes its answer from
+    every match, so the backend drops it when some of them are not for the caller; this gives them one without those."""
+    allowed = set(body.documentIds)
+    try:
+        results = [r for r in _find_results(body.userQuery, DEFAULT_SEARCH_RESULT_LIMIT) if r.document_id in allowed]
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 500
+        logger.exception("Search for an answer failed")
+        raise HTTPException(status_code=500, detail="Error while searching.") from error
+    if not results:
+        return {"answer": None}
+
+    try:
+        answer = generate_answer(body.userQuery, results)
+    except Exception as error:  # noqa: BLE001 - surfaced to the caller as a 502
+        logger.exception("Writing the answer again failed")
+        raise HTTPException(status_code=502, detail="Could not write the answer.") from error
+    _forget_results(body.userQuery, DEFAULT_SEARCH_RESULT_LIMIT)
+    return {"answer": answer}
+
+
 class ComposePassage(BaseModel):
     # The document the text comes from
     title: str = Field(min_length=1, max_length=300)

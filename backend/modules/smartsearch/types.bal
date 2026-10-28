@@ -104,6 +104,22 @@ type ComposePayload record {|
     string? purpose = ();
 |};
 
+# What the Smart Search service is asked to write an answer from.
+#
+# + userQuery - What the user searched for
+# + documentIds - The only documents the answer may be written from
+type AnswerPayload record {|
+    string userQuery;
+    string[] documentIds;
+|};
+
+# The answer the Smart Search service wrote.
+#
+# + answer - The answer, or nothing when there was nothing to write it from
+type AnswerResponse record {
+    string? answer = ();
+};
+
 # Result of an admin-run backfill scan.
 #
 # + candidates - Up to the requested count of pending content items

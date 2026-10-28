@@ -171,3 +171,7 @@ const int MAX_COMPOSE_IN_FLIGHT = 8;
 
 // The longest subject line an email is given.
 const int MAX_COMPOSE_SUBJECT_LENGTH = 120;
+
+// How many answers may be being written again at once (see answerFromAllowedSources). Past that, the answer is left out,
+// as it was before, so the Smart Search service stays free for searches. It uses the same 120 s limit as a message.
+const int MAX_ANSWER_REWRITES_IN_FLIGHT = 8;
