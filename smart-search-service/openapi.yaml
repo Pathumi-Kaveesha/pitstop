@@ -241,6 +241,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /answer:
+    post:
+      summary: Answer Endpoint
+      description: 'Writes the answer to a search again, from only the documents the backend names. /search writes its
+        answer from every match, so the backend drops it when some of them are not for the caller; this gives them one
+        without those.'
+      operationId: answer_endpoint_answer_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Answer Endpoint Answer Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /compose:
     post:
       summary: Compose Endpoint
@@ -271,6 +299,24 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    AnswerRequest:
+      properties:
+        userQuery:
+          type: string
+          minLength: 1
+          title: Userquery
+        documentIds:
+          items:
+            type: string
+          type: array
+          maxItems: 50
+          minItems: 1
+          title: Documentids
+      type: object
+      required:
+      - userQuery
+      - documentIds
+      title: AnswerRequest
     ComposePassage:
       properties:
         title:

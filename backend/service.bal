@@ -1959,7 +1959,8 @@ service http:InterceptableService / on new http:Listener(9090) {
                 body: {message: constants:SMART_SEARCH_ERROR}
             };
         }
-        return smartsearch:filterToAuthorizedSources(ctx, result);
+        smartsearch:SmartSearchResponse allowed = smartsearch:filterToAuthorizedSources(ctx, result);
+        return smartsearch:answerFromAllowedSources(userQuery, result, allowed, userJwt is string ? userJwt : ());
     }
 
     # Write a short email, chat message, plain summary or explanation about one search result.
