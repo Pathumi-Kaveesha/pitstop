@@ -136,10 +136,14 @@ const toDriveFilePreviewUrl = (link: string): string | null => {
   const match = parsed.pathname.match(
     /^\/(?:a\/[^/]+\/)?file\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)(?:\/|$)/,
   );
-  if (!match) {
+  // The older shapes: drive.google.com/open?id=<id> and drive.google.com/uc?id=<id>
+  const queryId =
+    parsed.pathname === "/open" || parsed.pathname === "/uc" ? parsed.searchParams.get("id") : null;
+  const fileId = match?.[1] ?? (queryId && /^[a-zA-Z0-9_-]+$/.test(queryId) ? queryId : null);
+  if (!fileId) {
     return null;
   }
-  const preview = new URL(`https://${GOOGLE_DRIVE_DOMAIN}/file/d/${match[1]}/preview`);
+  const preview = new URL(`https://${GOOGLE_DRIVE_DOMAIN}/file/d/${fileId}/preview`);
   // Older files shared by link need their key to open
   const resourceKey = parsed.searchParams.get("resourcekey");
   if (resourceKey) {
@@ -168,8 +172,9 @@ export const getEmbedUrl = (
       const videoId = extractVideoIdFromURL(link);
       updatedLink = `https://www.youtube.com/embed/${videoId}`;
     }
-  } else if (type === FILETYPE.External_Link && contentSubtype) {
-    switch (contentSubtype) {
+  } else if (type === FILETYPE.External_Link) {
+    // Older links have no subtype saved, which the backend also reads as generic
+    switch (contentSubtype || CONTENT_SUBTYPE.Generic) {
       case CONTENT_SUBTYPE.GDoc:
         if (fileId) {
           updatedLink = `https://docs.google.com/document/d/${fileId}/preview`;
