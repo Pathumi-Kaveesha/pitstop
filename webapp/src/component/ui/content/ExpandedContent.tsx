@@ -250,8 +250,9 @@ const ExpandedContentCard: React.FC<ComponentCardProps> = ({
         initialValues={{
           contentId,
           sectionId,
-          contentLink,
+          contentLink: originalContentLink,
           contentType,
+          contentSubtype,
           description,
           verifyContent: false,
           tags,
