@@ -261,6 +261,8 @@ def _json(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = N
     try:
         answer = _call(path, params=params, max_bytes=max_bytes)
     except ValueError as error:
+        if max_bytes is None:
+            raise
         raise ValueError(
             f"The text of this file is over the {max_bytes // 1_048_576} MB Smart Search can read."
         ) from error
