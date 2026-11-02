@@ -16,7 +16,9 @@
 
 """Reads Google Drive files through the Drive Service, the only service that talks to Google Drive."""
 
+import json
 import logging
+import re
 import threading
 import time
 from typing import Optional, Union
@@ -44,9 +46,15 @@ _TIMEOUT = (15, 420)
 
 # The most the Drive Service accepts as a download limit.
 _SERVICE_MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024
+# The most words one Slides, Docs or Sheets answer may hold. A real deck or document is far under 1 MB; this stops a
+# freak one from filling the service's memory.
+_MAX_TEXT_ANSWER_BYTES = 32 * 1024 * 1024
 
 # The longest wait a Retry-After from the service is allowed to cause.
 _MAX_RETRY_AFTER_SECONDS = 30
+
+# "bytes 100-199/5000" (or "/*" when the total is unknown) - the part a 206 answer holds.
+_CONTENT_RANGE = re.compile(r"bytes (\d+)-(\d+)/(?:\d+|\*)")
 
 # Statuses worth asking again about.
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
@@ -72,6 +80,14 @@ class DriveServiceError(RuntimeError):
         super().__init__(message)
         self.kind = kind
         self.file_missing = file_missing
+
+
+class PartNotSupportedError(DriveServiceError):
+    """The Drive Service did not send just the part of the file that was asked for - most likely it is a version that
+    cannot do that yet. A whole-file download still works."""
+
+    def __init__(self, message: str):
+        super().__init__("other", message)
 
 
 def _service_token() -> Optional[str]:
@@ -125,8 +141,12 @@ def _retry_after(response: requests.Response) -> Optional[float]:
         return None
 
 
-def _call(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = None) -> Union[requests.Response, bytes]:
-    """Calls the Drive Service, retrying busy answers and dropped connections. ValueError if over the size limit."""
+def _call(
+    path: str, params: Optional[dict] = None, max_bytes: Optional[int] = None, part: Optional[tuple[int, int]] = None
+) -> Union[requests.Response, bytes]:
+    """Calls the Drive Service, retrying busy answers and dropped connections. ValueError if over the size limit.
+    part is (offset, length) when only that part of a file is asked for: the answer must then be exactly a part, else
+    PartNotSupportedError, and the bytes come back whole."""
     url = f"{DRIVE_SERVICE_URL}{path}"
     last_error = "no answer"
     last_kind = "unreachable"
@@ -149,6 +169,9 @@ def _call(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = N
                     _forget_token()
                     kind = "auth"
                     last_error = "Drive Service rejected the token"
+                elif status == 413 and part is not None:
+                    # A part is never too large for the service that supports parts, so this is one that ignored it
+                    raise PartNotSupportedError("The Drive Service answered as if the whole file was asked for.")
                 elif status == 413:
                     limit = max_bytes if max_bytes is not None else 0
                     raise ValueError(f"File is over the {limit / 1_048_576:.0f} MB limit Smart Search can index.")
@@ -163,6 +186,12 @@ def _call(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = N
                         "unavailable", f"File not found or not accessible ({status}): {detail}",
                         file_missing=detail in _FILE_MISSING_DETAILS,
                     )
+                elif status == 501 and part is not None:
+                    raise PartNotSupportedError(
+                        "The Drive Service could not get just that part of the file from Google."
+                    )
+                elif part is not None and status in (200, 206):
+                    return _read_part(response, status, part)
                 elif status != 200:
                     raise DriveServiceError("other", f"Drive Service error (status {status}): {_detail(response)}")
                 elif max_bytes is None:
@@ -191,6 +220,25 @@ def _call(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = N
     raise DriveServiceError(last_kind, f"Drive Service request failed: {last_error}")
 
 
+def _read_part(response: requests.Response, status: int, part: tuple[int, int]) -> bytes:
+    """The body of a 206 answer, once its Content-Range is checked to be the part that was asked for. Nothing is read
+    from any other answer, so a service that ignores the request and starts sending the whole file is cut off."""
+    offset, length = part
+    if status != 206:
+        raise PartNotSupportedError(f"The Drive Service answered {status}, not a part of the file.")
+    match = _CONTENT_RANGE.fullmatch(response.headers.get("Content-Range", "").strip())
+    if match is None:
+        raise PartNotSupportedError("The Drive Service sent a part without saying which part.")
+    first, last = int(match.group(1)), int(match.group(2))
+    if first != offset or last < first or last > offset + length - 1:
+        raise PartNotSupportedError("The Drive Service sent a different part than the one asked for.")
+    expected = last - first + 1
+    data = _read_limited(response, expected)
+    if len(data) != expected:
+        raise requests.exceptions.ChunkedEncodingError(f"The part ended early: got {len(data)} of {expected} bytes")
+    return data
+
+
 def _read_limited(response: requests.Response, max_bytes: int) -> bytes:
     """The whole body, refusing one over max_bytes or one that ends before the length the service announced."""
     buffer = bytearray()
@@ -208,13 +256,52 @@ def _read_limited(response: requests.Response, max_bytes: int) -> bytes:
     return bytes(buffer)
 
 
-def _json(path: str) -> dict:
-    """An answer from the Drive Service that is JSON."""
-    response = _call(path)
+def _json(path: str, params: Optional[dict] = None, max_bytes: Optional[int] = None) -> dict:
+    """An answer from the Drive Service that is JSON; ValueError if it is over max_bytes, when that is given."""
     try:
-        return response.json()
+        answer = _call(path, params=params, max_bytes=max_bytes)
+    except ValueError as error:
+        raise ValueError(
+            f"The text of this file is over the {max_bytes // 1_048_576} MB Smart Search can read."
+        ) from error
+    try:
+        return json.loads(answer) if isinstance(answer, bytes) else answer.json()
     except ValueError as error:
         raise DriveServiceError("other", "Unreadable answer from the Drive Service.") from error
+
+
+def download_part(file_id: str, offset: int, length: int) -> bytes:
+    """Just the bytes from offset, up to length of them (fewer at the end of the file), of a stored file. The Drive
+    Service sends a whole file's bytes otherwise; PartNotSupportedError means it cannot send only a part."""
+    if offset < 0 or length < 1 or length > _SERVICE_MAX_DOWNLOAD_BYTES:
+        raise ValueError("A part needs an offset from 0 and a length from 1 to the service's largest download.")
+    params = {"offset": offset, "length": length, "maxBytes": length}
+    return _call(f"/files/{quote(file_id, safe='')}/download", params=params, max_bytes=length, part=(offset, length))
+
+
+def get_slides_text(file_id: str) -> dict:
+    """The text of every slide of a native Google Slides file, read through the Slides API: {"slides": [{"id", "texts",
+    "notes"}]}. For a presentation too large to export, since the answer holds only words."""
+    return _json(f"/files/{quote(file_id, safe='')}/slides-text", max_bytes=_MAX_TEXT_ANSWER_BYTES)
+
+
+def get_doc_text(file_id: str) -> dict:
+    """The content of a native Google Docs file, read through the Docs API: {"blocks": [{"heading", "text"} or
+    {"rows"}]}, paragraphs and tables in order. For a document too large to export, since the answer holds only
+    words."""
+    return _json(f"/files/{quote(file_id, safe='')}/doc-text", max_bytes=_MAX_TEXT_ANSWER_BYTES)
+
+
+def get_sheet_list(file_id: str) -> dict:
+    """The tabs of a native Google Sheets file, left to right: {"sheets": [{"title", "rows", "columns"}]}."""
+    return _json(f"/files/{quote(file_id, safe='')}/sheet-list", max_bytes=_MAX_TEXT_ANSWER_BYTES)
+
+
+def get_sheet_rows(file_id: str, sheet: int, first_row: int, count: int) -> dict:
+    """count rows of one tab (its position in get_sheet_list) from first_row, which counts from 1: {"rows": [[...]]}.
+    Rows past the end of the data are left out."""
+    params = {"sheet": sheet, "firstRow": first_row, "count": count}
+    return _json(f"/files/{quote(file_id, safe='')}/sheet-rows", params, _MAX_TEXT_ANSWER_BYTES)
 
 
 def get_file_info(file_id: str) -> dict:

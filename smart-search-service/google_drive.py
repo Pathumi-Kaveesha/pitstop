@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
 
-from config import MAX_DRIVE_FILE_SIZE_BYTES
+from config import MAX_DRIVE_FILE_SIZE_BYTES, MAX_SLIM_FILE_SIZE_BYTES, SLIM_READ_ENABLED, SLIM_READ_MIN_BYTES
 from drive_constants import (
     ALLOWED_DRIVE_HOSTS,
     EXPORT_FORMATS,
@@ -30,6 +30,14 @@ from drive_constants import (
     MIME_TYPE_EXTENSIONS,
 )
 from drive_service import download_file, get_file_info
+
+# A native Google file Google builds an Office file from when asked for its bytes, which it cannot do for one that is
+# too large. Each can instead be read as words, through its own API; the value is the kind of text chunking reads.
+NATIVE_TEXT_KINDS = {
+    "application/vnd.google-apps.presentation": "slides_text",
+    "application/vnd.google-apps.document": "docs_text",
+    "application/vnd.google-apps.spreadsheet": "sheets_text",
+}
 
 
 @dataclass
@@ -46,6 +54,31 @@ class DriveFileInfo:
     # In the trash. Google only shows a trashed file to its owner.
     trashed: bool = False
 
+    @property
+    def read_in_parts(self) -> bool:
+        """Whether this file is read in parts, so only its text is held (see slim_read.py)."""
+        return can_read_in_parts(self.extension, self.mime_type, self.size_bytes)
+
+    @property
+    def only_readable_in_parts(self) -> bool:
+        """Whether it is too large for a whole download, so reading it in parts is the only way."""
+        return self.read_in_parts and self.size_bytes > MAX_DRIVE_FILE_SIZE_BYTES
+
+    @property
+    def text_kind(self) -> Optional[str]:
+        """For a native Google Slides, Docs or Sheets file, the kind of text its API gives; None for any other file."""
+        return NATIVE_TEXT_KINDS.get(self.mime_type)
+
+    @property
+    def only_readable_as_text(self) -> bool:
+        """A native Google file Drive says is too large for a whole download: its text is read through its API."""
+        return self.text_kind is not None and self.size_bytes is not None and self.size_bytes > MAX_DRIVE_FILE_SIZE_BYTES
+
+    @property
+    def holds_little_memory(self) -> bool:
+        """Whether indexing it holds only its text, however large the file, so it needs no slot to itself."""
+        return self.only_readable_in_parts or self.only_readable_as_text
+
 
 class FileTrashedError(RuntimeError):
     """A Drive file that is in the trash, found by a change check. Indexing still reads such a file, as before."""
@@ -59,6 +92,18 @@ class UnindexableDriveFile(ValueError):
         super().__init__(message)
         self.modified_time = modified_time
         self.trashed = trashed
+
+
+def can_read_in_parts(extension: Optional[str], mime_type: str, size_bytes: Optional[int]) -> bool:
+    """A stored Word or PowerPoint file (not a Google file exported on the fly, which cannot be read in parts) that is
+    large enough for reading in parts to be worth it."""
+    return (
+        SLIM_READ_ENABLED
+        and extension in ("docx", "pptx")
+        and mime_type not in EXPORT_FORMATS
+        and size_bytes is not None
+        and size_bytes >= SLIM_READ_MIN_BYTES
+    )
 
 
 _NOT_A_DRIVE_LINK_ERROR = "That doesn't look like a Google Drive link - couldn't find a file id in it."
@@ -111,10 +156,17 @@ def resolve_drive_file(drive_link: str) -> DriveFileInfo:
                 modified_time, trashed,
             )
 
-    if size_bytes is not None and size_bytes > MAX_DRIVE_FILE_SIZE_BYTES:
+    # A file read in parts holds only its text, so it may be far larger than one downloaded whole.
+    size_limit = (
+        max(MAX_SLIM_FILE_SIZE_BYTES, MAX_DRIVE_FILE_SIZE_BYTES)
+        if can_read_in_parts(extension, mime_type, size_bytes)
+        else MAX_DRIVE_FILE_SIZE_BYTES
+    )
+    # A native Google file too large to export is read through its API instead, which has no size to exceed.
+    if size_bytes is not None and size_bytes > size_limit and mime_type not in NATIVE_TEXT_KINDS:
         raise UnindexableDriveFile(
             f"'{drive_title}' is {size_bytes / 1_048_576:.0f} MB, over the "
-            f"{MAX_DRIVE_FILE_SIZE_BYTES / 1_048_576:.0f} MB limit Smart Search can index.",
+            f"{size_limit / 1_048_576:.0f} MB limit Smart Search can index.",
             modified_time, trashed,
         )
 

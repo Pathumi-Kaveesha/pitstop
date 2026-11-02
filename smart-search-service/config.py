@@ -78,6 +78,13 @@ LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES = 100 * 1024 * 1024
 # Reject a Drive file before downloading it if it's bigger than this - set MAX_DRIVE_FILE_SIZE_MB per environment, roughly (memory - 250 MB) / 3.5.
 MAX_DRIVE_FILE_SIZE_BYTES = _positive_int_env("MAX_DRIVE_FILE_SIZE_MB", 150) * 1024 * 1024
 
+# A stored Word or PowerPoint file of at least this size is read in parts when the Drive Service can send parts (see
+# slim_read.py): only its text is held, so its pictures no longer count towards MAX_DRIVE_FILE_SIZE_MB, and it is
+# accepted up to MAX_SLIM_FILE_SIZE_BYTES. SLIM_READ_ENABLED=false turns this off.
+SLIM_READ_MIN_BYTES = 50 * 1024 * 1024
+MAX_SLIM_FILE_SIZE_BYTES = 1024 * 1024 * 1024
+SLIM_READ_ENABLED = os.environ.get("SLIM_READ_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
+
 # Office files are zip archives - a small one can expand to something huge.
 # Checked against the entries' declared sizes before any parsing.
 MAX_OOXML_UNCOMPRESSED_BYTES = 400 * 1024 * 1024

@@ -18,6 +18,7 @@
 vector search; login and admin checks stay in the Ballerina backend."""
 
 import hashlib
+import json
 import logging
 import threading
 import time
@@ -35,8 +36,10 @@ from auth import verify_caller
 from chunking import Chunk, UNIT_LABELS, chunk_document
 from compose import compose_message, split_subject, strip_frame
 from deep_links import build_native_links, build_video_timestamp_links
-from drive_service import DriveServiceError
+from drive_service import DriveServiceError, get_doc_text, get_slides_text
 from google_drive import DriveFileInfo, FileTrashedError, UnindexableDriveFile, download_drive_file, resolve_drive_file
+from sheets_api import read_sheets_text
+from slim_read import SlimReadUnavailable, read_text_parts
 from web_page import WebPageGoneError, fetch_web_page_text, is_web_page_link
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
@@ -45,6 +48,7 @@ from config import (
     INDEX_STALE_AFTER_SECONDS,
     LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES,
     MAX_CONCURRENT_INDEX_JOBS,
+    MAX_DRIVE_FILE_SIZE_BYTES,
     RAW_MATCH_POOL_MULTIPLIER,
     EMBED_REQUEST_SPACING_SECONDS,
     SEARCH_CACHE_MAX_ENTRIES,
@@ -283,6 +287,74 @@ def _index_job_interrupted(document_id: str) -> bool:
         return False
 
 
+def _native_text_bytes(info: DriveFileInfo) -> tuple[bytes, str]:
+    """The words of a native Google Slides, Docs or Sheets file too large to export, as its API gives them, and the kind
+    of text that is, for chunking to read."""
+    kind = info.text_kind
+    try:
+        if kind == "slides_text":
+            return json.dumps(get_slides_text(info.file_id)).encode("utf-8"), kind
+        if kind == "docs_text":
+            return json.dumps(get_doc_text(info.file_id)).encode("utf-8"), kind
+        return read_sheets_text(info.file_id), kind
+    except DriveServiceError as error:
+        # A 403 or 404 that isn't about this file means the Drive Service has no such route yet
+        if error.kind == "unavailable" and not error.file_missing:
+            raise ValueError(
+                f"'{info.drive_title}' can't be exported, and reading its text directly isn't possible right now: "
+                f"{error}"
+            ) from error
+        raise
+
+
+def _read_for_indexing(info: DriveFileInfo) -> tuple[bytes, str]:
+    """What chunking reads, and the kind of file it is. A native Google file too large to export is read as its words,
+    through its API. A large Word or PowerPoint file is read in parts - a small archive of the same document with only
+    its text parts filled in - so its pictures are never held. If that can't be done, a file small enough is downloaded
+    whole, as everything else always is."""
+    if info.only_readable_as_text:
+        return _native_text_bytes(info)
+    if info.read_in_parts:
+        try:
+            return read_text_parts(info.file_id, info.size_bytes), info.extension
+        except SlimReadUnavailable as error:
+            if info.only_readable_in_parts:
+                raise ValueError(
+                    f"'{info.drive_title}' is {info.size_bytes / 1_048_576:.0f} MB, over the "
+                    f"{MAX_DRIVE_FILE_SIZE_BYTES / 1_048_576:.0f} MB Smart Search can download whole, "
+                    f"and reading it in parts isn't possible right now: {error}"
+                ) from error
+            logger.warning(
+                "Could not read '%s' in parts (%s) - downloading it whole", _safe_log_value(info.drive_title), error
+            )
+    # Unknown size (native Google files) shares the normal slot pool, so cap its download too.
+    try:
+        downloaded = (
+            download_drive_file(info, max_bytes=LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES)
+            if info.size_bytes is None
+            else download_drive_file(info)
+        )
+    except ValueError:
+        # Over the limit: a native Google file too large to export is read as words instead; anything else is refused
+        if info.text_kind is None:
+            raise
+        logger.info("'%s' is too large to export - reading its text instead", _safe_log_value(info.drive_title))
+        return _native_text_bytes(info)
+    except DriveServiceError as error:
+        # Google refuses to export some files it can still be read word by word (its export limit is far below a
+        # file's size in Drive). A file nobody can read fails again below, with the real reason.
+        if info.text_kind is None or error.kind != "unavailable":
+            raise
+        logger.info("Could not export '%s' (%s) - reading its text instead", _safe_log_value(info.drive_title), error)
+        try:
+            return _native_text_bytes(info)
+        except ValueError as text_error:
+            if isinstance(text_error.__cause__, DriveServiceError):
+                raise error from None  # the text route is missing: the export's own failure is the better reason
+            raise
+    return downloaded, info.extension
+
+
 def _index_drive_file_in_background(
     info: DriveFileInfo, title: str, document_id: str, drive_link: str, generation: int,
     display_link: Optional[str] = None
@@ -298,16 +370,13 @@ def _index_drive_file_in_background(
     _clear_index_error(document_id)  # a fresh attempt - any earlier failure no longer applies
 
     try:
-        # Unknown size (native Google files) shares the normal slot pool, so cap its download too.
-        file_bytes = (
-            download_drive_file(info, max_bytes=LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES)
-            if info.size_bytes is None
-            else download_drive_file(info)
-        )
+        file_bytes, read_as = _read_for_indexing(info)
         logger.info("Downloaded '%s' (%.1f MB), chunking", _safe_log_value(title), len(file_bytes) / 1_048_576)
 
         # A stand-in doc is read for timestamps instead of headings - only docx actually has them
-        extraction_extension = "transcript" if display_link and info.extension == "docx" else info.extension
+        extraction_extension = (
+            {"docx": "transcript", "docs_text": "docs_transcript"}.get(read_as, read_as) if display_link else read_as
+        )
         chunks, unit_headings = chunk_document(file_bytes, extraction_extension)
         if not chunks:
             logger.warning(
@@ -518,9 +587,12 @@ async def ingest_drive_link(body: IngestDriveLinkRequest) -> dict:
     # Claimed now, not once the background task actually starts - see the note above.
     generation = await _claim_generation(document_id)
     # A large file runs alone, so its memory use is never multiplied by concurrent jobs.
+    # A file too large to download whole is read in parts, which holds almost none of it, so it needs no slot to itself.
     runner = (
         _run_in_index_slot_exclusive
-        if info.size_bytes is not None and info.size_bytes > LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES
+        if info.size_bytes is not None
+        and info.size_bytes > LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES
+        and not info.holds_little_memory
         else _run_in_index_slot
     )
     _submit_index_job(
