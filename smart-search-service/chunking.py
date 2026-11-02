@@ -24,10 +24,11 @@ section (no page numbers in .docx), XLSX -> sheet tab.
 import datetime
 import io
 import itertools
+import json
 import re
 import zipfile
 from dataclasses import dataclass
-from typing import Optional
+from typing import Iterator, Optional
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -48,10 +49,14 @@ from config import (
 UNIT_LABELS = {
     "pdf": "Page",
     "pptx": "Slide",
+    "slides_text": "Slide",
     "docx": "Section",
+    "docs_text": "Section",
+    "sheets_text": "Sheet",
     "xlsx": "Sheet",
     "webpage": "Section",
     "transcript": "Moment",
+    "docs_transcript": "Moment",
 }
 
 @dataclass
@@ -103,6 +108,22 @@ def _extract_pptx(file_bytes: bytes) -> list[str]:
     return slides
 
 
+def _extract_slides_text(file_bytes: bytes) -> list[str]:
+    """One string per slide, from the text the Slides API gave: each shape's text, then the speaker notes - as
+    _extract_pptx writes them. Every slide has its own unit, empty or not, so a unit's place is its slide's place."""
+    try:
+        slides = json.loads(file_bytes)["slides"]
+        units = []
+        for slide in slides:
+            parts = [text for text in slide["texts"] if text.strip()]
+            if slide["notes"].strip():
+                parts.append(slide["notes"])
+            units.append("\n".join(parts))
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        raise ValueError("The slides' text could not be read.") from error
+    return units
+
+
 def _iter_docx_blocks(document):
     """Yields paragraphs and tables in document order."""
     for child in document.element.body.iterchildren():
@@ -112,29 +133,23 @@ def _iter_docx_blocks(document):
             yield Table(child, document)
 
 
-def _extract_docx(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
-    """One string per heading-delimited section, plus each section's heading."""
-    _reject_oversized_ooxml(file_bytes)
-    document = Document(io.BytesIO(file_bytes))
-
+def _sections(blocks) -> tuple[list[str], list[str | None]]:
+    """Heading-delimited sections from (is_heading, text, table_rows) blocks; table_rows is None for a paragraph."""
     sections: list[str] = []
     headings: list[str | None] = []
     current: list[str] = []
     current_heading: str | None = None
-    for block in _iter_docx_blocks(document):
-        if isinstance(block, Table):
-            rows = [
-                ", ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
-                for row in block.rows
-            ]
+    for is_heading, text, table_rows in blocks:
+        if table_rows is not None:
+            rows = [", ".join(cell.strip() for cell in row if cell.strip()) for row in table_rows]
             current.extend(row for row in rows if row)
             continue
 
-        text = block.text.strip()
+        text = text.strip()
         if not text:
             continue
 
-        if block.style.name.startswith("Heading"):
+        if is_heading:
             if current:
                 sections.append("\n".join(current))
                 headings.append(current_heading)
@@ -146,6 +161,58 @@ def _extract_docx(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
         sections.append("\n".join(current))
         headings.append(current_heading)
     return sections, headings
+
+
+def _extract_docx(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
+    """One string per heading-delimited section, plus each section's heading."""
+    _reject_oversized_ooxml(file_bytes)
+    document = Document(io.BytesIO(file_bytes))
+
+    def blocks():
+        for block in _iter_docx_blocks(document):
+            if isinstance(block, Table):
+                yield False, "", [[cell.text for cell in row.cells] for row in block.rows]
+            else:
+                yield block.style.name.startswith("Heading"), block.text, None
+
+    return _sections(blocks())
+
+
+def _docs_text_blocks(file_bytes: bytes) -> list[tuple[bool, str, list[list[str]] | None]]:
+    """The blocks of a document as the Docs API gave them: (is_heading, text, table_rows)."""
+    try:
+        blocks = []
+        for block in json.loads(file_bytes)["blocks"]:
+            rows = block.get("rows")
+            if rows is not None:
+                if not all(isinstance(cell, str) for row in rows for cell in row):
+                    raise TypeError("a table cell is not text")
+                blocks.append((False, "", rows))
+                continue
+            text = block.get("text", "")
+            if not isinstance(text, str):
+                raise TypeError("a paragraph is not text")
+            # Google writes a line break inside a paragraph as a vertical tab; a Word file writes it as a new line
+            blocks.append((block.get("heading") is True, text.replace("\u000b", "\n"), None))
+        return blocks
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        raise ValueError("The document's text could not be read.") from error
+
+
+def _extract_docs_text(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
+    """The same sections _extract_docx finds, from the text the Docs API gave."""
+    return _sections(_docs_text_blocks(file_bytes))
+
+
+def _extract_sheets_text(file_bytes: bytes) -> list[str]:
+    """One string per sheet, already written by sheets_api.py as _extract_xlsx writes them."""
+    try:
+        units = json.loads(file_bytes)["units"]
+        if not all(isinstance(unit, str) for unit in units):
+            raise TypeError("a sheet is not text")
+    except (ValueError, KeyError, TypeError) as error:
+        raise ValueError("The spreadsheet's text could not be read.") from error
+    return units
 
 
 _TIMESTAMP_LINE = re.compile(r"^\d{1,2}(:\d{2}){1,2}$")
@@ -162,21 +229,7 @@ def _timestamp_to_seconds(text: str) -> int | None:
     return seconds
 
 
-def _extract_transcript(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
-    """One string per timestamp-delimited segment, plus each segment's start time in seconds."""
-    _reject_oversized_ooxml(file_bytes)
-    document = Document(io.BytesIO(file_bytes))
-
-    lines: list[str] = []
-    for block in _iter_docx_blocks(document):
-        if isinstance(block, Table):
-            lines.extend(
-                ", ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
-                for row in block.rows
-            )
-            continue
-        lines.extend(line.strip() for line in block.text.split("\n"))
-
+def _transcript_segments(lines: list[str]) -> tuple[list[str], list[str | None]]:
     segments: list[str] = []
     timestamps: list[str | None] = []
     current: list[str] = []
@@ -198,6 +251,34 @@ def _extract_transcript(file_bytes: bytes) -> tuple[list[str], list[str | None]]
         segments.append("\n".join(current))
         timestamps.append(current_timestamp)
     return segments, timestamps
+
+
+def _extract_transcript(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
+    """One string per timestamp-delimited segment, plus each segment's start time in seconds."""
+    _reject_oversized_ooxml(file_bytes)
+    document = Document(io.BytesIO(file_bytes))
+
+    lines: list[str] = []
+    for block in _iter_docx_blocks(document):
+        if isinstance(block, Table):
+            lines.extend(
+                ", ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                for row in block.rows
+            )
+            continue
+        lines.extend(line.strip() for line in block.text.split("\n"))
+    return _transcript_segments(lines)
+
+
+def _extract_docs_transcript(file_bytes: bytes) -> tuple[list[str], list[str | None]]:
+    """The same segments _extract_transcript finds, from the text the Docs API gave."""
+    lines: list[str] = []
+    for _, text, table_rows in _docs_text_blocks(file_bytes):
+        if table_rows is not None:
+            lines.extend(", ".join(cell.strip() for cell in row if cell.strip()) for row in table_rows)
+        else:
+            lines.extend(line.strip() for line in text.split("\n"))
+    return _transcript_segments(lines)
 
 
 # How far down a sheet to look for its header row - titles and notes above a table are only a few rows.
@@ -227,46 +308,55 @@ def _header_name(value) -> str:
     return str(value).strip() if value is not None else ""
 
 
+class SheetTextTooLong(ValueError):
+    """A sheet's text went over the size it was allowed (see sheet_text)."""
+
+
+def sheet_text(title: str, rows: Iterator, max_chars: Optional[int] = None) -> str:
+    """One sheet written as lines of "Header: value" pairs; rows are tuples of cell values. A title above the table is
+    kept as plain text. SheetTextTooLong as soon as the text written goes over max_chars, when that is given: every
+    pair repeats its column name, so the text can be far larger than the cells it comes from."""
+    scanned = list(itertools.islice(rows, _XLSX_HEADER_SEARCH_ROWS))
+    if not scanned:
+        return ""
+    # Rows above the table (a title, notes) have at most one filled cell, so the first row with two or more
+    # is the header - but only when it's text (month-style dates allowed) and everything above it is text
+    # too. Anything less certain keeps the first row as the header, as it always was.
+    first_wide_row = next((i for i, row in enumerate(scanned) if len(_filled_cells(row)) >= 2), 0)
+    titles_are_text = all(
+        isinstance(value, str) for row in scanned[:first_wide_row] for value in row if _filled_cells([value])
+    )
+    header_at = first_wide_row if titles_are_text and _looks_like_header_row(scanned[first_wide_row]) else 0
+    headers = scanned[header_at]
+    header_names = [_header_name(h) for h in headers]
+
+    lines = [f"Sheet: {title}"]
+    for above in scanned[:header_at]:
+        lines.extend(_filled_cells(above))
+    if header_at:
+        # It may really be data, so it stays searchable as plain text.
+        lines.append(", ".join(_header_name(h) for h in headers if _header_name(h)))
+    written = sum(len(line) + 1 for line in lines)
+    for row in itertools.chain(scanned[header_at + 1:], rows):
+        pairs = [
+            f"{name}: {value}"
+            for name, value in zip(header_names, row)
+            if name and value is not None and str(value).strip()
+        ]
+        if pairs:
+            line = ", ".join(pairs)
+            written += len(line) + 1
+            if max_chars is not None and written > max_chars:
+                raise SheetTextTooLong("The sheet's text is over the size it was allowed.")
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def _extract_xlsx(file_bytes: bytes) -> list[str]:
     """One string per sheet, rows written as "Header: value" pairs. A title above the table is kept as plain text."""
     _reject_oversized_ooxml(file_bytes)
     workbook = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
-
-    sheets = []
-    for worksheet in workbook.worksheets:
-        rows = worksheet.iter_rows(values_only=True)
-
-        scanned = list(itertools.islice(rows, _XLSX_HEADER_SEARCH_ROWS))
-        if not scanned:
-            sheets.append("")
-            continue
-        # Rows above the table (a title, notes) have at most one filled cell, so the first row with two or more
-        # is the header - but only when it's text (month-style dates allowed) and everything above it is text
-        # too. Anything less certain keeps the first row as the header, as it always was.
-        first_wide_row = next((i for i, row in enumerate(scanned) if len(_filled_cells(row)) >= 2), 0)
-        titles_are_text = all(
-            isinstance(value, str) for row in scanned[:first_wide_row] for value in row if _filled_cells([value])
-        )
-        header_at = first_wide_row if titles_are_text and _looks_like_header_row(scanned[first_wide_row]) else 0
-        headers = scanned[header_at]
-        header_names = [_header_name(h) for h in headers]
-
-        lines = [f"Sheet: {worksheet.title}"]
-        for above in scanned[:header_at]:
-            lines.extend(_filled_cells(above))
-        if header_at:
-            # It may really be data, so it stays searchable as plain text.
-            lines.append(", ".join(_header_name(h) for h in headers if _header_name(h)))
-        for row in itertools.chain(scanned[header_at + 1:], rows):
-            pairs = [
-                f"{name}: {value}"
-                for name, value in zip(header_names, row)
-                if name and value is not None and str(value).strip()
-            ]
-            if pairs:
-                lines.append(", ".join(pairs))
-        sheets.append("\n".join(lines))
-
+    sheets = [sheet_text(worksheet.title, worksheet.iter_rows(values_only=True)) for worksheet in workbook.worksheets]
     workbook.close()
     return sheets
 
@@ -279,13 +369,17 @@ def _extract_webpage(file_bytes: bytes) -> list[str]:
 _EXTRACTORS = {
     "pdf": _extract_pdf,
     "pptx": _extract_pptx,
+    "slides_text": _extract_slides_text,
     "docx": _extract_docx,
     "xlsx": _extract_xlsx,
+    "docs_text": _extract_docs_text,
+    "sheets_text": _extract_sheets_text,
     "webpage": _extract_webpage,
     "transcript": _extract_transcript,
+    "docs_transcript": _extract_docs_transcript,
 }
 
-_EXTRACTORS_WITH_UNIT_METADATA = {"docx", "transcript"}
+_EXTRACTORS_WITH_UNIT_METADATA = {"docx", "docs_text", "transcript", "docs_transcript"}
 
 
 def extract_units(file_bytes: bytes, extension: str) -> tuple[list[str], list[str | None]]:
