@@ -308,9 +308,14 @@ def _header_name(value) -> str:
     return str(value).strip() if value is not None else ""
 
 
-def sheet_text(title: str, rows: Iterator) -> str:
+class SheetTextTooLong(ValueError):
+    """A sheet's text went over the size it was allowed (see sheet_text)."""
+
+
+def sheet_text(title: str, rows: Iterator, max_chars: Optional[int] = None) -> str:
     """One sheet written as lines of "Header: value" pairs; rows are tuples of cell values. A title above the table is
-    kept as plain text."""
+    kept as plain text. SheetTextTooLong as soon as the text written goes over max_chars, when that is given: every
+    pair repeats its column name, so the text can be far larger than the cells it comes from."""
     scanned = list(itertools.islice(rows, _XLSX_HEADER_SEARCH_ROWS))
     if not scanned:
         return ""
@@ -331,6 +336,7 @@ def sheet_text(title: str, rows: Iterator) -> str:
     if header_at:
         # It may really be data, so it stays searchable as plain text.
         lines.append(", ".join(_header_name(h) for h in headers if _header_name(h)))
+    written = sum(len(line) + 1 for line in lines)
     for row in itertools.chain(scanned[header_at + 1:], rows):
         pairs = [
             f"{name}: {value}"
@@ -338,7 +344,11 @@ def sheet_text(title: str, rows: Iterator) -> str:
             if name and value is not None and str(value).strip()
         ]
         if pairs:
-            lines.append(", ".join(pairs))
+            line = ", ".join(pairs)
+            written += len(line) + 1
+            if max_chars is not None and written > max_chars:
+                raise SheetTextTooLong("The sheet's text is over the size it was allowed.")
+            lines.append(line)
     return "\n".join(lines)
 
 

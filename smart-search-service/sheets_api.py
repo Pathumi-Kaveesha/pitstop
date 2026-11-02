@@ -20,7 +20,7 @@ Each tab is written exactly as chunking writes a tab of an exported Excel file, 
 import json
 from typing import Callable, Iterator
 
-from chunking import sheet_text
+from chunking import SheetTextTooLong, sheet_text
 from drive_service import get_sheet_list, get_sheet_rows
 
 _MB = 1024 * 1024
@@ -30,7 +30,13 @@ _WINDOW_CELLS = 100_000
 _MAX_ROWS_PER_REQUEST = 100_000
 # Google allows ten million cells in a spreadsheet, so these only stop something that is not a real spreadsheet.
 _MAX_REQUESTS = 400
-_MAX_TEXT_CHARS = 32 * _MB
+# The most text read from one spreadsheet, counted twice: the characters in its cells, and the text written from them
+# (each cell is written with its column name, so that is far more). Memory holds the text several times over.
+_MAX_TEXT_CHARS = 16 * _MB
+
+
+def _too_long() -> ValueError:
+    return ValueError(f"The text of this spreadsheet is over the {_MAX_TEXT_CHARS // _MB} MB Smart Search can read.")
 
 
 def _rows(
@@ -56,9 +62,7 @@ def _rows(
             spent[1] += sum(len(str(value)) for value in row)
             spent[2] += sum(1 for value in row if value is not None and str(value) != "")
             if spent[1] > _MAX_TEXT_CHARS:
-                raise ValueError(
-                    f"The text of this spreadsheet is over the {_MAX_TEXT_CHARS // _MB} MB Smart Search can read."
-                )
+                raise _too_long()
             yield row
         first += count
 
@@ -73,11 +77,19 @@ def read_sheets_text(
         tabs = list_sheets(file_id)["sheets"]
         spent = [0, 0, 0]
         units = []
+        written = 0
         for position, tab in enumerate(tabs):
             spent[2] = 0
-            text = sheet_text(tab["title"], _rows(file_id, position, tab["rows"], tab["columns"], spent, read_rows))
+            try:
+                text = sheet_text(
+                    tab["title"], _rows(file_id, position, tab["rows"], tab["columns"], spent, read_rows),
+                    max_chars=_MAX_TEXT_CHARS - written,
+                )
+            except SheetTextTooLong as error:
+                raise _too_long() from error
             # a tab with nothing in it has no text, as in an exported file
             units.append(text if spent[2] else "")
+            written += len(units[-1])
     except (KeyError, TypeError, AttributeError) as error:
         raise ValueError("The spreadsheet's text could not be read.") from error
     return json.dumps({"units": units}).encode("utf-8")
