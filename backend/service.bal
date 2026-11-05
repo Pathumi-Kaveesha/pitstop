@@ -2306,6 +2306,14 @@ service http:InterceptableService / on new http:Listener(9090) {
         }
 
         error? result = database:reparentRoutes(payload);
+        if result is database:RouteLoopError|database:InvalidRouteParentError {
+            log:printWarn("Refused a page move", result);
+            return <http:BadRequest>{
+                body: {
+                    "message": result.message()
+                }
+            };
+        }
         if result is error {
             string customError = "Error while reparenting routes.";
             log:printError(customError, result);

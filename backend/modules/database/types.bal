@@ -1028,3 +1028,9 @@ type DbAnalyticsTotals record {|
     # Average actions performed per visit
     decimal avgActionsPerVisit;
 |};
+
+# A move that would put a page beneath itself, or beneath one of its own sub-pages.
+public type RouteLoopError distinct error;
+
+# A move under a page that does not exist, is deleted, or has no path.
+public type InvalidRouteParentError distinct error;
