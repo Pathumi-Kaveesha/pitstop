@@ -584,6 +584,7 @@ public isolated function getLikes(int contentId) returns types:LikeResponse[]|er
 public isolated function deleteRoute(int routeId) returns int|error? {
     int? rowCount = ();
     transaction {
+        check lockRouteTree();
         sql:ExecutionResult res = check dbClient->execute(deleteRoutesQuery(routeId));
         rowCount = res.affectedRowCount;
 
@@ -975,6 +976,7 @@ public isolated function deleteTag(string tagName) returns int|error? {
 # + return - Error or nil
 public isolated function reparentRoutes(types:ReParentRoutesPayload payload) returns error? {
     transaction {
+        check lockRouteTree();
         error? refusal = ();
         if !check isUsableRouteParent(payload.newParentId) {
             refusal = error InvalidRouteParentError("That page can't be used as a parent.");
@@ -994,6 +996,17 @@ public isolated function reparentRoutes(types:ReParentRoutesPayload payload) ret
         } else {
             check commit;
         }
+    }
+}
+
+# Makes this transaction the only page move or page delete running, until it ends.
+#
+# + return - Error or nil
+isolated function lockRouteTree() returns error? {
+    int|error locked = dbClient->queryRow(lockRouteTreeQuery());
+    // No pages at all, so nothing to move or delete
+    if locked is error && locked !is sql:NoRowsError {
+        return locked;
     }
 }
 
