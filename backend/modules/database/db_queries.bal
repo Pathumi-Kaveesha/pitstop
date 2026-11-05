@@ -2212,6 +2212,14 @@ isolated function deleteTagQuery(string tagName) returns sql:ParameterizedQuery 
     AND is_deleted = FALSE;
 `;
 
+# Query to lock the first page. Every page move and page delete locks it first, so they run one after the other and a
+# move cannot slip in while a delete is working out which pages it covers.
+#
+# + return - SQL parameterized query
+isolated function lockRouteTreeQuery() returns sql:ParameterizedQuery => `
+    SELECT route_id FROM route ORDER BY route_id LIMIT 1 FOR UPDATE
+`;
+
 # Query to count the given route when pages can be moved under it: it exists, is not deleted and has a path. Without a
 # path, every page moved under it would get none either.
 #

@@ -25,12 +25,32 @@ configurable boolean isTokenValidatorEnabled = true;
 
 final jwt:ValidatorConfig & readonly jwtConfig = {
     issuer: tokenValidatorConfig.issuer,
-    audience: tokenValidatorConfig.audience,
+    audience: audienceOf(tokenValidatorConfig.audience),
     clockSkew: tokenValidatorConfig.clockSkew,
     signatureConfig: {
         jwksConfig: {url: tokenValidatorConfig.jwksEndPoint}
     }
 };
+
+# The audience the token check needs. A list typed into the single-value form of the setting arrives as text like
+# ["a","b"], which no token matches, so that text is read as the list it was meant to be.
+#
+# + audience - The audience setting
+# + return - The audience, as a list when the text holds one
+isolated function audienceOf(string|string[] audience) returns string|string[] & readonly {
+    if audience is string {
+        string text = audience.trim();
+        if text.startsWith("[") && text.endsWith("]") {
+            string[]|error list = text.fromJsonStringWithType();
+            if list is string[] && list.length() > 0 {
+                log:printInfo("Token audience was given as text and is read as a list", entries = list.length());
+                return list.cloneReadOnly();
+            }
+        }
+        return audience;
+    }
+    return audience.cloneReadOnly();
+}
 
 # To handle authorization for each resource function invocation.
 public isolated service class JwtInterceptor {
