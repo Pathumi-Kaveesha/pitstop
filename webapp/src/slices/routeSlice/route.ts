@@ -418,10 +418,13 @@ export const reparentRoutes = createAsyncThunk(
             dispatch(getRoutesInfo("/"));
           }
         })
-        .catch((error: Error) => {
+        .catch((error) => {
+          // A refused move comes back with its reason
+          const reason =
+            error?.response?.status === 400 ? error?.response?.data?.message : undefined;
           dispatch(
             enqueueSnackbarMessage({
-              message: "Error while reparenting pages :(",
+              message: reason ?? "Error while reparenting pages :(",
               type: "error",
               anchorOrigin: { vertical: "bottom", horizontal: "right" },
             }),

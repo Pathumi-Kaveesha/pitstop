@@ -975,12 +975,45 @@ public isolated function deleteTag(string tagName) returns int|error? {
 # + return - Error or nil
 public isolated function reparentRoutes(types:ReParentRoutesPayload payload) returns error? {
     transaction {
-        sql:ParameterizedQuery[] reparentQueries = from int routeId in payload.routeIds
-            select reparentRoutesQuery(payload.newParentId, routeId);
-
-        _ = check dbClient->batchExecute(reparentQueries);
-        check commit;
+        error? refusal = ();
+        if !check isUsableRouteParent(payload.newParentId) {
+            refusal = error InvalidRouteParentError("That page can't be used as a parent.");
+        } else {
+            foreach int routeId in payload.routeIds {
+                // One page at a time, so a page moved earlier in the same request counts
+                if check wouldCreateRouteLoop(payload.newParentId, routeId) {
+                    refusal = error RouteLoopError("A page can't be moved under itself or one of its own sub-pages.");
+                    break;
+                }
+                _ = check dbClient->execute(reparentRoutesQuery(payload.newParentId, routeId));
+            }
+        }
+        if refusal is error {
+            rollback;
+            return refusal;
+        } else {
+            check commit;
+        }
     }
+}
+
+# Whether pages can be moved under the given route.
+#
+# + routeId - The route to move pages under
+# + return - True if they can, or an error
+isolated function isUsableRouteParent(int routeId) returns boolean|error {
+    int matches = check dbClient->queryRow(usableRouteParentQuery(routeId));
+    return matches > 0;
+}
+
+# Whether moving a route under the given parent would put it beneath itself.
+#
+# + newParentId - The route it would be moved under
+# + routeId - The route to move
+# + return - True if it would, or an error
+isolated function wouldCreateRouteLoop(int newParentId, int routeId) returns boolean|error {
+    int matches = check dbClient->queryRow(wouldCreateRouteLoopQuery(newParentId, routeId));
+    return matches > 0;
 }
 
 # Updates the text of an existing comment in the database.

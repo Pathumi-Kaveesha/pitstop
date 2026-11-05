@@ -2212,6 +2212,31 @@ isolated function deleteTagQuery(string tagName) returns sql:ParameterizedQuery 
     AND is_deleted = FALSE;
 `;
 
+# Query to count the given route when pages can be moved under it: it exists, is not deleted and has a path. Without a
+# path, every page moved under it would get none either.
+#
+# + routeId - The route to move pages under
+# + return - SQL parameterized query
+isolated function usableRouteParentQuery(int routeId) returns sql:ParameterizedQuery => `
+    SELECT COUNT(*) FROM route WHERE route_id = ${routeId} AND is_deleted = false AND route_path IS NOT NULL
+`;
+
+# Query to count how many times a route is the given parent or one of its ancestors, which is more than zero when moving
+# the route under that parent would put it beneath itself. UNION, not UNION ALL, so a loop already in the data can't make
+# it run for ever.
+#
+# + newParentId - The route it would be moved under
+# + routeId - The route to move
+# + return - SQL parameterized query
+isolated function wouldCreateRouteLoopQuery(int newParentId, int routeId) returns sql:ParameterizedQuery => `
+    WITH RECURSIVE ancestors AS (
+        SELECT route_id, parent_id FROM route WHERE route_id = ${newParentId}
+        UNION
+        SELECT r.route_id, r.parent_id FROM route r JOIN ancestors a ON r.route_id = a.parent_id
+    )
+    SELECT COUNT(*) FROM ancestors WHERE route_id = ${routeId}
+`;
+
 # Query to reparent routes to a new parent.
 #
 # + newParentId - New parent route ID
