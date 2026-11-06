@@ -438,6 +438,8 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
     if response.statusCode >= 200 && response.statusCode < 300 {
         log:printInfo(string `Smart Search: indexed content ${contentId}`);
         if confirmWebPage && isWebPageLink(driveLink) {
+            // Reserved so the minute-by-minute check follows a slow job too, as it does for a retry
+            _ = reserveForBackfill(contentId);
             _ = start confirmIndexOutcome(contentId, userJwt);
         }
         return;
