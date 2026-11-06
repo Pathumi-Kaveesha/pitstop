@@ -490,8 +490,12 @@ def _index_webpage_in_background(title: Optional[str], document_id: str, url: st
             logger.info("Webpage of document %s can't be indexed: %s", document_id, _safe_log_value(error))
             _set_index_error(document_id, str(error), generation)
             return
+        except WebPageGoneError as error:
+            logger.info("Webpage of document %s no longer exists", document_id)
+            _set_index_error(document_id, str(error), generation)
+            return
         except RuntimeError:
-            # A network failure, or the site says the page no longer exists
+            # A network failure or timeout
             logger.warning("Could not read the webpage of document %s", document_id, exc_info=True)
             _set_index_error(document_id, "Could not read that page.", generation)
             return
