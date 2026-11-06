@@ -141,7 +141,10 @@ export default function UnindexedContent() {
   ): { message: string; resolved: boolean } => {
     const stillFailing = fresh.find((e) => e.contentId === contentId);
     if (!stillFailing) {
-      return { message: "Retry succeeded - this content is now indexed.", resolved: true };
+      return {
+        message: "No failure so far - this content is indexed or still being indexed. If it fails, it will show up here.",
+        resolved: true,
+      };
     }
     if (stillFailing.updatedOn !== beforeRetryUpdatedOn) {
       return { message: `This still failed to index: ${stillFailing.errorMessage}`, resolved: true };
