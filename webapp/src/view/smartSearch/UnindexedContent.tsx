@@ -163,7 +163,7 @@ export default function UnindexedContent() {
         }
         stopRetrying(contentId);
       })();
-    }, 65_000);
+    }, 75_000); // after the backend's 65 s confirm, so its saved failure is already readable
     pendingRetryChecks.current.push(timeoutId);
   };
 
@@ -176,12 +176,17 @@ export default function UnindexedContent() {
         `${AppConfig.serviceUrls.smartSearch}/documents/${contentId}/retry-index`
       );
       const fresh = await loadEntries();
-      const outcome = fresh !== null ? describeRetryOutcome(fresh, contentId, beforeRetryUpdatedOn) : null;
+      // Missing from the list only means the job hasn't finished yet - just a failure is an answer this early
+      const outcome =
+        fresh !== null && fresh.some((e) => e.contentId === contentId)
+          ? describeRetryOutcome(fresh, contentId, beforeRetryUpdatedOn)
+          : null;
       if (outcome?.resolved) {
         // Already have the answer - a failure this fast means retrying again won't help either
         setNotice(outcome.message);
         stopRetrying(contentId);
       } else {
+        setNotice("Retry started - the result will show up here in about a minute.");
         scheduleRetryOutcomeCheck(contentId, beforeRetryUpdatedOn);
       }
     } catch (retryError) {

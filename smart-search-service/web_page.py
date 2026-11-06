@@ -19,6 +19,8 @@
 import ipaddress
 import re
 import socket
+import threading
+import time
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
@@ -28,11 +30,21 @@ from requests.adapters import HTTPAdapter
 from urllib3.connection import HTTPSConnection
 from urllib3.connectionpool import HTTPSConnectionPool
 
-from config import MAX_WEB_PAGE_BYTES, WEB_PAGE_FETCH_TIMEOUT_SECONDS
+from config import (
+    MAX_CONCURRENT_WEB_FETCHES,
+    MAX_WEB_PAGE_BYTES,
+    WEB_FETCH_WAIT_SECONDS,
+    WEB_PAGE_FETCH_TIMEOUT_SECONDS,
+    WEB_PAGE_TOTAL_TIMEOUT_SECONDS,
+)
 from http_session import make_session
 
 _USER_AGENT = "Mozilla/5.0 (compatible; PitstopSmartSearch/1.0)"
 _MAX_REDIRECTS = 5
+_READ_CHUNK_BYTES = 64 * 1024
+
+# One entry for each webpage download running; shared by every caller.
+_fetch_slots = threading.BoundedSemaphore(MAX_CONCURRENT_WEB_FETCHES)
 
 
 def _is_unsafe_ip(ip_str: str) -> bool:
@@ -166,9 +178,47 @@ class WebPageGoneError(RuntimeError):
     """The site says the page no longer exists (404 or 410). A RuntimeError, so indexing reports it as before."""
 
 
+def _read_html(response: requests.Response) -> bytes:
+    """The page's bytes. ValueError for one over MAX_WEB_PAGE_BYTES; RuntimeError, as for any network trouble, for one that
+    takes over WEB_PAGE_TOTAL_TIMEOUT_SECONDS - being slow once says nothing about whether the page can be indexed."""
+    deadline = time.monotonic() + WEB_PAGE_TOTAL_TIMEOUT_SECONDS
+    chunks: list[bytes] = []
+    size = 0
+    for chunk in response.raw.stream(_READ_CHUNK_BYTES, decode_content=True):
+        size += len(chunk)
+        if size > MAX_WEB_PAGE_BYTES:
+            raise ValueError(f"This page is too large to index (over {MAX_WEB_PAGE_BYTES // 1_048_576} MB).")
+        if time.monotonic() > deadline:
+            raise RuntimeError("This page took too long to download.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _no_free_slot() -> RuntimeError:
+    """Reported like any other network trouble, so a check says "unknown - ask again later"."""
+    error = RuntimeError("Could not read that page.")
+    error.__cause__ = TimeoutError("Waited too long for a free download slot.")
+    return error
+
+
 def fetch_web_page_text(url: str) -> WebPageInfo:
     """Fetches a public webpage and extracts its title and text - ValueError if unsafe/unreadable, RuntimeError on a
-    network failure, WebPageGoneError when the site says the page no longer exists."""
+    network failure, WebPageGoneError when the site says the page no longer exists. Waits for a free download slot,
+    so no more than MAX_CONCURRENT_WEB_FETCHES run at once, and gives up after WEB_FETCH_WAIT_SECONDS."""
+    if not _fetch_slots.acquire(timeout=WEB_FETCH_WAIT_SECONDS):
+        raise _no_free_slot()
+    try:
+        return _fetch_web_page_text(url)
+    finally:
+        _fetch_slots.release()
+
+
+def require_safe_web_link(url: str) -> None:
+    """ValueError unless the link is an https one to a public address - checked without downloading anything."""
+    _require_safe_https_url(url)
+
+
+def _fetch_web_page_text(url: str) -> WebPageInfo:
     _require_safe_https_url(url)
 
     try:
@@ -181,9 +231,7 @@ def fetch_web_page_text(url: str) -> WebPageInfo:
             if "html" not in content_type.lower():
                 raise ValueError("This link doesn't point to a readable web page.")
 
-            raw = response.raw.read(MAX_WEB_PAGE_BYTES + 1, decode_content=True)
-            if len(raw) > MAX_WEB_PAGE_BYTES:
-                raise ValueError(f"This page is too large to index (over {MAX_WEB_PAGE_BYTES // 1_048_576} MB).")
+            raw = _read_html(response)
             encoding = response.encoding
     except (ValueError, WebPageGoneError):
         raise
