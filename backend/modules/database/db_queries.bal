@@ -2220,6 +2220,22 @@ isolated function lockRouteTreeQuery() returns sql:ParameterizedQuery => `
     SELECT route_id FROM route ORDER BY route_id LIMIT 1 FOR UPDATE
 `;
 
+# Query to count the given route when it exists and is not deleted.
+#
+# + routeId - The route to look for
+# + return - SQL parameterized query
+isolated function liveRouteQuery(int routeId) returns sql:ParameterizedQuery => `
+    SELECT COUNT(*) FROM route WHERE route_id = ${routeId} AND is_deleted = false
+`;
+
+# Query to count the given route when it has a path.
+#
+# + routeId - The route to look for
+# + return - SQL parameterized query
+isolated function routeHasPathQuery(int routeId) returns sql:ParameterizedQuery => `
+    SELECT COUNT(*) FROM route WHERE route_id = ${routeId} AND route_path IS NOT NULL
+`;
+
 # Query to count the given route when pages can be moved under it: it exists, is not deleted and has a path. Without a
 # path, every page moved under it would get none either.
 #

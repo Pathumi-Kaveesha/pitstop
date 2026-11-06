@@ -34,7 +34,44 @@ public isolated function getUserById(int userId) returns types:User|error? {
 # + route - Route details
 # + return - Sql error if any
 public isolated function addRoutePath(RoutePayload route) returns error? {
-    _ = check dbClient->execute(addRoutePathQuery(route));
+    transaction {
+        check lockRouteTree();
+        error? refusal = ();
+        if !check isLiveRoute(route.parentId) {
+            refusal = error InvalidRouteParentError("That page can't be used as a parent.");
+        } else {
+            sql:ExecutionResult created = check dbClient->execute(addRoutePathQuery(route));
+            int|string? newId = created.lastInsertId;
+            // The path is built from the parent's, so a parent cut off from the top of the tree gives none
+            if newId is int && !check routeHasPath(newId) {
+                refusal = error InvalidRouteParentError("That page can't be used as a parent.");
+            }
+        }
+        if refusal is error {
+            rollback;
+            return refusal;
+        } else {
+            check commit;
+        }
+    }
+}
+
+# Whether a route exists and is not deleted.
+#
+# + routeId - The route to look for
+# + return - True if it does, or an error
+isolated function isLiveRoute(int routeId) returns boolean|error {
+    int matches = check dbClient->queryRow(liveRouteQuery(routeId));
+    return matches > 0;
+}
+
+# Whether a route has a path.
+#
+# + routeId - The route to look for
+# + return - True if it does, or an error
+isolated function routeHasPath(int routeId) returns boolean|error {
+    int matches = check dbClient->queryRow(routeHasPathQuery(routeId));
+    return matches > 0;
 }
 
 # Get all routes.
