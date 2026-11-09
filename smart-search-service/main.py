@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from typing import Literal, Optional
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
@@ -40,7 +41,7 @@ from drive_service import DriveServiceError, get_doc_text, get_slides_text
 from google_drive import DriveFileInfo, FileTrashedError, UnindexableDriveFile, download_drive_file, resolve_drive_file
 from sheets_api import read_sheets_text
 from slim_read import SlimReadUnavailable, read_text_parts
-from web_page import WebPageGoneError, fetch_web_page_text, is_web_page_link
+from web_page import WebPageGoneError, fetch_web_page_text, is_web_page_link, require_safe_web_link
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     INDEX_ERROR_TTL_SECONDS,
@@ -60,15 +61,18 @@ from generation import generate_answer
 from vectorstore import (
     SearchResult,
     claim_generation,
+    clear_index_error,
     delete_document,
     document_exists,
     clear_stale_index_job,
     finish_index_job,
     get_document_source,
+    get_index_error,
     is_current_generation,
     is_index_job_stale,
     list_document_ids,
     record_document_source_if_absent,
+    save_index_error,
     search,
     start_index_job,
     store_chunks_if_current,
@@ -99,7 +103,7 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
-# document_id -> (when it failed, reason)
+# document_id -> (when it failed, reason). A copy of what is saved in the database, for when the database can't be read.
 _index_errors: dict[str, tuple[float, str]] = {}
 _index_errors_lock = threading.Lock()
 
@@ -140,19 +144,45 @@ def _friendly_index_error(error: Exception) -> str:
     return "Something went wrong while indexing this. Try again, and let the team know if it keeps happening."
 
 
-def _set_index_error(document_id: str, message: str) -> None:
+def _set_index_error(document_id: str, message: str, generation: Optional[int] = None) -> None:
+    """Remembers why indexing a document failed - in the database, so it survives a restart and every copy of the
+    service reports it, and here as a fallback. generation is the failing job's own; leave it out for a request turned
+    away before any job. Never raises: it is called from the places that handle a failure."""
+    message = message.replace("\x00", "")[:300]  # the database refuses a NUL character
     now = time.time()
     with _index_errors_lock:
-        _index_errors[document_id] = (now, message[:300])
+        _index_errors[document_id] = (now, message)
         expired = [doc_id for doc_id, (at, _) in _index_errors.items()
                    if now - at > INDEX_ERROR_TTL_SECONDS]
         for doc_id in expired:
             del _index_errors[doc_id]
+    try:
+        save_index_error(document_id, message, generation, INDEX_ERROR_TTL_SECONDS)
+    except Exception:  # noqa: BLE001 - the failure being recorded must not be hidden by a failure to record it
+        logger.error("Could not save the index error of document %s", _safe_log_value(document_id), exc_info=True)
 
 
 def _clear_index_error(document_id: str) -> None:
+    """Forgets a document's failure reason once a fresh attempt starts. Never raises: the attempt's own generation
+    already retires the reason, so a failure here changes nothing."""
     with _index_errors_lock:
         _index_errors.pop(document_id, None)
+    try:
+        clear_index_error(document_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not clear the index error of document %s", _safe_log_value(document_id), exc_info=True)
+
+
+def _current_index_error(document_id: str) -> Optional[str]:
+    """Why the document's latest attempt failed, from the database. Only when the database can't be read is this copy's
+    own memory of it used."""
+    try:
+        return get_index_error(document_id, INDEX_ERROR_TTL_SECONDS)
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not read the index error of document %s", _safe_log_value(document_id), exc_info=True)
+    with _index_errors_lock:
+        entry = _index_errors.get(document_id)
+    return entry[1] if entry and time.time() - entry[0] <= INDEX_ERROR_TTL_SECONDS else None
 
 
 # (query, limit) -> (when stored, results). Results are the same for every caller -
@@ -241,7 +271,7 @@ async def _record_ingest_rejection(content_id: Optional[str], message: str) -> N
     """Remembers why a request was turned away before indexing, and drops any older dead job's mark so it can't override this."""
     if not content_id:
         return
-    _set_index_error(content_id, message)
+    await run_in_threadpool(_set_index_error, content_id, message)
     try:
         await run_in_threadpool(clear_stale_index_job, content_id, INDEX_STALE_AFTER_SECONDS)
     except Exception:  # noqa: BLE001 - the rejection itself still has to reach the caller
@@ -382,7 +412,7 @@ def _index_drive_file_in_background(
             logger.warning(
                 "Nothing worth indexing in '%s' (id %s) - too short or unreadable", _safe_log_value(title), document_id
             )
-            _set_index_error(document_id, "Nothing worth indexing was found in this file.")
+            _set_index_error(document_id, "Nothing worth indexing was found in this file.", generation)
             return
 
         if not is_current_generation(document_id, generation):
@@ -407,7 +437,7 @@ def _index_drive_file_in_background(
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to return an error to
         logger.exception("Background indexing failed for '%s' (id %s)", _safe_log_value(title), document_id)
-        _set_index_error(document_id, _friendly_index_error(error))
+        _set_index_error(document_id, _friendly_index_error(error), generation)
 
 
 def _embed_and_store(
@@ -442,22 +472,39 @@ def _embed_and_store(
     logger.info("Indexed '%s' (%d chunks, id %s)", _safe_log_value(title), len(chunks), document_id)
 
 
-def _index_webpage_in_background(
-    title: str, document_id: str, url: str, text: str, generation: int
-) -> None:
-    """Chunks, embeds and stores one webpage's already-extracted text, run after the response
-    has already gone back. Never raises - failures go to the log, since there's no caller left
-    to report them to.
+def _index_webpage_in_background(title: Optional[str], document_id: str, url: str, generation: int) -> None:
+    """Downloads, chunks, embeds and stores one webpage, run after the response has already gone back. Never raises -
+    failures go to the log and are saved as the document's failure reason, since there's no caller left to report them
+    to. title is the one the admin gave, when they gave one; otherwise the page's own is used.
 
     generation is claimed by the caller at accept time - see the same note on _index_drive_file_in_background."""
-    logger.info("Started indexing '%s' (id %s, webpage) - chunking", _safe_log_value(title), document_id)
+    shown = title or url
+    logger.info("Started indexing '%s' (id %s, webpage) - downloading", _safe_log_value(shown), document_id)
     _clear_index_error(document_id)
 
     try:
-        chunks, _unit_headings = chunk_document(text.encode("utf-8"), "webpage")
+        try:
+            page = fetch_web_page_text(url)
+        except ValueError as error:
+            # Too large, not a web page, nothing worth reading - the reason is meant for the admin
+            logger.info("Webpage of document %s can't be indexed: %s", document_id, _safe_log_value(error))
+            _set_index_error(document_id, str(error), generation)
+            return
+        except WebPageGoneError as error:
+            logger.info("Webpage of document %s no longer exists", document_id)
+            _set_index_error(document_id, str(error), generation)
+            return
+        except RuntimeError:
+            # A network failure or timeout
+            logger.warning("Could not read the webpage of document %s", document_id, exc_info=True)
+            _set_index_error(document_id, "Could not read that page.", generation)
+            return
+
+        title = title or page.title
+        chunks, _unit_headings = chunk_document(page.text.encode("utf-8"), "webpage")
         if not chunks:
             logger.warning("Nothing worth indexing in '%s' (id %s) - too short", _safe_log_value(title), document_id)
-            _set_index_error(document_id, "Nothing worth indexing was found on this page.")
+            _set_index_error(document_id, "Nothing worth indexing was found on this page.", generation)
             return
 
         if not is_current_generation(document_id, generation):
@@ -467,11 +514,11 @@ def _index_webpage_in_background(
         _embed_and_store(
             chunks, title, document_id, generation,
             UNIT_LABELS["webpage"], "webpage", "web", url, [None] * len(chunks),
-            source_link=url, source_version=_web_page_version(text),
+            source_link=url, source_version=_web_page_version(page.text),
         )
     except Exception as error:  # noqa: BLE001 - nobody is left to report an error to
-        logger.exception("Background indexing failed for '%s' (id %s)", _safe_log_value(title), document_id)
-        _set_index_error(document_id, _friendly_index_error(error))
+        logger.exception("Background indexing failed for '%s' (id %s)", _safe_log_value(shown), document_id)
+        _set_index_error(document_id, _friendly_index_error(error), generation)
 
 
 def _drive_source_version_of(modified_time: Optional[str]) -> Optional[str]:
@@ -533,35 +580,39 @@ async def ingest_drive_link(body: IngestDriveLinkRequest) -> dict:
     copy saved.
 
     Split either side of the response so document size doesn't affect
-    how long this takes to answer: metadata/text is resolved first (fast,
-    catches real errors), then chunk/embed/store happens in the
-    background - a failure there only reaches the log, not the caller."""
+    how long this takes to answer: a Drive file's metadata is resolved first
+    (fast, catches real errors) and a webpage link is only checked to be a
+    public https one, then everything else - downloading a webpage,
+    chunk/embed/store - happens in the background. A failure there is saved
+    as the document's failure reason (see the document's status), not
+    returned to the caller."""
     logger.info(
         "Ingest requested for %s by %s",
         _safe_log_value(body.contentId or body.driveLink), _safe_log_value(body.adminEmail),
     )
     if is_web_page_link(body.driveLink):
+        # Only the link is checked here. The page itself is downloaded by the index job, like a file, so it counts
+        # against the same limit of jobs, and a page that can't be read is saved as that document's failure reason.
         try:
-            page = await run_in_threadpool(fetch_web_page_text, body.driveLink)
+            await run_in_threadpool(require_safe_web_link, body.driveLink)
         except ValueError as error:
             await _record_ingest_rejection(body.contentId, str(error))
             raise HTTPException(status_code=400, detail=str(error)) from error
-        except RuntimeError as error:
-            logger.exception("Could not read webpage for indexing")
-            await _record_ingest_rejection(body.contentId, "Could not read that page.")
-            raise HTTPException(status_code=502, detail="Could not read that page.") from error
 
-        title = body.title.strip() if body.title and body.title.strip() else page.title
+        title = body.title.strip() if body.title and body.title.strip() else None
         document_id = body.contentId or hashlib.sha256(body.driveLink.encode()).hexdigest()[:16]
 
         # Claimed now, not once the task actually starts, or a delete queued behind it would go unnoticed
         generation = await _claim_generation(document_id)
         _submit_index_job(
             _run_tracked, _run_in_index_slot, _index_webpage_in_background, document_id, generation,
-            title, document_id, body.driveLink, page.text, generation,
+            title, document_id, body.driveLink, generation,
         )
 
-        return {"status": "indexing", "title": title, "documentId": document_id, "fileType": "webpage"}
+        return {
+            "status": "indexing", "title": title or urlparse(body.driveLink).hostname or body.driveLink,
+            "documentId": document_id, "fileType": "webpage",
+        }
 
     lookup_started = time.monotonic()
     try:
@@ -583,7 +634,7 @@ async def ingest_drive_link(body: IngestDriveLinkRequest) -> dict:
     title = body.title.strip() if body.title and body.title.strip() else info.drive_title
     document_id = body.contentId if body.contentId else info.file_id
 
-    _clear_index_error(document_id)
+    await run_in_threadpool(_clear_index_error, document_id)
     # Claimed now, not once the background task actually starts - see the note above.
     generation = await _claim_generation(document_id)
     # A large file runs alone, so its memory use is never multiplied by concurrent jobs.
@@ -654,9 +705,7 @@ def get_document_status(document_id: str = Path(..., pattern=r"^[0-9]+$")) -> di
         logger.exception("Failed to check indexing status for document %s", _safe_log_value(document_id))
         raise HTTPException(status_code=500, detail="Could not check indexing status.") from error
 
-    with _index_errors_lock:
-        entry = _index_errors.get(document_id)
-    error_message = entry[1] if entry else None
+    error_message = _current_index_error(document_id)
     if not indexed and error_message is None and _index_job_interrupted(document_id):
         error_message = INTERRUPTED_INDEX_MESSAGE
 

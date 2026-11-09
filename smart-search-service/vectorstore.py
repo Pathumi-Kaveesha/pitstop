@@ -33,6 +33,8 @@ import queries
 from config import (
     DELETE_MAX_RETRIES,
     DELETE_RETRY_DELAY_SECONDS,
+    INDEX_ERROR_MAX_RETRIES,
+    INDEX_ERROR_RETRY_DELAY_SECONDS,
     MAX_CHUNKS_PER_DOCUMENT,
     MAX_SCORE_GAP_FROM_TOP_MATCH,
     MINIMUM_SIMILARITY_SCORE,
@@ -129,6 +131,25 @@ def _ensure_schema() -> None:
         _schema_ready = True
 
 
+_index_errors_ready = False
+
+
+def _ensure_index_errors_table() -> None:
+    """Creates the table of failure reasons the first time it's needed, apart from the rest of the schema: if it can't be
+    created, saving and reading reasons fail and the callers cope, and the next call tries again. Nothing else depends
+    on it."""
+    global _index_errors_ready
+    if _index_errors_ready:
+        return
+    with _schema_lock:
+        if _index_errors_ready:
+            return
+        with _pool.connection() as conn:
+            conn.execute("SELECT pg_advisory_xact_lock(%s)", (_SCHEMA_LOCK_KEY,))
+            conn.execute(queries.INDEX_ERRORS_SCHEMA)
+        _index_errors_ready = True
+
+
 def _vector_literal(vector: list[float]) -> str:
     """Turns a list of numbers into the text form pgvector reads, like [0.1,0.2]."""
     return "[" + ",".join(str(float(value)) for value in vector) + "]"
@@ -173,6 +194,45 @@ def is_index_job_stale(document_id: str, stale_after_seconds: float) -> bool:
     _ensure_schema()
     with _pool.connection() as conn:
         return conn.execute(queries.STALE_INDEX_JOB, (document_id, stale_after_seconds)).fetchone() is not None
+
+
+def save_index_error(document_id: str, message: str, generation: Optional[int], ttl_seconds: float) -> None:
+    """Remembers why an attempt to index a document failed, for every copy of the service and across restarts.
+    generation is the failing job's own; None for a request turned away before any job, which belongs to the document's
+    current generation. Reasons older than ttl_seconds are dropped. Retried like the other writes."""
+    last_error: Exception | None = None
+    for attempt in range(INDEX_ERROR_MAX_RETRIES + 1):
+        try:
+            _ensure_schema()
+            _ensure_index_errors_table()
+            with _pool.connection() as conn:
+                conn.execute(queries.SAVE_INDEX_ERROR, (document_id, generation, document_id, message))
+                conn.execute(queries.PRUNE_INDEX_ERRORS, (ttl_seconds,))
+            return
+        except psycopg.Error as error:
+            last_error = error
+
+        if attempt < INDEX_ERROR_MAX_RETRIES:
+            time.sleep(INDEX_ERROR_RETRY_DELAY_SECONDS)
+    raise RuntimeError(f"Failed to save an index error in PostgreSQL: {last_error}") from last_error
+
+
+def get_index_error(document_id: str, ttl_seconds: float) -> Optional[str]:
+    """Why the document's latest attempt failed - None when there is no reason, it is older than ttl_seconds, or a
+    newer attempt (or a delete) has been started since."""
+    _ensure_schema()
+    _ensure_index_errors_table()
+    with _pool.connection() as conn:
+        row = conn.execute(queries.GET_INDEX_ERROR, (document_id, ttl_seconds)).fetchone()
+    return row[0] if row else None
+
+
+def clear_index_error(document_id: str) -> None:
+    """Forgets a document's failure reason - housekeeping, since a newer generation already retires it."""
+    _ensure_schema()
+    _ensure_index_errors_table()
+    with _pool.connection() as conn:
+        conn.execute(queries.CLEAR_INDEX_ERROR, (document_id,))
 
 
 def is_current_generation(document_id: str, generation: int) -> bool:

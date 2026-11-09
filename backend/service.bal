@@ -274,6 +274,14 @@ service http:InterceptableService / on new http:Listener(9090) {
         requestPageData.label = replaceSpacesWithHyphens(requestPageData.label);
 
         error? result = database:addRoutePath({...requestPageData, menuItem});
+        if result is database:InvalidRouteParentError {
+            log:printWarn("Refused to create a page under an unusable parent", result);
+            return <http:BadRequest>{
+                body: {
+                    message: result.message()
+                }
+            };
+        }
         if result is error {
             string customError = "Error while adding route path";
             log:printError(customError, result);
@@ -418,7 +426,8 @@ service http:InterceptableService / on new http:Listener(9090) {
             // Fire-and-forget - content creation never waits on indexing.
             _ = start smartsearch:indexContentForSmartSearch(newContentId, indexLink, contentPayload.description,
                     smartsearch:displayLinkFor(contentPayload.contentType, contentPayload.contentSubtype,
-                            contentPayload.contentLink), createdBy, false, smartsearch:userJwtOf(ctx));
+                            contentPayload.contentLink), createdBy, false, smartsearch:userJwtOf(ctx),
+                    confirmWebPage = true);
             return http:CREATED;
         }
 

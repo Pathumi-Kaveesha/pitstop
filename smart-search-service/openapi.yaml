@@ -27,11 +27,17 @@ paths:
 
         Split either side of the response so document size doesn''t affect
 
-        how long this takes to answer: metadata/text is resolved first (fast,
+        how long this takes to answer: a Drive file''s metadata is resolved first
 
-        catches real errors), then chunk/embed/store happens in the
+        (fast, catches real errors) and a webpage link is only checked to be a
 
-        background - a failure there only reaches the log, not the caller.'
+        public https one, then everything else - downloading a webpage,
+
+        chunk/embed/store - happens in the background. A failure there is saved
+
+        as the document''s failure reason (see the document''s status), not
+
+        returned to the caller.'
       operationId: ingest_drive_link_ingest_drive_link_post
       requestBody:
         content:

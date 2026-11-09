@@ -145,3 +145,38 @@ ON CONFLICT (document_id) DO NOTHING
 GET_DOCUMENT_SOURCE = "SELECT link, version FROM document_sources WHERE document_id = %s"
 
 DELETE_DOCUMENT_SOURCE = "DELETE FROM document_sources WHERE document_id = %s"
+
+# Why the latest attempt to index a document failed. Kept with the generation it belongs to: a newer attempt, or a
+# delete, claims a newer generation, which retires the reason without anyone having to clear it. Created apart from
+# SCHEMA, because the reasons are a convenience: a problem with this table must never stop the rest from working.
+INDEX_ERRORS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS index_errors (
+    document_id TEXT PRIMARY KEY,
+    generation BIGINT NOT NULL,
+    message TEXT NOT NULL,
+    failed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+# The generation is the job's own, or - for a request turned away before any job - the document's current one. A late
+# failure from an older job never replaces the reason of a newer attempt.
+SAVE_INDEX_ERROR = """
+INSERT INTO index_errors (document_id, generation, message, failed_at)
+VALUES (%s, COALESCE(%s, (SELECT generation FROM document_state WHERE document_id = %s), 0), %s, now())
+ON CONFLICT (document_id) DO UPDATE
+SET generation = EXCLUDED.generation, message = EXCLUDED.message, failed_at = now()
+WHERE index_errors.generation <= EXCLUDED.generation
+"""
+
+PRUNE_INDEX_ERRORS = "DELETE FROM index_errors WHERE failed_at < now() - (%s * interval '1 second')"
+
+# Only a reason that is recent enough and belongs to the document's current generation counts.
+GET_INDEX_ERROR = """
+SELECT e.message FROM index_errors e
+LEFT JOIN document_state s ON s.document_id = e.document_id
+WHERE e.document_id = %s
+  AND e.failed_at > now() - (%s * interval '1 second')
+  AND e.generation >= COALESCE(s.generation, 0)
+"""
+
+CLEAR_INDEX_ERROR = "DELETE FROM index_errors WHERE document_id = %s"

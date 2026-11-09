@@ -94,6 +94,15 @@ MAX_WEB_PAGE_BYTES = 10 * 1024 * 1024
 
 WEB_PAGE_FETCH_TIMEOUT_SECONDS = 20
 
+# The most time one webpage may take to download in all; the timeout above only covers each wait on the network.
+WEB_PAGE_TOTAL_TIMEOUT_SECONDS = 60
+
+# Webpage downloads running at once, whether for an index job or for a change check.
+MAX_CONCURRENT_WEB_FETCHES = 3
+
+# The longest a webpage download waits for a free one of those, so a stuck download can't make the others wait for ever.
+WEB_FETCH_WAIT_SECONDS = 120
+
 # Changing this means re-embedding and re-indexing everything already stored.
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-2"
 
@@ -118,8 +127,14 @@ MAX_CONCURRENT_INDEX_JOBS = 3
 # last modified this long before the backend confirmed it indexed - that confirmation can lag the real indexing.
 SOURCE_FIRST_CHECK_MARGIN_SECONDS = 24 * 60 * 60
 
-# How long an indexing failure reason is remembered
-INDEX_ERROR_TTL_SECONDS = 24 * 60 * 60
+# How long an indexing failure reason is remembered. It lives in the database, so it survives a restart and is the same
+# for every copy of the service; the backend's regular checks (every few hours, and a scan for content never indexed)
+# have this long to pick it up.
+INDEX_ERROR_TTL_SECONDS = 7 * 24 * 60 * 60
+
+# Saving a failure reason is retried like the other database writes, so one short outage doesn't lose it.
+INDEX_ERROR_MAX_RETRIES = 2
+INDEX_ERROR_RETRY_DELAY_SECONDS = 1
 
 # A running index job refreshes its mark this often; without a refresh for the second period it counts as interrupted.
 INDEX_HEARTBEAT_SECONDS = 20

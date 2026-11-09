@@ -402,9 +402,11 @@ public isolated function recordUnindexableLink(int contentId, string contentType
 # + recordUnreachable - Save a failure when the request can't be sent, so a retry never leaves the item with no reason
 # + userJwt - The admin's login token, forwarded so the service can check it
 # + recordTemporaryRejection - Save a failure when the service turns it away for a reason that may pass (a 5xx)
+# + confirmWebPage - For a web page, check its outcome shortly after it is accepted, since the page is only downloaded
+# by the indexing job and a page that can't be read shows up in its status, not in the answer to this call
 public isolated function indexContentForSmartSearch(int contentId, string driveLink, string title,
         string? displayLink = (), string? requestedBy = (), boolean recordUnreachable = false,
-        string? userJwt = (), boolean recordTemporaryRejection = true) {
+        string? userJwt = (), boolean recordTemporaryRejection = true, boolean confirmWebPage = false) {
     DriveLinkIngestRequest payload = {
         driveLink,
         title,
@@ -435,6 +437,11 @@ public isolated function indexContentForSmartSearch(int contentId, string driveL
 
     if response.statusCode >= 200 && response.statusCode < 300 {
         log:printInfo(string `Smart Search: indexed content ${contentId}`);
+        if confirmWebPage && isWebPageLink(driveLink) {
+            // Reserved so the minute-by-minute check follows a slow job too, as it does for a retry
+            _ = reserveForBackfill(contentId);
+            _ = start confirmIndexOutcome(contentId, userJwt);
+        }
         return;
     }
 
