@@ -20,7 +20,6 @@ import ipaddress
 import re
 import socket
 import threading
-import time
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
@@ -181,16 +180,36 @@ class WebPageGoneError(RuntimeError):
 def _read_html(response: requests.Response) -> bytes:
     """The page's bytes. ValueError for one over MAX_WEB_PAGE_BYTES; RuntimeError, as for any network trouble, for one that
     takes over WEB_PAGE_TOTAL_TIMEOUT_SECONDS - being slow once says nothing about whether the page can be indexed."""
-    deadline = time.monotonic() + WEB_PAGE_TOTAL_TIMEOUT_SECONDS
+    timed_out = threading.Event()
+
+    def stop_download() -> None:
+        timed_out.set()
+        try:
+            response.raw.shutdown()  # wakes a read that is still waiting for the next bytes of a slow server
+        except Exception:  # noqa: BLE001 - it may have just finished, and an older urllib3 has no shutdown
+            pass
+
+    watchdog = threading.Timer(WEB_PAGE_TOTAL_TIMEOUT_SECONDS, stop_download)
+    watchdog.daemon = True
+    watchdog.start()
     chunks: list[bytes] = []
     size = 0
-    for chunk in response.raw.stream(_READ_CHUNK_BYTES, decode_content=True):
-        size += len(chunk)
-        if size > MAX_WEB_PAGE_BYTES:
-            raise ValueError(f"This page is too large to index (over {MAX_WEB_PAGE_BYTES // 1_048_576} MB).")
-        if time.monotonic() > deadline:
-            raise RuntimeError("This page took too long to download.")
-        chunks.append(chunk)
+    try:
+        for chunk in response.raw.stream(_READ_CHUNK_BYTES, decode_content=True):
+            size += len(chunk)
+            if size > MAX_WEB_PAGE_BYTES:
+                raise ValueError(f"This page is too large to index (over {MAX_WEB_PAGE_BYTES // 1_048_576} MB).")
+            if timed_out.is_set():
+                break
+            chunks.append(chunk)
+    except Exception:
+        if timed_out.is_set():
+            raise RuntimeError("This page took too long to download.") from None
+        raise
+    finally:
+        watchdog.cancel()
+    if timed_out.is_set():
+        raise RuntimeError("This page took too long to download.")
     return b"".join(chunks)
 
 
