@@ -186,7 +186,7 @@ def _read_html(response: requests.Response) -> bytes:
         timed_out.set()
         try:
             response.raw.shutdown()  # wakes a read that is still waiting for the next bytes of a slow server
-        except Exception:  # noqa: BLE001 - it may have just finished, and an older urllib3 has no shutdown
+        except Exception:  # noqa: BLE001 - the download may have just finished
             pass
 
     watchdog = threading.Timer(WEB_PAGE_TOTAL_TIMEOUT_SECONDS, stop_download)
