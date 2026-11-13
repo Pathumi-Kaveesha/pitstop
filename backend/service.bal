@@ -2703,8 +2703,8 @@ service http:InterceptableService / on new http:Listener(9090) {
 
         // Only a new or changed link is checked, so older buttons can still be saved
         string? actionValue = button.actionValue;
-        if actionValue is string && actionValue != "" && actionValue.trim() != (customButton.actionValue ?: "").trim()
-            && !constants:BUTTON_LINK.isFullMatch(actionValue) {
+        if actionValue is string && actionValue.trim() != (customButton.actionValue ?: "").trim()
+            && (actionValue.trim() == "" || !constants:BUTTON_LINK.isFullMatch(actionValue)) {
             log:printError(constants:INVALID_URL_ERROR, actionValue = actionValue);
             return http:BAD_REQUEST;
         }
