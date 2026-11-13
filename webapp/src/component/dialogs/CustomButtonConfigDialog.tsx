@@ -87,7 +87,7 @@ const actionOptions = [
 
 // Same rule the backend applies to links.
 const VALID_LINK =
-  /^(https?|ftp|smtp):\/\/(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/\S*)?$/;
+  /^(https?|ftp|smtp):\/\/(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?::\d{1,5})?(?:[\/?#]\S*)?$/;
 
 const CustomButtonConfigDialog: React.FC<CustomButtonConfigDialogProps> = ({
   open,
