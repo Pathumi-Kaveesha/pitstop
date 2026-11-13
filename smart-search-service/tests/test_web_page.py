@@ -473,3 +473,11 @@ def test_the_service_leaves_no_timer_thread_behind_after_a_normal_or_a_cut_off_r
         read_in_a_thread(servers(gap=gap), "http")
     time.sleep(0.3)
     assert [thread for thread in threading.enumerate() if isinstance(thread, threading.Timer)] == []
+
+
+def test_the_fake_server_lets_go_of_a_client_that_hangs_up_before_sending_its_request(servers):
+    server = servers(gap=0)
+    with socket.create_connection(("127.0.0.1", server.port)):
+        pass  # connects, sends nothing, hangs up
+    time.sleep(0.5)
+    assert [thread for thread in threading.enumerate() if getattr(thread, "_target", None) == server._answer] == []

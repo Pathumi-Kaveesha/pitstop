@@ -126,7 +126,10 @@ class FakeWebServer:
                 connection = self._tls.wrap_socket(connection, server_side=True)
             request = b""
             while b"\r\n\r\n" not in request:
-                request += connection.recv(4096)
+                chunk = connection.recv(4096)
+                if not chunk:  # the client hung up before sending its request
+                    return
+                request += chunk
             head = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
             if self.encoding:
                 head += f"Content-Encoding: {self.encoding}\r\n"
