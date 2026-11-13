@@ -14,14 +14,53 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Shared test helpers: a fake web server on a real local socket, and a tiny PDF writer."""
+"""Shared test helpers: the check that a database address is a local test database, a fake web server on a real local
+socket, and a tiny PDF writer."""
 
 import datetime
+import ipaddress
 import socket
 import ssl
 import tempfile
 import threading
 import time
+
+import psycopg
+from psycopg.conninfo import conninfo_to_dict
+
+
+def _is_local(address: str) -> bool:
+    """A name or address of this machine, or the folder of a local socket."""
+    if address.startswith("/") or address.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(address).is_loopback
+    except ValueError:
+        return False
+
+
+def database_refusal(dsn: str) -> str | None:
+    """Why this connection string must not be used for the tests, or None when it is a local test database.
+
+    PostgreSQL connects to `hostaddr` when it is given, whatever `host` says, so both are checked, and every entry of a
+    comma-separated list. A service entry can change the address too, so none is allowed."""
+    try:
+        settings = conninfo_to_dict(dsn)
+    except psycopg.ProgrammingError:
+        return "it is not a valid connection string"
+    if settings.get("service"):
+        return "it uses a service entry, which can change the address"
+    entries: list[str] = []
+    for key in ("host", "hostaddr"):
+        if settings.get(key):
+            entries += [entry.strip() for entry in settings[key].split(",")]
+    if not entries:
+        return "it does not name a host, so the shell's PGHOST would decide"
+    if not all(_is_local(entry) for entry in entries):
+        return "a host or hostaddr in it is not on this machine"
+    if "test" not in (settings.get("dbname") or ""):
+        return "the database name does not contain 'test'"
+    return None
 
 
 def _self_signed_certificate() -> tuple[str, str]:

@@ -28,7 +28,8 @@ TEST_POSTGRES_DSN="host=127.0.0.1 port=55432 dbname=smartsearch_test user=pgadmi
 ```
 
 The tests create and drop tables, so they only run against a database that is on your own machine, written with its host
-(`localhost`, `127.0.0.1` or a socket folder), and whose name contains `test`. Anything else stops the run before it
+(`localhost`, `127.0.0.1`, `::1` or a socket folder), whose `hostaddr` too (if you set one) is local, and whose name contains
+`test`. The tests also ignore `PGHOSTADDR`, `PGSERVICE` and `PGSERVICEFILE` from your shell. Anything else stops the run before it
 connects. Never point it at a shared or real database.
 
 ## What is covered

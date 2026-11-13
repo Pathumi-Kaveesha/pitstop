@@ -31,7 +31,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-# Settings the service reads that the tests leave unset, so a value in the developer's shell can't change a test.
+from helpers import database_refusal
+
+# Settings the service reads, and PostgreSQL connection variables that could point the connection somewhere else, that
+# the tests leave unset, so a value in the developer's shell can't change a test.
 _UNSET = (
     "VERTEX_LOCATION",
     "ANTHROPIC_BASE_URL",
@@ -42,9 +45,11 @@ _UNSET = (
     "MAX_DRIVE_FILE_SIZE_MB",
     "SLIM_READ_ENABLED",
     "JWT_CLOCK_SKEW_SECONDS",
+    "PGHOSTADDR",
+    "PGSERVICE",
+    "PGSERVICEFILE",
 )
 
-_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 _TEST_DSN = os.environ.get("TEST_POSTGRES_DSN", "").strip()
 
 
@@ -91,17 +96,16 @@ _prepare_environment()
 
 
 def pytest_sessionstart(session):
-    """Refuses to run against anything but a local database made for testing - the tests create and drop tables. The host
-    has to be written out in the connection string, because without one the PGHOST setting of the shell would decide."""
+    """Refuses to run against anything but a local database made for testing - the tests create and drop tables. Every
+    address in the connection string is checked, because PostgreSQL may connect to `hostaddr` instead of `host`."""
     if not _TEST_DSN:
         return
-    settings = conninfo_to_dict(_TEST_DSN)
-    host = settings.get("host") or settings.get("hostaddr") or ""
-    is_local = host in _LOCAL_HOSTS or host.startswith("/")
-    if not is_local or "test" not in (settings.get("dbname") or ""):
+    refusal = database_refusal(_TEST_DSN)
+    if refusal:
         pytest.exit(
-            "TEST_POSTGRES_DSN must name a local host (localhost, 127.0.0.1 or a socket folder) and a database whose "
-            "name contains 'test'. The tests create and drop tables, so nothing else is allowed.",
+            f"TEST_POSTGRES_DSN is not allowed: {refusal}. It must name only local addresses (localhost, 127.0.0.1, "
+            "::1 or a socket folder) and a database whose name contains 'test'. The tests create and drop tables, so "
+            "nothing else is allowed.",
             returncode=2,
         )
     try:
