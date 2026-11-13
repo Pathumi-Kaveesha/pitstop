@@ -30,7 +30,7 @@ const Sidebar = (props: SidebarProps) => {
   const routes = useAppSelector((state: RootState) => state.route.routes);
   const theme = useTheme();
   const { pathname } = useLocation();
-  // The drawer's own element: its menus are drawn inside it, so screen readers can read them while the drawer is open
+  // The drawer's panel: its menus are drawn inside it, so screen readers and the Tab key can reach them while the drawer is open
   const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
 
   //For the Drawer creating the tree structure
@@ -58,13 +58,13 @@ const Sidebar = (props: SidebarProps) => {
 
   return (
     <Drawer
-      ref={setMenuContainer}
       variant="temporary"
       open={props.open}
       onClose={props.handleDrawer}
       ModalProps={{
         keepMounted: true,
       }}
+      slotProps={{ paper: { ref: setMenuContainer } }}
       sx={{
         "& .MuiDrawer-paper": {
           boxSizing: "border-box",
