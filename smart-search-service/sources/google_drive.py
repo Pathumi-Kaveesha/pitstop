@@ -23,13 +23,13 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from config import MAX_DRIVE_FILE_SIZE_BYTES, MAX_SLIM_FILE_SIZE_BYTES, SLIM_READ_ENABLED, SLIM_READ_MIN_BYTES
-from drive_constants import (
+from sources.drive_constants import (
     ALLOWED_DRIVE_HOSTS,
     EXPORT_FORMATS,
     FILE_ID_PATTERNS,
     MIME_TYPE_EXTENSIONS,
 )
-from drive_service import download_file, get_file_info
+from sources.drive_service import download_file, get_file_info
 
 # A native Google file Google builds an Office file from when asked for its bytes, which it cannot do for one that is
 # too large. Each can instead be read as words, through its own API; the value is the kind of text chunking reads.

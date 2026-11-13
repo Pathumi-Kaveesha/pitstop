@@ -29,7 +29,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-import queries
+from indexing import queries
 from config import (
     DELETE_MAX_RETRIES,
     DELETE_RETRY_DELAY_SECONDS,
@@ -42,7 +42,7 @@ from config import (
     UPSERT_MAX_RETRIES,
     UPSERT_RETRY_DELAY_SECONDS,
 )
-from deep_links import with_timestamp
+from sources.deep_links import with_timestamp
 
 # Common words a question is full of but that say nothing about which moment actually matters
 _STOP_WORDS = {

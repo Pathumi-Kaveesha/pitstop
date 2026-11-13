@@ -34,14 +34,20 @@ from pydantic import BaseModel, Field
 from fastapi.concurrency import run_in_threadpool
 
 from auth import verify_caller
-from chunking import Chunk, UNIT_LABELS, chunk_document
-from compose import compose_message, split_subject, strip_frame
-from deep_links import build_native_links, build_video_timestamp_links
-from drive_service import DriveServiceError, get_doc_text, get_slides_text
-from google_drive import DriveFileInfo, FileTrashedError, UnindexableDriveFile, download_drive_file, resolve_drive_file
-from sheets_api import read_sheets_text
-from slim_read import SlimReadUnavailable, read_text_parts
-from web_page import WebPageGoneError, fetch_web_page_text, is_web_page_link, require_safe_web_link
+from indexing.chunking import Chunk, UNIT_LABELS, chunk_document
+from answering.compose import compose_message, split_subject, strip_frame
+from sources.deep_links import build_native_links, build_video_timestamp_links
+from sources.drive_service import DriveServiceError, get_doc_text, get_slides_text
+from sources.google_drive import (
+    DriveFileInfo,
+    FileTrashedError,
+    UnindexableDriveFile,
+    download_drive_file,
+    resolve_drive_file,
+)
+from indexing.sheets_api import read_sheets_text
+from sources.slim_read import SlimReadUnavailable, read_text_parts
+from sources.web_page import WebPageGoneError, fetch_web_page_text, is_web_page_link, require_safe_web_link
 from config import (
     DEFAULT_SEARCH_RESULT_LIMIT,
     INDEX_ERROR_TTL_SECONDS,
@@ -56,9 +62,9 @@ from config import (
     SEARCH_CACHE_TTL_SECONDS,
     SOURCE_FIRST_CHECK_MARGIN_SECONDS,
 )
-from embeddings import embed_chunks, embed_text, format_query_text
-from generation import generate_answer
-from vectorstore import (
+from indexing.embeddings import embed_chunks, embed_text, format_query_text
+from answering.generation import generate_answer
+from indexing.vectorstore import (
     SearchResult,
     claim_generation,
     clear_index_error,
