@@ -18,7 +18,7 @@ import { useAppDispatch } from "@slices/store";
 import { updateRouteId, updateRouterPath } from "@slices/routeSlice/route";
 import { setNavigationLoading } from "@slices/commonSlice/common";
 import { RouteResponse } from "@/types/types";
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { alpha, Theme } from "@mui/material/styles";
 import ListItem from "@mui/material/ListItem";
@@ -27,6 +27,7 @@ import ExpandMore from "@mui/icons-material/ExpandMore";
 import { NavLink, LinkProps as RouterLinkProps, useLocation, matchPath, useNavigate } from "react-router-dom";
 import { Box } from "@mui/material";
 import { INVALID_ROUTE_ID } from "@config/constant";
+import { MenuContainerContext } from "@components/layout/MenuContainerContext";
 
 // A menu under its item is not made smaller than this while there is room for it; below this it opens above the item
 const MIN_MENU_HEIGHT = 120;
@@ -49,6 +50,9 @@ const ListItemLink = (props: ListItemLinkProps) => {
   const { pathname } = useLocation();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const menuContainer = useContext(MenuContainerContext);
+  // No container given: the menu goes on the page itself. A container that is not ready yet means no menu for now.
+  const menuParent = menuContainer === undefined ? document.body : menuContainer;
 
   const isTopLevel = level === 1;
   const isCompact = isTopLevel && window.config?.IS_PITSTOP_APP == false;
@@ -257,6 +261,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
       {/* Dropdown Menu */}
       {children &&
         children.length > 0 &&
+        menuParent &&
         createPortal(
           <Box
             ref={dropdownRef}
@@ -365,7 +370,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
               ))}
             </Box>
           </Box>,
-          document.body
+          menuParent
         )}
     </Box>
   );
