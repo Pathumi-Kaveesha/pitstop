@@ -18,8 +18,9 @@ import { useAppDispatch } from "@slices/store";
 import { updateRouteId, updateRouterPath } from "@slices/routeSlice/route";
 import { setNavigationLoading } from "@slices/commonSlice/common";
 import { RouteResponse } from "@/types/types";
-import React, { useEffect, useRef, useState } from "react";
-import { Theme } from "@mui/material/styles";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { alpha, Theme } from "@mui/material/styles";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import ExpandMore from "@mui/icons-material/ExpandMore";
@@ -33,9 +34,10 @@ const Link = React.forwardRef<HTMLAnchorElement, RouterLinkProps>((itemProps, re
 
 const ListItemLink = (props: ListItemLinkProps) => {
   const [open, setOpen] = useState(false);
-  const [openLeft, setOpenLeft] = useState(false);
+  const [placement, setPlacement] = useState({ top: 0, left: 0, maxHeight: 0, openLeft: false });
   const navRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { primary, to, theme, isActive, children, routeId, level, label, handleSideBar } = props;
@@ -46,8 +48,6 @@ const ListItemLink = (props: ListItemLinkProps) => {
   const isTopLevel = level === 1;
   const isCompact = isTopLevel && window.config?.IS_PITSTOP_APP == false;
 
-  const [, setTranslateOffset] = useState(0);
-
   useEffect(() => {
     if (matchPath(to, pathname) !== null) {
       dispatch(updateRouteId(routeId));
@@ -55,26 +55,65 @@ const ListItemLink = (props: ListItemLinkProps) => {
     }
   }, [pathname, to, routeId, dispatch, label, children]);
 
-  useEffect(() => {
-    if (open && dropdownRef.current) {
-      const rect = dropdownRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-
-      if (rect.right > viewportWidth && level > 1) {
-        setOpenLeft(true);
-        setTranslateOffset(0);
-      } else if (rect.right > viewportWidth && level === 1) {
-        const overflowAmount = rect.right - viewportWidth + 16;
-        setTranslateOffset(-overflowAmount);
-        setOpenLeft(false);
-      } else {
-        setOpenLeft(false);
-        setTranslateOffset(0);
-      }
-    } else {
-      setTranslateOffset(0);
+  // The menu is drawn on the page itself, placed from its item, so a long list scrolls inside the screen
+  // and a side menu is never cut off by the list it opens from.
+  const placeDropdown = useCallback(() => {
+    const anchor = navRef.current;
+    const wrapper = dropdownRef.current;
+    const menu = menuRef.current;
+    if (!anchor || !wrapper || !menu) {
+      return;
     }
-  }, [open, level]);
+    const edge = 16;
+    const bridge = level === 1 ? 8 : 0;
+    const rect = anchor.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight;
+    const width = wrapper.offsetWidth;
+
+    let left: number;
+    let openLeft = false;
+    if (level === 1) {
+      left = Math.max(edge, Math.min(rect.left, viewportWidth - width - edge));
+    } else {
+      openLeft = rect.right + width + edge > viewportWidth && rect.left - width >= edge;
+      left = Math.max(edge, Math.min(openLeft ? rect.left - width : rect.right, viewportWidth - width - edge));
+    }
+
+    let top = rect.bottom;
+    if (level > 1) {
+      const room = viewportHeight - 2 * edge;
+      top = Math.max(edge, Math.min(rect.top, viewportHeight - edge - Math.min(menu.scrollHeight, room)));
+    }
+    const maxHeight = Math.max(120, viewportHeight - edge - top - bridge);
+
+    setPlacement((prev) =>
+      Math.abs(prev.top - top) < 0.5 &&
+      Math.abs(prev.left - left) < 0.5 &&
+      Math.abs(prev.maxHeight - maxHeight) < 0.5 &&
+      prev.openLeft === openLeft
+        ? prev
+        : { top, left, maxHeight, openLeft }
+    );
+  }, [level]);
+
+  useLayoutEffect(() => {
+    if (open) {
+      placeDropdown();
+    }
+  }, [open, placeDropdown]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    window.addEventListener("resize", placeDropdown);
+    window.addEventListener("scroll", placeDropdown, true);
+    return () => {
+      window.removeEventListener("resize", placeDropdown);
+      window.removeEventListener("scroll", placeDropdown, true);
+    };
+  }, [open, placeDropdown]);
 
   const handleMouseEnter = () => {
     if (timeoutRef.current) {
@@ -89,14 +128,14 @@ const ListItemLink = (props: ListItemLinkProps) => {
   const handleMouseLeave = () => {
     timeoutRef.current = setTimeout(() => {
       setOpen(false);
-      setOpenLeft(false);
-    }, 150); 
+    }, 150);
   };
 
   const handleClickOutside = (event: MouseEvent) => {
-    if (navRef.current && !navRef.current.contains(event.target as Node)) {
+    // A menu is drawn outside its item, so a click inside any menu counts as inside
+    const insideMenu = (event.target as Element).closest?.("[data-nav-dropdown]");
+    if (navRef.current && !navRef.current.contains(event.target as Node) && !insideMenu) {
       setOpen(false);
-      setOpenLeft(false);
     }
   };
 
@@ -201,122 +240,118 @@ const ListItemLink = (props: ListItemLinkProps) => {
       </ListItem>
 
       {/* Dropdown Menu */}
-      {children && children.length > 0 && (
-        <Box
-          ref={dropdownRef}
-          sx={{
-            position: "absolute",
-            top: level === 1 ? "calc(100% + 8px)" : "0",
-            ...(level === 1 ? {
-                  left: "0",
-                } : openLeft ? {
-                  right: "100%",
-                  mr: "4px",
-                } : {
-                  left: "100%",
-                  ml: "4px",
-                }),
-            display: open ? "inline-block" : "none",
-            background: theme.palette.secondary.main,
-            color: theme.palette.primary.contrastText,
-            borderRadius: theme.spacing(0.5),
-            boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.2)",
-            zIndex: 1300,
-            width: "auto",
-            minWidth: "180px",
-            padding: "8px 4px",
-            whiteSpace: "nowrap",
-
-            "&::before": {
-              content: '""',
-              position: "absolute",
-              ...(level === 1
-                ? {
-                    top: "-8px",
-                    left: 0,
-                    right: 0,
-                    height: "8px",
-                  }
-                : openLeft
-                ? {
-                    top: 0,
-                    bottom: 0,
-                    right: "-8px",
-                    width: "8px",
-                  }
-                : {
-                    top: 0,
-                    bottom: 0,
-                    left: "-8px",
-                    width: "8px",
-                  }),
-            },
-          }}
-        >
-          {children.map((component) => (
+      {children &&
+        children.length > 0 &&
+        createPortal(
+          <Box
+            ref={dropdownRef}
+            data-nav-dropdown=""
+            sx={{
+              position: "fixed",
+              top: placement.top,
+              left: placement.left,
+              display: open ? "block" : "none",
+              // Above the header and the side drawers, below dialogs, as before; a side menu above the one it opens from
+              zIndex: 1250 + level,
+              width: "max-content",
+              // Empty space between the item and the menu, so the pointer can cross it without closing the menu
+              ...(level === 1 ? { pt: "8px" } : placement.openLeft ? { pr: "4px" } : { pl: "4px" }),
+            }}
+          >
             <Box
-              key={component.routeId}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                if (component.path && component.path.includes("#")) {
-                  const boxElement = e.currentTarget as HTMLElement;
-                  const linkElement = boxElement.querySelector("a");
-                  if (linkElement) {
-                    linkElement.click();
-                  }
-                  return;
-                }
-
-                if ((!component.children || component.children.length === 0) &&
-                  component.path &&
-                  component.path !== "#") {
-                  if (component.path === pathname) {
-                    return;
-                  }
-                  dispatch(setNavigationLoading(true));
-                  handleSideBar();
-                  setTimeout(() => {
-                    navigate(component.path);
-                  }, 180);
-                }
-              }}
+              ref={menuRef}
               sx={{
-                display: "block",
-                width: "100%",
-                borderRadius: "8px",
-                transition: "background 0.2s ease",
-                cursor: "pointer",
-                "&:hover": {
-                  background: theme.palette.secondary.dark,
-                },
-                "& a": {
-                  cursor: "pointer",
-                  textDecoration: "none",
-                },
-                "& .MuiListItem-root": {
-                  width: "100%",
-                  margin: 0,
-                },
+                background: theme.palette.secondary.main,
                 color: theme.palette.primary.contrastText,
+                borderRadius: theme.spacing(0.5),
+                boxShadow: "0px 4px 12px rgba(0, 0, 0, 0.2)",
+                minWidth: "180px",
+                padding: "8px 4px",
+                boxSizing: "border-box",
+                whiteSpace: "nowrap",
+                maxHeight: placement.maxHeight || undefined,
+                overflowY: "auto",
+                overflowX: "hidden",
+                overscrollBehavior: "contain",
+                // A scrollbar that stays visible, so it is clear the list goes on
+                "&::-webkit-scrollbar": { width: "8px" },
+                "&::-webkit-scrollbar-thumb": {
+                  background: alpha(theme.palette.primary.contrastText, 0.4),
+                  borderRadius: "4px",
+                },
+                "&::-webkit-scrollbar-track": { background: "transparent" },
+                "@supports not selector(::-webkit-scrollbar)": {
+                  scrollbarWidth: "thin",
+                  scrollbarColor: `${alpha(theme.palette.primary.contrastText, 0.4)} transparent`,
+                },
               }}
             >
-              <ListItemLink
-                routeId={component.routeId}
-                theme={props.theme}
-                to={component.path}
-                label={component.menuItem}
-                primary={component.menuItem}
-                handleSideBar={handleSideBar}
-                isActive={matchPath(component.path, pathname) !== null}
-                children={component.children}
-                level={level + 1}
-                isRouteVisible={0}
-              />
+              {children.map((component) => (
+                <Box
+                  key={component.routeId}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (component.path && component.path.includes("#")) {
+                      const boxElement = e.currentTarget as HTMLElement;
+                      const linkElement = boxElement.querySelector("a");
+                      if (linkElement) {
+                        linkElement.click();
+                      }
+                      return;
+                    }
+
+                    if ((!component.children || component.children.length === 0) &&
+                      component.path &&
+                      component.path !== "#") {
+                      if (component.path === pathname) {
+                        return;
+                      }
+                      dispatch(setNavigationLoading(true));
+                      handleSideBar();
+                      setTimeout(() => {
+                        navigate(component.path);
+                      }, 180);
+                    }
+                  }}
+                  sx={{
+                    display: "block",
+                    width: "100%",
+                    borderRadius: "8px",
+                    transition: "background 0.2s ease",
+                    cursor: "pointer",
+                    "&:hover": {
+                      background: theme.palette.secondary.dark,
+                    },
+                    "& a": {
+                      cursor: "pointer",
+                      textDecoration: "none",
+                    },
+                    "& .MuiListItem-root": {
+                      width: "100%",
+                      margin: 0,
+                    },
+                    color: theme.palette.primary.contrastText,
+                  }}
+                >
+                  <ListItemLink
+                    routeId={component.routeId}
+                    theme={props.theme}
+                    to={component.path}
+                    label={component.menuItem}
+                    primary={component.menuItem}
+                    handleSideBar={handleSideBar}
+                    isActive={matchPath(component.path, pathname) !== null}
+                    children={component.children}
+                    level={level + 1}
+                    isRouteVisible={0}
+                  />
+                </Box>
+              ))}
             </Box>
-          ))}
-        </Box>
-      )}
+          </Box>,
+          document.body
+        )}
     </Box>
   );
 };
