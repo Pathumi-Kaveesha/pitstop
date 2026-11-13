@@ -18,6 +18,7 @@
 the page, and every way it can fail leaves a clear reason. Downloads are faked, so nothing reaches the internet; the
 database is real. Needs TEST_POSTGRES_DSN."""
 
+import socket
 import threading
 import time
 import types
@@ -45,6 +46,20 @@ def main(main_module):
 def fake_embeddings(main, monkeypatch):
     """Embedding is a paid call to Google, so every test uses a fixed fake vector instead."""
     monkeypatch.setattr(main, "embed_chunks", lambda texts, title, spacing: [[0.01] * 768 for _ in texts])
+
+
+@pytest.fixture(autouse=True)
+def public_dns_for_the_example_hosts(monkeypatch):
+    """The service looks a link's host up before it accepts the link. These two hosts always get a fixed public address,
+    so the tests do not need the internet; every other lookup stays real."""
+    real_getaddrinfo = socket.getaddrinfo
+
+    def getaddrinfo(host, *args, **kwargs):
+        if host in {"example.com", "www.example.com"}:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(web_page.socket, "getaddrinfo", getaddrinfo)
 
 
 @pytest.fixture
