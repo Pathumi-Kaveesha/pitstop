@@ -28,13 +28,18 @@ import { NavLink, LinkProps as RouterLinkProps, useLocation, matchPath, useNavig
 import { Box } from "@mui/material";
 import { INVALID_ROUTE_ID } from "@config/constant";
 
+// A menu under its item is not made smaller than this while there is room for it; below this it opens above the item
+const MIN_MENU_HEIGHT = 120;
+// The smallest height a menu is ever given, so it never collapses on a very small screen
+const MIN_ROOM = 40;
+
 const Link = React.forwardRef<HTMLAnchorElement, RouterLinkProps>((itemProps, ref) => {
   return <NavLink ref={ref} {...itemProps} />;
 });
 
 const ListItemLink = (props: ListItemLinkProps) => {
   const [open, setOpen] = useState(false);
-  const [placement, setPlacement] = useState({ top: 0, left: 0, maxHeight: 0, openLeft: false });
+  const [placement, setPlacement] = useState({ top: 0, left: 0, maxHeight: 0, openLeft: false, above: false });
   const navRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -80,20 +85,30 @@ const ListItemLink = (props: ListItemLinkProps) => {
       left = Math.max(edge, Math.min(openLeft ? rect.left - width : rect.right, viewportWidth - width - edge));
     }
 
-    let top = rect.bottom;
-    if (level > 1) {
+    let top: number;
+    let maxHeight: number;
+    let above = false;
+    if (level === 1) {
+      const roomBelow = viewportHeight - edge - rect.bottom - bridge;
+      const roomAbove = rect.top - edge - bridge;
+      // With little room under the item the menu opens above it, when there is more room there
+      above = roomBelow < MIN_MENU_HEIGHT && roomAbove > roomBelow;
+      maxHeight = Math.max(MIN_ROOM, above ? roomAbove : roomBelow);
+      top = above ? rect.top - bridge - Math.min(menu.scrollHeight, maxHeight) : rect.bottom;
+    } else {
       const room = viewportHeight - 2 * edge;
       top = Math.max(edge, Math.min(rect.top, viewportHeight - edge - Math.min(menu.scrollHeight, room)));
+      maxHeight = viewportHeight - edge - top;
     }
-    const maxHeight = Math.max(120, viewportHeight - edge - top - bridge);
 
     setPlacement((prev) =>
       Math.abs(prev.top - top) < 0.5 &&
       Math.abs(prev.left - left) < 0.5 &&
       Math.abs(prev.maxHeight - maxHeight) < 0.5 &&
-      prev.openLeft === openLeft
+      prev.openLeft === openLeft &&
+      prev.above === above
         ? prev
-        : { top, left, maxHeight, openLeft }
+        : { top, left, maxHeight, openLeft, above }
     );
   }, [level]);
 
@@ -255,7 +270,7 @@ const ListItemLink = (props: ListItemLinkProps) => {
               zIndex: 1250 + level,
               width: "max-content",
               // Empty space between the item and the menu, so the pointer can cross it without closing the menu
-              ...(level === 1 ? { pt: "8px" } : placement.openLeft ? { pr: "4px" } : { pl: "4px" }),
+              ...(level === 1 ? (placement.above ? { pb: "8px" } : { pt: "8px" }) : placement.openLeft ? { pr: "4px" } : { pl: "4px" }),
             }}
           >
             <Box
