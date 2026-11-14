@@ -30,7 +30,7 @@ import zlib
 from typing import Callable
 
 from config import MAX_OOXML_UNCOMPRESSED_BYTES
-from drive_service import DriveServiceError, PartNotSupportedError, download_part
+from sources.drive_service import DriveServiceError, PartNotSupportedError, download_part
 
 logger = logging.getLogger("smart-search-service")
 

@@ -20,8 +20,8 @@ Each tab is written exactly as chunking writes a tab of an exported Excel file, 
 import json
 from typing import Callable, Iterator
 
-from chunking import SheetTextTooLong, sheet_text
-from drive_service import get_sheet_list, get_sheet_rows
+from indexing.chunking import SheetTextTooLong, sheet_text
+from sources.drive_service import get_sheet_list, get_sheet_rows
 
 _MB = 1024 * 1024
 

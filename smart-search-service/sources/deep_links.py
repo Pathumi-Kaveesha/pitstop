@@ -20,9 +20,9 @@ import logging
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
-from drive_constants import EXPORT_FORMATS
-from drive_service import get_structure
-from google_drive import DriveFileInfo
+from sources.drive_constants import EXPORT_FORMATS
+from sources.drive_service import get_structure
+from sources.google_drive import DriveFileInfo
 
 logger = logging.getLogger("smart-search-service")
 

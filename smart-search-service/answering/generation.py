@@ -33,7 +33,7 @@ from config import (
     GENERATION_RETRY_DELAY_SECONDS,
     GENERATION_TIMEOUT_SECONDS,
 )
-from vectorstore import SearchResult
+from indexing.vectorstore import SearchResult
 
 logger = logging.getLogger("smart-search-service")
 
