@@ -2622,6 +2622,12 @@ service http:InterceptableService / on new http:Listener(9090) {
             return http:BAD_REQUEST;
         }
 
+        string? actionValue = button.actionValue;
+        if actionValue is string && !constants:BUTTON_LINK.isFullMatch(actionValue) {
+            log:printError(constants:INVALID_URL_ERROR, actionValue = actionValue);
+            return http:BAD_REQUEST;
+        }
+
         int|error result = database:addCustomButton(button);
         if result is error {
             string customError = "Error while adding custom button!";
@@ -2693,6 +2699,14 @@ service http:InterceptableService / on new http:Listener(9090) {
                     message: notFoundError
                 }
             };
+        }
+
+        // Only a new or changed link is checked, so older buttons can still be saved
+        string? actionValue = button.actionValue;
+        if actionValue is string && actionValue.trim() != (customButton.actionValue ?: "").trim()
+            && (actionValue.trim() == "" || !constants:BUTTON_LINK.isFullMatch(actionValue)) {
+            log:printError(constants:INVALID_URL_ERROR, actionValue = actionValue);
+            return http:BAD_REQUEST;
         }
 
         int|error? updateErr = database:updateCustomButton(buttonId, button);

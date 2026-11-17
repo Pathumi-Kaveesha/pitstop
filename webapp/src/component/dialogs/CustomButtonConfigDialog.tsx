@@ -85,6 +85,10 @@ const actionOptions = [
   { value: "download", label: "Download File" },
 ];
 
+// Same rule the backend applies to links.
+const VALID_LINK =
+  /^(https?|ftp|smtp):\/\/(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?::\d{1,5})?(?:[\/?#]\S*)?$/;
+
 const CustomButtonConfigDialog: React.FC<CustomButtonConfigDialogProps> = ({
   open,
   onClose,
@@ -159,6 +163,24 @@ const CustomButtonConfigDialog: React.FC<CustomButtonConfigDialogProps> = ({
       return;
     }
 
+    // Links nobody changed are left alone, so older buttons can still be saved.
+    const hasInvalidLink = buttons.some((button) => {
+      const link = button.actionValue?.trim() ?? "";
+      const savedLink = initialButtons
+        .find((saved) => saved.id === button.id)
+        ?.actionValue?.trim();
+      return link !== savedLink && !VALID_LINK.test(link);
+    });
+
+    if (hasInvalidLink) {
+      setSnackbar({
+        open: true,
+        message:
+          "Please enter a valid link for each button, for example https://example.com",
+      });
+      return;
+    }
+
     const orderedButtons: CustomButton[] = buttons.map((button, index) => {
       const processedButton: CustomButton = {
         id: button.id,
@@ -169,7 +191,7 @@ const CustomButtonConfigDialog: React.FC<CustomButtonConfigDialogProps> = ({
             : (button.icon as CustomButton["icon"]),
         color: "orange" as CustomButton["color"],
         action: button.action as CustomButton["action"],
-        actionValue: button.actionValue,
+        actionValue: button.actionValue?.trim(),
         isVisible: button.isVisible,
         order: index,
         contentId: contentId.toString(),

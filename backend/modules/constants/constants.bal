@@ -80,3 +80,4 @@ public const COMMENT_ID_MISMATCH_ERROR = "Comment ID mismatch between path and p
 public const GET_USER_PROFILE_ERROR = "Failed to extract user claims from request context.";
 public const USER_PROFILE_READ_ERROR = "Failed to load user profile information.";
 public final regexp:RegExp URL = re `^(https?|ftp|smtp)://(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/\S*)?$`;
+public final regexp:RegExp BUTTON_LINK = re `^(https?|ftp|smtp)://(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?::\d{1,5})?(?:[/?#]\S*)?$`;

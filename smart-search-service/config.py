@@ -41,7 +41,7 @@ def _positive_int_env(name: str, default: int) -> int:
 VERTEX_PROJECT_ID = os.environ["VERTEX_PROJECT_ID"]
 # "global" is where Vertex serves gemini-embedding-2 from.
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION") or "global"
-# The service account key's JSON - the environment's default credentials are used if unset.
+# The service account key's JSON 
 VERTEX_SERVICE_ACCOUNT_JSON = os.environ.get("VERTEX_SERVICE_ACCOUNT_JSON") or None
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL") or None
@@ -72,8 +72,9 @@ DRIVE_SERVICE_RETRY_DELAY_SECONDS = 2
 # Connection string for the PostgreSQL database that stores the chunk vectors.
 POSTGRES_DSN = os.environ["POSTGRES_DSN"]
 
-# Above this, a file gets every concurrency slot to itself instead of sharing MAX_CONCURRENT_INDEX_JOBS.
-LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES = 100 * 1024 * 1024
+# Above this, a file gets every concurrency slot to itself instead of sharing MAX_CONCURRENT_INDEX_JOBS; it is also the most a Google file of unknown size is exported whole.
+# Measured: 3 whole-file jobs at once peaked past 1 GB at 100 MB each and under 720 MB at 50 MB each. Set LARGE_FILE_EXCLUSIVE_MB per environment.
+LARGE_FILE_EXCLUSIVE_THRESHOLD_BYTES = _positive_int_env("LARGE_FILE_EXCLUSIVE_MB", 50) * 1024 * 1024
 
 # Reject a Drive file before downloading it if it's bigger than this - set MAX_DRIVE_FILE_SIZE_MB per environment, roughly (memory - 250 MB) / 3.5.
 MAX_DRIVE_FILE_SIZE_BYTES = _positive_int_env("MAX_DRIVE_FILE_SIZE_MB", 150) * 1024 * 1024
@@ -85,9 +86,9 @@ SLIM_READ_MIN_BYTES = 50 * 1024 * 1024
 MAX_SLIM_FILE_SIZE_BYTES = 1024 * 1024 * 1024
 SLIM_READ_ENABLED = os.environ.get("SLIM_READ_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
 
-# Office files are zip archives - a small one can expand to something huge.
-# Checked against the entries' declared sizes before any parsing.
-MAX_OOXML_UNCOMPRESSED_BYTES = 400 * 1024 * 1024
+# Office files are zip archives - a small one can expand to something huge. Checked against the entries' declared sizes
+# before any parsing; opening one takes about 2-3x that in memory, so set MAX_OOXML_UNCOMPRESSED_MB per environment, roughly (memory - 250 MB) / 3.
+MAX_OOXML_UNCOMPRESSED_BYTES = _positive_int_env("MAX_OOXML_UNCOMPRESSED_MB", 250) * 1024 * 1024
 
 # Reject a webpage before reading past this many bytes of its HTML.
 MAX_WEB_PAGE_BYTES = 10 * 1024 * 1024

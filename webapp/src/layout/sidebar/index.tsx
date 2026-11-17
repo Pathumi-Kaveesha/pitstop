@@ -14,9 +14,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import { useState } from "react";
 import { SIDEBAR_WIDTH } from "@config/constant";
 import { RootState, useAppSelector } from "@slices/store";
 import ListItemLink from "@components/layout/LinkItem";
+import { MenuContainerContext } from "@components/layout/MenuContainerContext";
 import { SidebarProps } from "@/types/types";
 import { styled } from "@mui/material/styles";
 import { MUIStyledCommonProps } from "@mui/system";
@@ -28,6 +30,8 @@ const Sidebar = (props: SidebarProps) => {
   const routes = useAppSelector((state: RootState) => state.route.routes);
   const theme = useTheme();
   const { pathname } = useLocation();
+  // The drawer's panel: its menus are drawn inside it, so screen readers and the Tab key can reach them while the drawer is open
+  const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
 
   //For the Drawer creating the tree structure
   const drawer = (
@@ -60,6 +64,7 @@ const Sidebar = (props: SidebarProps) => {
       ModalProps={{
         keepMounted: true,
       }}
+      slotProps={{ paper: { ref: setMenuContainer } }}
       sx={{
         "& .MuiDrawer-paper": {
           boxSizing: "border-box",
@@ -68,7 +73,7 @@ const Sidebar = (props: SidebarProps) => {
         },
       }}
     >
-      {drawer}
+      <MenuContainerContext.Provider value={menuContainer}>{drawer}</MenuContainerContext.Provider>
     </Drawer>
   );
 };
