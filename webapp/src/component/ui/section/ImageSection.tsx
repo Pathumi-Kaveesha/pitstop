@@ -33,6 +33,8 @@ const ImageSection = ({
   const cropSizing = customSectionTheme?.cropSizing;
   const [croppedImage, setCroppedImage] = useState<string | null>(null);
 
+  const backgroundImage = `url(${JSON.stringify(croppedImage ?? imageUrl)})`;
+
   useEffect(() => {
     if (cropSizing && imageUrl) {
       getCroppedImg(imageUrl, cropSizing)
@@ -53,12 +55,12 @@ const ImageSection = ({
         justifyContent: "center",
         alignItems: "center",
         height: 200,
-        background: `url(${croppedImage}) no-repeat center center`,
+        background: `${backgroundImage} no-repeat center center`,
         backgroundSize: "cover",
         marginX: 4,
         borderRadius: 6,
         "&:hover": {
-          background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url(${croppedImage}) no-repeat center center `,
+          background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), ${backgroundImage} no-repeat center center `,
           backgroundSize: "cover",
         },
       }}
