@@ -47,8 +47,8 @@ import { matchPath, useLocation, useNavigate } from "react-router-dom";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import wso2Logo from "@assets/images/wso2-logo.png";
-import wso2LogoWhite from "@assets/images/wso2-logo-white.png";
+import choreoLabsLogo from "@assets/images/choreo-labs-logo.svg";
+import choreoLabsLogoWhite from "@assets/images/choreo-labs-logo-white.svg";
 import AdminPanelSideBar from "@components/adminPanel/AdminDrawer";
 import ListItemLink from "@components/layout/LinkItem";
 import {
@@ -452,13 +452,13 @@ const Header = (props: HeaderProps) => {
               {/* Brand area */}
               <Stack direction="row" alignItems="center" spacing={isPaddock ? 0.5 : 1} sx={{ flexGrow: 1 }}>
                 <img
-                  alt="wso2"
+                  alt="Choreo Labs"
                   style={{
-                    marginRight: isPaddock ? "6px" : "10px",
+                    marginRight: isPaddock ? "6px" : "32px",
                     height: "20px",
-                    maxWidth: "100px",
+                    maxWidth: "150px",
                   }}
-                  src={theme.palette.mode === "dark" ? wso2LogoWhite : wso2Logo}
+                  src={theme.palette.mode === "dark" ? choreoLabsLogoWhite : choreoLabsLogo}
                 />
 
                 <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
