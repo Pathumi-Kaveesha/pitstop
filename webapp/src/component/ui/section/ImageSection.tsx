@@ -53,12 +53,12 @@ const ImageSection = ({
         justifyContent: "center",
         alignItems: "center",
         height: 200,
-        background: `url(${croppedImage}) no-repeat center center`,
+        background: `url(${croppedImage ?? imageUrl}) no-repeat center center`,
         backgroundSize: "cover",
         marginX: 4,
         borderRadius: 6,
         "&:hover": {
-          background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url(${croppedImage}) no-repeat center center `,
+          background: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url(${croppedImage ?? imageUrl}) no-repeat center center `,
           backgroundSize: "cover",
         },
       }}
