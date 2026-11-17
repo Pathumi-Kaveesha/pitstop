@@ -46,7 +46,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CustomButton, CustomTheme } from "src/types/types";
 
-import wso2LogoWhite from "@assets/images/wso2-logo-white.png";
+import choreoLabsLogoWhite from "@assets/images/choreo-labs-logo-white.svg";
 import { GOOGLE_DOCS_DOMAIN, GOOGLE_DRIVE_DOMAIN } from "@config/constant";
 import { RootState, useAppDispatch, useAppSelector } from "@slices/store";
 import { safeParseHtml } from "@utils/safeHtml";
@@ -935,7 +935,7 @@ const ComponentCard = ({
                     : {}),
                 }}
               >
-                <img alt="logo" width="48" height="auto" src={wso2LogoWhite} />
+                <img alt="Choreo Labs" width="120" height="auto" src={choreoLabsLogoWhite} />
                 <Typography
                   variant="caption"
                   sx={{
