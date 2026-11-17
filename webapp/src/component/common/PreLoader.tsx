@@ -19,7 +19,7 @@ import Typography from "@mui/material/Typography";
 import { Box, Container, Stack } from "@mui/material";
 import LinearProgress from "@mui/material/LinearProgress";
 import { useEffect, useState } from "react";
-import wso2Logo from "@assets/images/wso2-logo-white.png";
+import choreoLabsLogoWhite from "@assets/images/choreo-labs-logo-white.svg";
 import { useTheme } from "@mui/material/styles";
 
 function CustomLinearProgress() {
@@ -82,10 +82,10 @@ const PreLoader = (props: PreLoaderProps) => {
             <Box>
               {!props.hideLogo && (
                 <img
-                  alt="logo"
-                  width="150"
+                  alt="Choreo Labs"
+                  width="200"
                   height="auto"
-                  src={wso2Logo}
+                  src={choreoLabsLogoWhite}
                 />
               )}
             </Box>

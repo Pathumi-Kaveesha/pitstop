@@ -47,8 +47,8 @@ import { matchPath, useLocation, useNavigate } from "react-router-dom";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import wso2Logo from "@assets/images/wso2-logo.png";
-import wso2LogoWhite from "@assets/images/wso2-logo-white.png";
+import choreoLabsLogo from "@assets/images/choreo-labs-logo.svg";
+import choreoLabsLogoWhite from "@assets/images/choreo-labs-logo-white.svg";
 import AdminPanelSideBar from "@components/adminPanel/AdminDrawer";
 import ListItemLink from "@components/layout/LinkItem";
 import {
@@ -450,34 +450,63 @@ const Header = (props: HeaderProps) => {
               </IconButton>
 
               {/* Brand area */}
-              <Stack direction="row" alignItems="center" spacing={isPaddock ? 0.5 : 1} sx={{ flexGrow: 1 }}>
-                <img
-                  alt="wso2"
-                  style={{
-                    marginRight: isPaddock ? "6px" : "10px",
-                    height: "20px",
-                    maxWidth: "100px",
+              <Stack
+                direction="row"
+                alignItems="center"
+                sx={{ flexGrow: 1, minWidth: isPaddock ? "auto" : 0, gap: isPaddock ? 0.5 : 1 }}
+              >
+                {/* On phones the title is hidden and the logo shrinks so the right-side buttons stay on screen */}
+                <Box
+                  component="img"
+                  alt="Choreo Labs"
+                  sx={{
+                    flexShrink: 0,
+                    marginRight: isPaddock ? "6px" : 0,
+                    height: isPaddock ? "20px" : { xs: "16px", sm: "20px" },
+                    maxWidth: "150px",
                   }}
-                  src={theme.palette.mode === "dark" ? wso2LogoWhite : wso2Logo}
+                  src={theme.palette.mode === "dark" ? choreoLabsLogoWhite : choreoLabsLogo}
                 />
 
-                <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
+                {/* Extra space before the title; it gives way before the title is hidden */}
+                {!isPaddock && (
+                  <Box sx={{ display: { xs: "none", sm: "block" }, flex: "0 1000 24px", minWidth: 0 }} />
+                )}
+
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                    ...(!isPaddock && { minWidth: 0, flexShrink: 0.001 }),
+                  }}
+                >
                   {/* Paddock drops the app title to free up space for extra menu items */}
                   {!isPaddock && (
-                    <Typography
-                      noWrap
-                      component="div"
+                    // When the full title does not fit, it wraps onto a hidden second line instead of being cut
+                    <Box
                       sx={{
-                        fontWeight: 500,
-                        fontSize: "1.25rem",
-                        color: theme.palette.primary.contrastText,
-                        lineHeight: 1,
-                        display: "flex",
-                        alignItems: "center",
+                        display: { xs: "none", sm: "flex" },
+                        flexWrap: "wrap",
+                        height: "1.25rem",
+                        overflow: "hidden",
+                        minWidth: 0,
                       }}
                     >
-                      {window.config?.APP_DETAILS?.NAME || ""}
-                    </Typography>
+                      <Box component="span" sx={{ width: 0, height: "100%" }} />
+                      <Typography
+                        noWrap
+                        component="div"
+                        sx={{
+                          fontWeight: 500,
+                          fontSize: "1.25rem",
+                          color: theme.palette.primary.contrastText,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {window.config?.APP_DETAILS?.NAME || ""}
+                      </Typography>
+                    </Box>
                   )}
 
                   {isPaddock && (

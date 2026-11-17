@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12.21 0 510.21 510.21">
+  <style>g{fill:#000}@media (prefers-color-scheme:dark){g{fill:#fff}}</style>
+  <g>
+    <ellipse cx="408.26" cy="162.64" rx="77.54" ry="34.96"/>
+    <ellipse cx="362.09" cy="77.93" rx="74.65" ry="29.51"/>
+    <ellipse cx="270.23" cy="14.09" rx="81.42" ry="14.09"/>
+    <ellipse cx="408.26" cy="347.57" rx="77.54" ry="34.96"/>
+    <ellipse cx="362.09" cy="432.28" rx="74.65" ry="29.51"/>
+    <ellipse cx="270.23" cy="496.12" rx="81.42" ry="14.09"/>
+    <ellipse cx="77.54" cy="247.46" rx="77.54" ry="34.96"/>
+    <ellipse cx="104.5" cy="349.45" rx="63.32" ry="29.51"/>
+    <ellipse cx="104.5" cy="145.15" rx="63.32" ry="29.51"/>
+  </g>
+</svg>
