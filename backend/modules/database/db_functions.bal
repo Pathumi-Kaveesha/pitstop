@@ -1394,11 +1394,11 @@ public isolated function getTrendingContentNames(int lookbackDays, int candidate
         select row.description;
 }
 
-# Get what a user searched for and viewed recently.
+# Get what a user searched for and viewed recently. Each different search and content is returned once.
 #
 # + userEmail - User email
 # + lookbackDays - Number of past days to look at
-# + rowLimit - Maximum number of rows to return
+# + rowLimit - Maximum number of different searches and contents to return
 # + return - Recent activity rows, newest first, or error
 public isolated function getRecentActivity(string userEmail, int lookbackDays, int rowLimit)
     returns RecentActivityRow[]|error {

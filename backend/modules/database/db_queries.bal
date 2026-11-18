@@ -3014,40 +3014,58 @@ isolated function getTrendingContentNamesQuery(int lookbackDays, int candidatesC
     LIMIT ${candidatesCount}
 `;
 
-# Query to get what a user searched for and viewed recently, newest first.
+# Query to get what a user searched for and viewed recently, newest first. Each different search and each
+# different content is returned once, at the time it happened last.
 #
 # + userEmail - User email
 # + lookbackDays - Number of past days to look at
-# + rowLimit - Maximum number of rows to return
+# + rowLimit - Maximum number of different searches and contents to return
 # + return - SQL parameterized query
 isolated function getRecentActivityQuery(string userEmail, int lookbackDays, int rowLimit)
     returns sql:ParameterizedQuery => `
     SELECT
-        l.event_type,
-        IF(
-            JSON_TYPE(JSON_EXTRACT(l.metadata, '$.query')) = 'STRING',
-            JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query')),
-            NULL
-        ) AS search_text,
-        c.description AS content_name
-    FROM
-        user_activity_logs l
-    LEFT JOIN
-        content c ON c.content_id = l.content_id
-        AND c.is_deleted = false
-        AND c.is_visible = 1
-        AND c.is_reused = 0
-        AND (c.content_type IS NULL OR c.content_type != ${ROUTE_CONTENT_TYPE})
+        a.kind AS event_type,
+        LOWER(TRIM(a.search_text)) AS search_text,
+        a.content_name AS content_name
+    FROM (
+        SELECT
+            CASE WHEN l.event_type = 'SEARCH' THEN 'SEARCH' ELSE 'VIEW' END AS kind,
+            CASE
+                WHEN l.event_type = 'SEARCH' THEN IF(
+                    JSON_TYPE(JSON_EXTRACT(l.metadata, '$.query')) = 'STRING',
+                    JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query')),
+                    NULL
+                )
+            END AS search_text,
+            CASE WHEN l.event_type = 'SEARCH' THEN NULL ELSE c.description END AS content_name,
+            l.event_timestamp AS happened_at,
+            l.id AS log_id
+        FROM
+            user_activity_logs l
+        LEFT JOIN
+            content c ON c.content_id = l.content_id
+            AND c.is_deleted = false
+            AND c.is_visible = 1
+            AND c.is_reused = 0
+            AND (c.content_type IS NULL OR c.content_type != ${ROUTE_CONTENT_TYPE})
+        WHERE
+            l.user_email = ${userEmail}
+            AND l.event_timestamp >= DATE_SUB(NOW(), INTERVAL ${lookbackDays} DAY)
+            AND (
+                l.event_type = 'SEARCH'
+                OR (l.event_type IN ('VIEW', 'PREVIEW', 'CARD_VIEW') AND c.content_id IS NOT NULL)
+            )
+    ) a
     WHERE
-        l.user_email = ${userEmail}
-        AND l.event_timestamp >= DATE_SUB(NOW(), INTERVAL ${lookbackDays} DAY)
-        AND (
-            l.event_type = 'SEARCH'
-            OR (l.event_type IN ('VIEW', 'PREVIEW', 'CARD_VIEW') AND c.content_id IS NOT NULL)
-        )
+        (a.kind = 'SEARCH' AND a.search_text IS NOT NULL AND TRIM(a.search_text) != '')
+        OR (a.kind = 'VIEW' AND a.content_name IS NOT NULL AND a.content_name != '')
+    GROUP BY
+        a.kind,
+        LOWER(TRIM(a.search_text)),
+        a.content_name
     ORDER BY
-        l.event_timestamp DESC,
-        l.id DESC
+        MAX(a.happened_at) DESC,
+        MAX(a.log_id) DESC
     LIMIT ${rowLimit}
 `;
 
