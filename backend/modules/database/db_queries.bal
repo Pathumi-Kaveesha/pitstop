@@ -3024,7 +3024,11 @@ isolated function getRecentActivityQuery(string userEmail, int lookbackDays, int
     returns sql:ParameterizedQuery => `
     SELECT
         l.event_type,
-        NULLIF(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query')), 'null') AS search_text,
+        IF(
+            JSON_TYPE(JSON_EXTRACT(l.metadata, '$.query')) = 'STRING',
+            JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query')),
+            NULL
+        ) AS search_text,
         c.description AS content_name
     FROM
         user_activity_logs l
