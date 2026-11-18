@@ -47,16 +47,11 @@ import { Role } from "@utils/types";
 export interface CommentCardProps {
   commentResponse: CommentsResponse;
   contentId: number;
-  description?: string;
 }
-
-// For matomo integration
-declare let _paq: unknown[];
 
 const CommentCard: React.FC<CommentCardProps> = ({
   commentResponse,
   contentId,
-  description,
 }) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
@@ -98,15 +93,6 @@ const CommentCard: React.FC<CommentCardProps> = ({
         }),
       ).unwrap();
 
-      if (window.config?.IS_MATOMO_ENABLED) {
-        _paq.push([
-          "trackEvent",
-          "User Interaction",
-          "Edit Comment",
-          `Content: ${description}`,
-        ]);
-       
-      }
       setEditing(false);
       
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -143,14 +129,6 @@ const CommentCard: React.FC<CommentCardProps> = ({
         }),
       ).unwrap();
 
-      if (window.config?.IS_MATOMO_ENABLED) {
-        _paq.push([
-          "trackEvent",
-          "User Interaction",
-          "Delete Comment",
-          `Content: ${description}`,
-        ]);
-      }
       setDeleting(false);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {

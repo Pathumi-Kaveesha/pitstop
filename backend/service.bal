@@ -1110,11 +1110,7 @@ service http:InterceptableService / on new http:Listener(9090) {
                 userEmail, suggestedContentsLimit, suggestedContentsThreshold);
 
                 if hasSuggested is error {
-                    string customError = "Error processing recent activity for suggested content.";
-                    log:printError(customError, hasSuggested);
-                    return <http:InternalServerError>{
-                        body: {message: customError}
-                    };
+                    log:printError("Error processing recent activity for suggested content.", hasSuggested);
                 }
                 if hasSuggestedFromPinned is error {
                     string customError = "Error checking suggested content from pinned contents.";

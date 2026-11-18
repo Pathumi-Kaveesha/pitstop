@@ -46,9 +46,6 @@ interface CommentInputProps {
   onCommentPosted?: () => void;
 }
 
-// For matomo integration
-declare let _paq: unknown[];
-
 const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted }) => {
   const dispatch = useAppDispatch();
   const theme = useTheme();
@@ -175,15 +172,6 @@ const CommentInput: React.FC<CommentInputProps> = ({ contentId, onCommentPosted 
         setText("");
         setMentionedUsers([]);
         clearSuggestions();
-
-        if (window.config?.IS_MATOMO_ENABLED) {
-          _paq.push([
-            "trackEvent",
-            "User Interaction",
-            "Add Comment",
-            `Content ID: ${contentId}`,
-          ]);
-        }
 
         if (onCommentPosted) {
           onCommentPosted();

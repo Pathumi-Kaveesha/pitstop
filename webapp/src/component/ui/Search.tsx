@@ -39,11 +39,6 @@ import { useLocation } from "react-router-dom";
 import { useAnalytics } from "../../hooks/useAnalytics";
 import { AnalyticsEventType } from "@utils/types";
 
-export declare let _paq: unknown[];
-if (typeof window !== "undefined") {
-  (window as Window & { _paq?: unknown[] })._paq ??= [];
-}
-
 export default function Search() {
   const { trackEvent } = useAnalytics();
   const [selectedTags, setSelectedTags] = useState<TagResponse[]>([]);
@@ -68,10 +63,6 @@ export default function Search() {
         query,
         source: "url_param_search",
       });
-
-      if (window.config?.IS_MATOMO_ENABLED) {
-        _paq.push(["trackSiteSearch", query, false, false]);
-      }
     }
   }, [location.search, dispatch, trackEvent]);
 
@@ -102,10 +93,6 @@ export default function Search() {
         tagsSelected: allTagsToFilter,
         source: "global_search_bar",
       });
-
-      if (window.config?.IS_MATOMO_ENABLED) {
-        _paq.push(["trackSiteSearch", searchTerms, false, false]);
-      }
     }
 
     // If there are tags to filter by (either dropdown selection or exact typed match)

@@ -50,7 +50,7 @@ const ConsentHandler = ({ setUserConsent }: ConsentHandlerProps) => {
             </DialogContentText>
           </Stack>
           <DialogContentText color={"CaptionText"} sx={{ textAlign: "center", fontSize: 13, my: 2 }}>
-            To enhance your experience, we use Matomo to track user behavior within the Sales Pitstop web app. We
+            To enhance your experience, we track how the Sales Pitstop web app is used. We
             collect your{" "}
             <Typography sx={{ fontWeight: 700, fontSize: 13 }}>email, team, and department details</Typography> to
             improve our services. By continuing, you consent to this tracking.

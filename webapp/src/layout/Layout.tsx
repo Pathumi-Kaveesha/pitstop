@@ -32,7 +32,6 @@ import { RootState, useAppSelector, useAppDispatch } from "@slices/store";
 import { setNavigationLoading } from "@slices/commonSlice/common";
 
 import pJson from "../../package.json";
-import MatomoTracker from "../analytics/MatomoTracker";
 import Header from "./header";
 
 export default function Layout() {
@@ -85,7 +84,6 @@ export default function Layout() {
         <PreLoader isLoading={common.navigationLoading} />
         {userConsent ? (
           <>
-            <MatomoTracker />
             <Header
               theme={theme}
               title={getAppBarTitle()}

@@ -1381,6 +1381,35 @@ isolated function getViewedContents(string userEmail, string[] viewedContentName
     return contents;
 }
 
+# Get the names of the most viewed contents.
+#
+# + lookbackDays - Number of past days to look at
+# + candidatesCount - Maximum number of content names to return
+# + return - Content names, most viewed first, or error
+public isolated function getTrendingContentNames(int lookbackDays, int candidatesCount) returns string[]|error {
+    stream<ViewedContentName, sql:Error?> resultStream =
+        dbClient->query(getTrendingContentNamesQuery(lookbackDays, candidatesCount));
+
+    return from ViewedContentName row in resultStream
+        select row.description;
+}
+
+# Get what a user searched for and viewed recently. Each different search and content is returned once.
+#
+# + userEmail - User email
+# + lookbackDays - Number of past days to look at
+# + rowLimit - Maximum number of different searches and contents to return
+# + return - Recent activity rows, newest first, or error
+public isolated function getRecentActivity(string userEmail, int lookbackDays, int rowLimit)
+    returns RecentActivityRow[]|error {
+
+    stream<RecentActivityRow, sql:Error?> resultStream =
+        dbClient->query(getRecentActivityQuery(userEmail.trim().toLowerAscii(), lookbackDays, rowLimit));
+
+    return from RecentActivityRow row in resultStream
+        select row;
+}
+
 # Get all customer testimonials (admin view).
 #
 # + return - Array of testimonials or error

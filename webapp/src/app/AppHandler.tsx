@@ -39,9 +39,6 @@ import { Role } from "@utils/types";
 import { useCrashRecovery } from "../hooks/useCrashRecovery";
 import { usePageTimeTracker } from "../hooks/useTimeTracker";
 
-// For matomo integration
-export declare let _paq: unknown[];
-
 const PROTECTED_ADMIN_PATHS = ["/quiz-admin", "/analytics-dashboard", "/report"];
 
 const removeProtectedDynamicRoutes = (routes: any[] = []): any[] =>
