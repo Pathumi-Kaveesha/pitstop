@@ -40,9 +40,6 @@ import SearchOffIcon from "@mui/icons-material/SearchOff";
 import { clearSearchResults } from "@slices/pageSlice/page";
 import searchImage from "@assets/images/search.png";
 
-// For matomo integration
-export declare let _paq: unknown[];
-
 const ITEMS_PER_PAGE = 6; 
 
 export default function Layout() {

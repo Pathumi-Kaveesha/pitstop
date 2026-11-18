@@ -104,11 +104,6 @@ interface ComponentCardProps {
   isReused?: boolean;
 }
 
-export declare let _paq: unknown[];
-if (typeof window !== "undefined" && typeof _paq === "undefined") {
-  (window as unknown as { _paq: unknown[] })._paq = [];
-}
-
 const PREVIEW_W = 323;
 const PREVIEW_H = 220;
 const CARD_W = 399;
@@ -177,14 +172,6 @@ const ComponentCard = ({
   };
 
   const handleCustomButtonAction = (button: CustomButton) => {
-    if (window.config?.IS_MATOMO_ENABLED) {
-      _paq.push([
-        "trackEvent",
-        "User Interaction",
-        "Custom Button Click",
-        `Button: ${button.label}`,
-      ]);
-    }
     switch (button.action) {
       case "link":
         if (button.actionValue) {
@@ -477,14 +464,6 @@ const ComponentCard = ({
         const next = !prev;
 
         setLocalLikesCount((c) => (next ? c + 1 : c - 1));
-        if (window.config?.IS_MATOMO_ENABLED) {
-          _paq.push([
-            "trackEvent",
-            "User Interaction",
-            next ? "Like" : "Unlike",
-            `Content : ${description}`,
-          ]);
-        }
         return next;
       });
       setTimeout(() => {
@@ -501,15 +480,6 @@ const ComponentCard = ({
       .then(() => {
         if (isPinned && isInPinnedSection) {
           onContentUnpinned?.(contentId);
-        }
-
-        if (window.config?.IS_MATOMO_ENABLED) {
-          _paq.push([
-            "trackEvent",
-            "User Interaction",
-            isPinned ? "Unpin Content" : "Pin Content",
-            `Content : ${description}`,
-          ]);
         }
       })
       .catch(() => {
@@ -894,15 +864,6 @@ const ComponentCard = ({
 
                     // Simply open the modal. Unverified events are handled on close only if < 10s and no outlink!
                     setIsPreviewModalOpen(true);
-
-                    if (window.config?.IS_MATOMO_ENABLED) {
-                      _paq.push([
-                        "trackEvent",
-                        "User Interaction",
-                        "Preview Click",
-                        `Content: ${description}`,
-                      ]);
-                    }
                   }}
                   sx={{
                     color: theme.palette.common.white,

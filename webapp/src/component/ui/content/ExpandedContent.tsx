@@ -216,7 +216,6 @@ const ExpandedContentCard: React.FC<ComponentCardProps> = ({
                       <CommentCard
                         commentResponse={c}
                         contentId={contentId}
-                        description={description}
                       />
                     </Box>
                   ))}

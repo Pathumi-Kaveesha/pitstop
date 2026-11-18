@@ -45,8 +45,6 @@ import { Role } from "@utils/types";
 import { fetchCustomerTestimonials } from "@slices/customerTestimonialSlice/customerTestimonial";
 import raceVideo from "@assets/images/race.mp4";
 
-export declare let _paq: unknown[];
-
 function Home() {
   const route = useAppSelector((state: RootState) => state.route);
   const page = useAppSelector((state: RootState) => state.page);

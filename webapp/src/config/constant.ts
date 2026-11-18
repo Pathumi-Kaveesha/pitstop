@@ -81,5 +81,5 @@ export const ROUTE_ID_ANALYTICS_DASHBOARD = -7;
 export const ROUTE_ID_SMART_SEARCH_UNINDEXED = -8;
 export const ROUTE_ID_SMART_SEARCH_BACKFILL = -9;
 
-// Smart Search is off unless IS_SMART_SEARCH_ENABLED=true is set in config.js, same as IS_MATOMO_ENABLED.
+// Smart Search is off unless IS_SMART_SEARCH_ENABLED=true is set in config.js.
 export const IS_SMART_SEARCH_ENABLED = window.config?.IS_SMART_SEARCH_ENABLED === true;

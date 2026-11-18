@@ -32,10 +32,7 @@ declare global {
       AUTH_SIGN_IN_REDIRECT_URL: string;
       AUTH_SIGN_OUT_REDIRECT_URL: string;
       CHOREO_BACKEND_BASE_URL: string;
-      IS_MATOMO_ENABLED: boolean;
       IS_SMART_SEARCH_ENABLED: boolean;
-      MATOMO_URL: string;
-      MATOMO_SITE_ID: string;
       IS_PITSTOP_APP: boolean;
       SALES_PITSTOP_URL: string;
       SE_WIKI_URL: string;

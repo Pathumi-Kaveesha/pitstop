@@ -38,11 +38,6 @@ import { isGoogleDriveFolderLink } from "@utils/utils";
 import { FILETYPE, CONTENT_SUBTYPE } from "@utils/types";
 import { useContentTracker } from "../../hooks/useContentTracker";
 
-export declare let _paq: unknown[];
-if (typeof window !== "undefined" && typeof _paq === "undefined") {
-  (window as Window & { _paq?: unknown[] })._paq = [];
-}
-
 interface ExtendedIframeViewerDialogBoxProps
   extends Omit<IframeViewerDialogBoxProps, "contentId"> {
   contentId?: number | null;
