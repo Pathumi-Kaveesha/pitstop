@@ -1971,7 +1971,7 @@ isolated function deleteSectionsQuery(int sectionId) returns sql:ParameterizedQu
 # + return - SQL parameterized query
 isolated function addSectionQuery(types:SectionPayload section) returns sql:ParameterizedQuery => `
     INSERT INTO
-        section(route_id, title, description, section_type, image_url, redirect_url, styling_info, tags, section_order)
+        section(route_id, title, description, section_type, image_url, redirect_url, styling_info, tags)
     VALUES(
         ${section.routeId},
         ${section.title},
@@ -1980,8 +1980,7 @@ isolated function addSectionQuery(types:SectionPayload section) returns sql:Para
         ${section.imageUrl},
         ${section.redirectUrl},
         ${section.customSectionTheme.toJsonString()},
-        ${section.tags},
-        (SELECT nextOrder FROM (SELECT COALESCE(MAX(section_order), 0) + 1 AS nextOrder FROM section) AS nextOrderLookup)
+        ${section.tags}
     )
 `;
 
