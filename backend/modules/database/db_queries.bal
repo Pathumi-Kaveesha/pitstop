@@ -3033,7 +3033,11 @@ isolated function getRecentActivityQuery(string userEmail, int lookbackDays, int
     FROM
         user_activity_logs l
     LEFT JOIN
-        content c ON c.content_id = l.content_id AND c.is_deleted = false
+        content c ON c.content_id = l.content_id
+        AND c.is_deleted = false
+        AND c.is_visible = 1
+        AND c.is_reused = 0
+        AND (c.content_type IS NULL OR c.content_type != ${ROUTE_CONTENT_TYPE})
     WHERE
         l.user_email = ${userEmail}
         AND l.event_timestamp >= DATE_SUB(NOW(), INTERVAL ${lookbackDays} DAY)
