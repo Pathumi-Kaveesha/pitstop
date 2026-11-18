@@ -13,47 +13,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 
-# Event.
-public type Event record {|
-    # Label
-    string label;
-    # Number of unique visitors
-    int nb_uniq_visitors;
-    json...;
-|};
-
-# Request structure for analytics.
-public type AnalyticsRequestParams record {|
-    # Token for authentication
-    string tokenAuth;
-    # Site ID
-    string idSite = "1";
-    # Date range
-    string date = "last30";
-    # Limit for filtering
-    string filterLimit = "2";
-|};
-
-# Detail of an action performed by a user.
-public type ActionDetail record {|
-    # Type of action
-    string 'type;
-    # Subtitle of the action
-    string subtitle;
-    # Event name
-    string eventName?;
-    json...;
-|};
-
-# Visit details of a user.
-public type Visit record {|
-    # User ID
-    string userId;
-    # Array of action details
-    ActionDetail[] actionDetails;
-    json...;
-|};
-
 # Summary of a user's visit.
 public type VisitSummary record {|
     # Array of searched keywords

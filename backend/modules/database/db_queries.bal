@@ -1971,7 +1971,7 @@ isolated function deleteSectionsQuery(int sectionId) returns sql:ParameterizedQu
 # + return - SQL parameterized query
 isolated function addSectionQuery(types:SectionPayload section) returns sql:ParameterizedQuery => `
     INSERT INTO
-        section(route_id, title, description, section_type, image_url, redirect_url, styling_info, tags)
+        section(route_id, title, description, section_type, image_url, redirect_url, styling_info, tags, section_order)
     VALUES(
         ${section.routeId},
         ${section.title},
@@ -1980,7 +1980,8 @@ isolated function addSectionQuery(types:SectionPayload section) returns sql:Para
         ${section.imageUrl},
         ${section.redirectUrl},
         ${section.customSectionTheme.toJsonString()},
-        ${section.tags}
+        ${section.tags},
+        (SELECT nextOrder FROM (SELECT COALESCE(MAX(section_order), 0) + 1 AS nextOrder FROM section) AS nextOrderLookup)
     )
 `;
 
@@ -2980,6 +2981,66 @@ isolated function getSuggestedContentsQuery(string userEmail, int 'limit, int 'o
     ORDER BY c.created_on DESC
     LIMIT ${'limit}
     OFFSET ${'offset}
+`;
+
+# Query to get the names of the most viewed contents, ordered by the number of different users who viewed them.
+#
+# + lookbackDays - Number of past days to look at
+# + candidatesCount - Maximum number of content names to return
+# + return - SQL parameterized query
+isolated function getTrendingContentNamesQuery(int lookbackDays, int candidatesCount)
+    returns sql:ParameterizedQuery => `
+    SELECT
+        c.description
+    FROM
+        user_activity_logs l
+    INNER JOIN
+        content c ON c.content_id = l.content_id
+    WHERE
+        l.event_type IN ('VIEW', 'PREVIEW', 'CARD_VIEW')
+        AND l.event_timestamp >= DATE_SUB(NOW(), INTERVAL ${lookbackDays} DAY)
+        AND c.is_deleted = false
+        AND c.is_visible = 1
+        AND c.is_reused = 0
+        AND (c.content_type IS NULL OR c.content_type != ${ROUTE_CONTENT_TYPE})
+        AND c.description IS NOT NULL
+        AND c.description != ''
+    GROUP BY
+        c.description
+    ORDER BY
+        COUNT(DISTINCT l.user_email) DESC,
+        COUNT(*) DESC,
+        c.description ASC
+    LIMIT ${candidatesCount}
+`;
+
+# Query to get what a user searched for and viewed recently, newest first.
+#
+# + userEmail - User email
+# + lookbackDays - Number of past days to look at
+# + rowLimit - Maximum number of rows to return
+# + return - SQL parameterized query
+isolated function getRecentActivityQuery(string userEmail, int lookbackDays, int rowLimit)
+    returns sql:ParameterizedQuery => `
+    SELECT
+        l.event_type,
+        NULLIF(JSON_UNQUOTE(JSON_EXTRACT(l.metadata, '$.query')), 'null') AS search_text,
+        c.description AS content_name
+    FROM
+        user_activity_logs l
+    LEFT JOIN
+        content c ON c.content_id = l.content_id AND c.is_deleted = false
+    WHERE
+        l.user_email = ${userEmail}
+        AND l.event_timestamp >= DATE_SUB(NOW(), INTERVAL ${lookbackDays} DAY)
+        AND (
+            l.event_type = 'SEARCH'
+            OR (l.event_type IN ('VIEW', 'PREVIEW', 'CARD_VIEW') AND c.content_id IS NOT NULL)
+        )
+    ORDER BY
+        l.event_timestamp DESC,
+        l.id DESC
+    LIMIT ${rowLimit}
 `;
 
 # Query to get all customer testimonials (admin view).

@@ -430,6 +430,25 @@ public type ContentIdResponse record {|
     int contentId;
 |};
 
+# Name of a content that people viewed.
+type ViewedContentName record {|
+    # Content name
+    string description;
+|};
+
+# One thing a user searched for or viewed.
+public type RecentActivityRow record {|
+    # Event type, SEARCH or VIEW
+    @sql:Column {name: "event_type"}
+    string eventType;
+    # Searched text, set for a search
+    @sql:Column {name: "search_text"}
+    string? searchText;
+    # Name of the viewed content, set for a view
+    @sql:Column {name: "content_name"}
+    string? contentName;
+|};
+
 # Customer testimonial record.
 public type CustomerTestimonial record {|
     # Testimonial ID

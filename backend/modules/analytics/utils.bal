@@ -13,38 +13,30 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 
-import ballerina/lang.regexp;
+import pitstop.database;
 
 configurable int topActivitiesCount = 6; // Number of top activities to consider
 
-# Extract content name from the event label (Split by "Content: " to get the content name).
-#
-# + name - Event label string
-# + return - Extracted content name or empty string if not found
-isolated function getContentName(string name) returns string {
-    regexp:RegExp contentRegex = re `Content: `;
-    return contentRegex.split(name).length() > 1 ? contentRegex.split(name)[1] : "";
-}
+// Not used any more. Kept so a deployment that still has these values in its configuration can start.
+// Delete both once the values are removed from every environment.
+configurable string analyticsServiceBaseUrl = "";
+configurable record {|
+    string tokenAuth = "";
+    string idSite = "1";
+    string date = "last30";
+    string filterLimit = "2";
+|} analyticsRequestParams = {};
 
-# Process trending contents to extract unique content names.
+const ACTIVITY_LOOKBACK_DAYS = 30;
+const TRENDING_CANDIDATES_COUNT = 25;
+const RECENT_ACTIVITY_ROWS_COUNT = 100;
+const SEARCH = "SEARCH";
+
+# Get the names of the contents that most users viewed recently.
 #
-# + return - Array of unique trending content names (highest number of visits first) or error
+# + return - Array of unique trending content names (highest number of viewers first) or error
 public isolated function processTrendingContents() returns string[]|error {
-    map<Event[]> response = check getTrendingContents();
-    map<int> visitorCountMap = {};
-
-    // Response shape: { "2025-09-21": [], "2025-09-22": [ {label: "", nb_visits: 5, ...}, ... ] }
-    foreach [string, Event[]] [_, events] in response.entries() {
-        foreach Event event in events {
-            string contentName = getContentName(event.label);
-            if contentName != "" {
-                visitorCountMap[contentName] = (visitorCountMap[contentName] ?: 0) + event.nb_uniq_visitors;
-            }
-        }
-    }
-    return from var [name, count] in visitorCountMap.entries()
-        order by count descending
-        select name;
+    return database:getTrendingContentNames(ACTIVITY_LOOKBACK_DAYS, TRENDING_CANDIDATES_COUNT);
 }
 
 # Process recent activity of a user to extract searched keywords and viewed content names.
@@ -52,38 +44,32 @@ public isolated function processTrendingContents() returns string[]|error {
 # + email - Email of the user
 # + return - Visit summary or error
 public isolated function processRecentActivityForUser(string email) returns VisitSummary|error {
-    Visit[] visits = check getRecentActivityForUser(email);
+    database:RecentActivityRow[] rows =
+        check database:getRecentActivity(email, ACTIVITY_LOOKBACK_DAYS, RECENT_ACTIVITY_ROWS_COUNT);
     int processedActivitiesCount = 0;
     string[] searchedKeywords = [];
     string[] viewedContentNames = [];
-    foreach Visit visit in visits {
+    foreach database:RecentActivityRow row in rows {
         if processedActivitiesCount >= topActivitiesCount {
             break;
         }
-        foreach ActionDetail actionDetail in visit.actionDetails {
-            if processedActivitiesCount >= topActivitiesCount {
-                break;
+        if row.eventType.toUpperAscii() == SEARCH {
+            string? searchText = row.searchText;
+            if searchText is () {
+                continue;
             }
-            match actionDetail.'type {
-                SEARCH => {
-                    // Check if subtitle is not empty and not already in the array
-                    if actionDetail.subtitle != "" &&
-                        searchedKeywords.indexOf(actionDetail.subtitle.toLowerAscii()) is () {
-                        searchedKeywords.push(actionDetail.subtitle.toLowerAscii());
-                        processedActivitiesCount += 1;
-                    }
-                }
-                EVENT => {
-                    string? contentName = actionDetail.eventName;
-                    // Check if content name is not null, not empty and not already in the array
-                    if contentName is string {
-                        string extracted = getContentName(contentName);
-                        if extracted != "" && viewedContentNames.indexOf(extracted) is () {
-                            viewedContentNames.push(extracted);
-                            processedActivitiesCount += 1;
-                        }
-                    }
-                }
+            string keyword = searchText.trim().toLowerAscii();
+            // Check if keyword is not empty and not already in the array
+            if keyword != "" && searchedKeywords.indexOf(keyword) is () {
+                searchedKeywords.push(keyword);
+                processedActivitiesCount += 1;
+            }
+        } else {
+            string? contentName = row.contentName;
+            // Check if content name is not null, not empty and not already in the array
+            if contentName is string && contentName != "" && viewedContentNames.indexOf(contentName) is () {
+                viewedContentNames.push(contentName);
+                processedActivitiesCount += 1;
             }
         }
     }
