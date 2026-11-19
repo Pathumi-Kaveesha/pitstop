@@ -86,7 +86,7 @@ export const ExportHeader: React.FC<ExportHeaderProps> = ({
       {exporterEmail && exporterEmail !== exporterName ? ` (${exporterEmail})` : ""} on {exportedAtLabel}
     </Typography>
     <Typography variant="body2" color="error" fontWeight={600} sx={{ mt: 1 }}>
-      Internal use only. This file contains names and email addresses of WSO2 staff. Do not share it outside WSO2.
+      Internal use only. This file contains names and email addresses of Choreo Labs staff. Do not share it outside Choreo Labs.
     </Typography>
     <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 1.5 }}>
       Filters applied to the whole dashboard

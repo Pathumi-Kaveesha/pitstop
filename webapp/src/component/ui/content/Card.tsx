@@ -669,7 +669,7 @@ const ComponentCard = ({
     }
   };
 
-  const shouldShowWSO2Placeholder = () => {
+  const shouldShowPlaceholder = () => {
     if (contentType === FILETYPE.External_Link) {
       return !contentSubtype || contentSubtype === CONTENT_SUBTYPE.Generic;
     }
@@ -879,7 +879,7 @@ const ComponentCard = ({
           )}
 
           {!thumbnail ? (
-            shouldShowWSO2Placeholder() ? (
+            shouldShowPlaceholder() ? (
               <Box
                 display="flex"
                 flexDirection="column"

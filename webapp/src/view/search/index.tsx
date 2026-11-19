@@ -207,15 +207,7 @@ export default function Layout() {
               columns={{ xs: 4, sm: 8, md: 12 }}
             >
               {currentPageData.map((content, index) => (
-                <Grid
-                  item
-                  key={index}
-                  xs={4}
-                  sm={4}
-                  md={4}
-                  lg={3}
-                  sx={{ mb: { xs: 2, md: 3 } }}
-                >
+                <Grid key={index} sx={{ mb: { xs: 2, md: 3 } }}>
                   <ComponentCard
                     contentLink={content.contentLink}
                     contentType={content.contentType}
@@ -239,7 +231,7 @@ export default function Layout() {
 
               {searchState === "loading" &&
                 [...Array(3)].map((_, index) => (
-                  <Grid item key={index} xs={4} sm={4} md={4} lg={3}>
+                  <Grid key={index}>
                     <SkeletonCard />
                   </Grid>
                 ))}
@@ -327,7 +319,7 @@ export default function Layout() {
             }}
           >
             <Typography variant="h6" sx={{ color: "#919090", pl: 2 }}>
-              v {pJson.version} | © {CURRENT_YEAR} WSO2 LLC
+              v {pJson.version} | © {CURRENT_YEAR} Choreo Labs LLC
             </Typography>
           </Box>
         </Box>
