@@ -40,10 +40,10 @@ const StatusWithAction = (props: PreLoaderProps) => {
           <Stack direction="column" justifyContent="center" alignItems="center" spacing={2}>
             <Box>
               <img
-                alt="logo"
-                width="150"
+                alt="Choreo Labs"
+                width="200"
                 height="auto"
-                src="https://wso2.cachefly.net/wso2/sites/images/brand/downloads/wso2-logo.png"
+                src="https://choreolabs.com/themes/wso2theme/images/choreo/brand/choreo-labs-logo-navy-400px.png"
               ></img>
             </Box>
             <Box></Box>

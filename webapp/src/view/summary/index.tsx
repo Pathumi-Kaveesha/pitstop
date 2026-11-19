@@ -248,7 +248,7 @@ export default function Summary() {
         }}
       >
         <Typography variant="h6" sx={{ color: "#919090", pl: 2 }}>
-          v {pJson.version} | © {CURRENT_YEAR} WSO2 LLC
+          v {pJson.version} | © {CURRENT_YEAR} Choreo Labs LLC
         </Typography>
       </Box>
     </Box>

@@ -24,7 +24,7 @@ public final string commentNotificationTemplate = string `
     <meta name="color-scheme" content="light dark" />
     <meta name="supported-color-schemes" content="light dark" />
 
-    <title>WSO2 Application Status</title>
+    <title>Choreo Labs Application Status</title>
 
     <style type="text/css">
       @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap");
@@ -619,17 +619,17 @@ public final string commentNotificationTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
-                                        alt="WSO2 Logo"
+                                        alt="Choreo Labs Logo"
                                         class="darkLogo"
                                         height="40"
                                         id="headerImage"
-                                        src="https://wso2.cachefly.net/wso2/sites/all/image_resources/logos/WSO2-Logo-White.png"
+                                        src="https://choreolabs.com/themes/wso2theme/images/choreo/brand/choreo-labs-logo-light-400px.png"
                                         style="
-                                          width: 100px;
+                                          width: 180px;
                                           -ms-interpolation-mode: bicubic;
                                           height: auto;
                                           outline: none;
@@ -1354,16 +1354,16 @@ public final string commentNotificationTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
-                                        alt="WSO2 Logo"
+                                        alt="Choreo Labs Logo"
                                         height="40"
                                         id="headerImage"
-                                        src="https://wso2.cachefly.net/wso2/sites/all/image_resources/logos/WSO2-Logo-Black.png"
+                                        src="https://choreolabs.com/themes/wso2theme/images/choreo/brand/choreo-labs-logo-navy-400px.png"
                                         style="
-                                          width: 100px;
+                                          width: 180px;
                                           -ms-interpolation-mode: bicubic;
                                           height: auto;
                                           outline: none;
@@ -1395,7 +1395,7 @@ public final string commentNotificationTemplate = string `
                                     valign="top"
                                   >
                                     ©
-                                    WSO2, LLC. All Rights Reserved
+                                    Choreo Labs, LLC. All Rights Reserved
                                   </td>
                                 </tr>
                                 <tr>
@@ -1419,7 +1419,7 @@ public final string commentNotificationTemplate = string `
                                     valign="top"
                                   >
                                     You are receiving this email because you
-                                    have shown interest in WSO2. You can
+                                    have shown interest in Choreo Labs. You can
                                     <a
                                       href="https://wso2.com/selective-unsubscribe/"
                                       style="
@@ -1451,7 +1451,7 @@ public final string commentNotificationTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    This mail was sent by WSO2 Inc. 3080 Olcott
+                                    This mail was sent by Choreo Labs, LLC. 3080 Olcott
                                     St., Suite C220, Santa Clara, CA 95054, USA
                                   </td>
                                 </tr>
@@ -1485,7 +1485,7 @@ public final string mentionNotificationTemplate = string `
     <meta name="color-scheme" content="light dark" />
     <meta name="supported-color-schemes" content="light dark" />
 
-    <title>WSO2 Application Status</title>
+    <title>Choreo Labs Application Status</title>
 
     <style type="text/css">
       @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap");
@@ -2080,17 +2080,17 @@ public final string mentionNotificationTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
-                                        alt="WSO2 Logo"
+                                        alt="Choreo Labs Logo"
                                         class="darkLogo"
                                         height="40"
                                         id="headerImage"
-                                        src="https://wso2.cachefly.net/wso2/sites/all/image_resources/logos/WSO2-Logo-White.png"
+                                        src="https://choreolabs.com/themes/wso2theme/images/choreo/brand/choreo-labs-logo-light-400px.png"
                                         style="
-                                          width: 100px;
+                                          width: 180px;
                                           -ms-interpolation-mode: bicubic;
                                           height: auto;
                                           outline: none;
@@ -2745,16 +2745,16 @@ public final string mentionNotificationTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
-                                        alt="WSO2 Logo"
+                                        alt="Choreo Labs Logo"
                                         height="40"
                                         id="headerImage"
-                                        src="https://wso2.cachefly.net/wso2/sites/all/image_resources/logos/WSO2-Logo-Black.png"
+                                        src="https://choreolabs.com/themes/wso2theme/images/choreo/brand/choreo-labs-logo-navy-400px.png"
                                         style="
-                                          width: 100px;
+                                          width: 180px;
                                           -ms-interpolation-mode: bicubic;
                                           height: auto;
                                           outline: none;
@@ -2786,7 +2786,7 @@ public final string mentionNotificationTemplate = string `
                                     valign="top"
                                   >
                                     ©
-                                    WSO2, LLC. All Rights Reserved
+                                    Choreo Labs, LLC. All Rights Reserved
                                   </td>
                                 </tr>
                                 <tr>
@@ -2810,7 +2810,7 @@ public final string mentionNotificationTemplate = string `
                                     valign="top"
                                   >
                                     You are receiving this email because you
-                                    have shown interest in WSO2. You can
+                                    have shown interest in Choreo Labs. You can
                                     <a
                                       href="https://wso2.com/selective-unsubscribe/"
                                       style="
@@ -2842,7 +2842,7 @@ public final string mentionNotificationTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    This mail was sent by WSO2 Inc. 3080 Olcott
+                                    This mail was sent by Choreo Labs, LLC. 3080 Olcott
                                     St., Suite C220, Santa Clara, CA 95054, USA
                                   </td>
                                 </tr>
@@ -3471,17 +3471,17 @@ public final string quizAssignmentTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
-                                        alt="WSO2 Logo"
+                                        alt="Choreo Labs Logo"
                                         class="darkLogo"
                                         height="40"
                                         id="headerImage"
-                                        src="https://wso2.cachefly.net/wso2/sites/all/image_resources/logos/WSO2-Logo-White.png"
+                                        src="https://choreolabs.com/themes/wso2theme/images/choreo/brand/choreo-labs-logo-light-400px.png"
                                         style="
-                                          width: 100px;
+                                          width: 180px;
                                           -ms-interpolation-mode: bicubic;
                                           height: auto;
                                           outline: none;
@@ -4042,12 +4042,12 @@ public final string quizAssignmentTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    <a href="https://wso2.com/" style="text-decoration: none" target="_blank">
+                                    <a href="https://choreolabs.com/" style="text-decoration: none" target="_blank">
                                       <img
-                                        alt="WSO2 Logo"
+                                        alt="Choreo Labs Logo"
                                         height="40"
-                                        src="https://wso2.cachefly.net/wso2/sites/all/image_resources/logos/WSO2-Logo-Black.png"
-                                        style="width: 100px;-ms-interpolation-mode: bicubic;height: auto;outline: none;text-decoration: none;border: 0;"
+                                        src="https://choreolabs.com/themes/wso2theme/images/choreo/brand/choreo-labs-logo-navy-400px.png"
+                                        style="width: 180px;-ms-interpolation-mode: bicubic;height: auto;outline: none;text-decoration: none;border: 0;"
                                         width="100"
                                       />
                                     </a>
@@ -4072,7 +4072,7 @@ public final string quizAssignmentTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    © WSO2, LLC. All Rights Reserved
+                                    © Choreo Labs, LLC. All Rights Reserved
                                   </td>
                                 </tr>
                                 <tr>
@@ -4094,7 +4094,7 @@ public final string quizAssignmentTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    You are receiving this email because you have shown interest in WSO2. You can
+                                    You are receiving this email because you have shown interest in Choreo Labs. You can
                                     <a href="https://wso2.com/selective-unsubscribe/" style="color: #465868; text-decoration: underline;">unsubscribe</a>
                                     from all communications at any time.
                                   </td>
@@ -4118,7 +4118,7 @@ public final string quizAssignmentTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    This mail was sent by WSO2 Inc. 3080 Olcott St., Suite C220, Santa Clara, CA 95054, USA
+                                    This mail was sent by Choreo Labs, LLC. 3080 Olcott St., Suite C220, Santa Clara, CA 95054, USA
                                   </td>
                                 </tr>
                               </tbody>
