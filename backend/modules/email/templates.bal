@@ -619,7 +619,7 @@ public final string commentNotificationTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
@@ -1354,7 +1354,7 @@ public final string commentNotificationTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
@@ -1451,7 +1451,7 @@ public final string commentNotificationTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    This mail was sent by WSO2 Inc. 3080 Olcott
+                                    This mail was sent by Choreo Labs, LLC. 3080 Olcott
                                     St., Suite C220, Santa Clara, CA 95054, USA
                                   </td>
                                 </tr>
@@ -2080,7 +2080,7 @@ public final string mentionNotificationTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
@@ -2745,7 +2745,7 @@ public final string mentionNotificationTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
@@ -2842,7 +2842,7 @@ public final string mentionNotificationTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    This mail was sent by WSO2 Inc. 3080 Olcott
+                                    This mail was sent by Choreo Labs, LLC. 3080 Olcott
                                     St., Suite C220, Santa Clara, CA 95054, USA
                                   </td>
                                 </tr>
@@ -3471,7 +3471,7 @@ public final string quizAssignmentTemplate = string `
                                     valign="top"
                                   >
                                     <a
-                                      href="https://wso2.com/"
+                                      href="https://choreolabs.com/"
                                       style="text-decoration: none"
                                       target="_blank"
                                       ><img
@@ -4042,7 +4042,7 @@ public final string quizAssignmentTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    <a href="https://wso2.com/" style="text-decoration: none" target="_blank">
+                                    <a href="https://choreolabs.com/" style="text-decoration: none" target="_blank">
                                       <img
                                         alt="Choreo Labs Logo"
                                         height="40"
@@ -4118,7 +4118,7 @@ public final string quizAssignmentTemplate = string `
                                     "
                                     valign="top"
                                   >
-                                    This mail was sent by WSO2 Inc. 3080 Olcott St., Suite C220, Santa Clara, CA 95054, USA
+                                    This mail was sent by Choreo Labs, LLC. 3080 Olcott St., Suite C220, Santa Clara, CA 95054, USA
                                   </td>
                                 </tr>
                               </tbody>
